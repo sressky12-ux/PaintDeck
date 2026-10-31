@@ -1156,6 +1156,707 @@
    "url": "https://civitai.com/models/2976277",
    "preview": "pussyV2.jpg",
    "strength": 0.8
+  },
+  "moss\\Excellent-Loras\\SFT伪影修复\\moss_image_sft_banding_fix_L37-41_bf16.safetensors": {
+   "title": "MOSS 去色帶（主）",
+   "note": "【修復】MOSS SFT 在天空、漸層、霧、大片單色會出直條色帶；掛這顆把第 37～41 層換回 Base 的權重，色帶就淡掉。只對 SFT 模型有用，強度固定 1.0。生成頁勾「MOSS 去色帶」會自動掛",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\SFT伪影修复\\moss_image_sft_banding_fix_L32-36_extra_bf16.safetensors": {
+   "title": "MOSS 去色帶（加強）",
+   "note": "【修復】去色帶的加強層（第 32～36 層換回 Base）。要跟主的那顆（L37-41）一起掛，兩顆都 1.0；畫面最乾淨，但跟原本 SFT 的味道差比較多",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\moss_image_sft_4step_v2.0.safetensors": {
+   "title": "MOSS 4 步加速",
+   "note": "【加速】SFT 用的 4 步蒸餾加速。步數改 4 左右、CFG 1；比 8 步那幾顆更快、畫質掉更多",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\lodestones-8-steps-dmd2-lora.safetensors": {
+   "title": "MOSS 8 步加速（DMD2）",
+   "note": "【加速】lodestones 的 8 步 DMD2 加速。步數 8～10、CFG 1；強度先從 0.3～0.5 試",
+   "triggers": [],
+   "strength": 0.4,
+   "base_model": "MOSS",
+   "min": 0.2,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\lora_latest_step8_0.7.safetensors": {
+   "title": "MOSS 8 步加速（latest）",
+   "note": "【加速】跟站內「MOSS 快速」用的是同一顆（lodestones lora_latest）。原作者建議 0.7；站內「MOSS 快速」用 0.35＋10 步",
+   "triggers": [],
+   "strength": 0.7,
+   "base_model": "MOSS",
+   "min": 0.3,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\MOSS-Image-16step-cfg1-BF16.safetensors": {
+   "title": "MOSS 16 步 CFG1",
+   "note": "【加速】16 步、CFG 1 的加速（比 8 步的畫質好、比原本 25 步快）。步數 16、CFG 1",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\滑块\\美妆滤镜滑块_beautyFilter_-3to3.safetensors": {
+   "title": "美顏濾鏡滑桿",
+   "note": "【滑桿】美顏濾鏡：正的磨皮美化，負的更素顏真實。範圍 -3～+3",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -3,
+   "max": 3
+  },
+  "moss\\Excellent-Loras\\滑块\\体重滑块weight_slider_moss_v5_W_-5+5.safetensors": {
+   "title": "體重滑桿",
+   "note": "【滑桿】體重：負的變瘦、正的變胖。範圍 -5～+5",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -5,
+   "max": 5
+  },
+  "moss\\Excellent-Loras\\滑块\\waist_slider_-3_+3.safetensors": {
+   "title": "腰圍滑桿",
+   "note": "【滑桿】腰圍：負的變細、正的變粗（方向以試畫為準）。範圍 -3～+3",
+   "triggers": [],
+   "strength": -1.0,
+   "base_model": "MOSS",
+   "min": -3,
+   "max": 3
+  },
+  "moss\\Excellent-Loras\\滑块\\肤色滑块skin_tone_W_-3+3.safetensors": {
+   "title": "膚色滑桿",
+   "note": "【滑桿】膚色深淺。範圍 -3～+3（正負哪邊比較深以試畫為準）",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -3,
+   "max": 3
+  },
+  "moss\\Excellent-Loras\\滑块\\mossbase质量增强滑块_anima_pure_text_slider_rank16.safetensors": {
+   "title": "畫質增強滑桿",
+   "note": "【滑桿】整體畫質：正的提升質感，負的反過來",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -2,
+   "max": 2
+  },
+  "moss\\Excellent-Loras\\滑块\\细节滑块-0.75-+0.75.safetensors": {
+   "title": "細節滑桿",
+   "note": "【滑桿】細節多寡：正的加細節，負的變簡潔。範圍 -0.75～+0.75",
+   "triggers": [],
+   "strength": 0.5,
+   "base_model": "MOSS",
+   "min": -0.75,
+   "max": 0.75
+  },
+  "moss\\Excellent-Loras\\滑块\\细节imagefinish-sft-epoch0150-W-2+2.safetensors": {
+   "title": "細節滑桿（finish）",
+   "note": "【滑桿】細節、完成度（finish 版）。範圍 -2～+2",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -2,
+   "max": 2
+  },
+  "moss\\Excellent-Loras\\滑块\\细节target-epoch0150-W-0.75+0.75.safetensors": {
+   "title": "細節滑桿（target）",
+   "note": "【滑桿】細節（target 版，跟 finish 版同一作者不同訓法，可以對照試）。範圍 -0.75～+0.75",
+   "triggers": [],
+   "strength": 0.5,
+   "base_model": "MOSS",
+   "min": -0.75,
+   "max": 0.75
+  },
+  "moss\\Excellent-Loras\\滑块\\moss_vector滑块_-2+2.safetensors": {
+   "title": "向量／線稿感滑桿",
+   "note": "【滑桿】往向量插畫、乾淨線條的方向推（正）或反過來（負）。範圍 -2～+2",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -2,
+   "max": 2
+  },
+  "moss\\Excellent-Loras\\滑块\\moss_lighting_slider_-1+1.safetensors": {
+   "title": "光線滑桿",
+   "note": "【滑桿】光線亮度、打光強弱。範圍 -1～+1",
+   "triggers": [],
+   "strength": 0.5,
+   "base_model": "MOSS",
+   "min": -1,
+   "max": 1
+  },
+  "moss\\Excellent-Loras\\滑块\\contrast_HDR_slider--3+2.5.safetensors": {
+   "title": "對比／HDR 滑桿",
+   "note": "【滑桿】對比與 HDR 感：正的更強烈，負的變平淡。範圍 -3～+2.5",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -3,
+   "max": 2.5
+  },
+  "moss\\Excellent-Loras\\滑块\\white_balance_slide_-3+3_v1.safetensors": {
+   "title": "白平衡滑桿",
+   "note": "【滑桿】色溫冷暖（哪邊偏暖以試畫為準）。範圍 -3～+3",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -3,
+   "max": 3
+  },
+  "moss\\Excellent-Loras\\滑块\\背景清晰度_BackgroundSharpness_MOSS-sft_v1.safetensors": {
+   "title": "背景清晰度滑桿",
+   "note": "【滑桿】背景清楚或模糊：正的背景更銳利，負的更有景深",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -2,
+   "max": 2
+  },
+  "moss\\Excellent-Loras\\滑块\\photo and illustrations_Slider_MOSS-sft_-2+2.safetensors": {
+   "title": "照片↔插畫滑桿",
+   "note": "【滑桿】一端偏照片質感、另一端偏插畫。範圍 -2～+2",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": -2,
+   "max": 2
+  },
+  "moss\\Excellent-Loras\\EDIT\\MOSS_CAOTICA_REMIX_000000050.safetensors": {
+   "title": "CAOTICA 混搭編輯",
+   "note": "【改圖】CAOTICA 混搭編輯。2026-10-31 繪匣「照指令改圖」實測：動漫圖會被改成寫實照片風、臉會走樣（叫它改外套顏色有改到，但整張畫風跑掉）。想照指令改圖請用預設的 chinoll；這顆適合想把圖整個混搭成寫實風時再試",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\EDIT\\moss_image_charref_v2.safetensors": {
+   "title": "角色參考 v2",
+   "note": "【改圖】角色參考：圖生圖勾「照指令改圖」、掛這顆 1.0，提示詞開頭寫 Same character and art style as Picture 1.，後面寫新場景。2026-10-31 繪匣實測：角色、畫風保留得很好，但姿勢容易照抄原圖、新場景只換一部分（同一個角色可能出現兩次）；預設的 chinoll 寫同一句幾乎不會變",
+   "triggers": [
+    "Same character and art style as Picture 1."
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\真漫转换\\NO1.anime2real.safetensors": {
+   "title": "動漫轉寫實 NO1",
+   "note": "【轉換】動漫圖轉寫實。沒附說明，先用小強度試",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\真漫转换\\Moss_SFT_Edit_A2R_v1_000006000.safetensors": {
+   "title": "動漫轉寫實 A2R（6000 步）",
+   "note": "【轉換】SFT 編輯版的動漫轉寫實（訓練較久的版本）。觸發詞 A2R；在 img2img／照指令改圖試",
+   "triggers": [
+    "A2R"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\真漫转换\\漫转真Moss_SFT_Edit_A2R_v1_000003000.safetensors": {
+   "title": "動漫轉寫實 A2R（3000 步）",
+   "note": "【轉換】SFT 編輯版的動漫轉寫實（訓練較早的版本，改得比較輕）。觸發詞 A2R",
+   "triggers": [
+    "A2R"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2000_moss.safetensors": {
+   "title": "2000 年手機照",
+   "note": "【照片風】早期手機相機：低解析、雜訊多、動態範圍差、顏色洗白或太暗。強度 0.6，觸發詞要整句寫",
+   "triggers": [
+    "An amateur low-quality photo with poor dynamic range, grainy texture, dull colors and blown highlights."
+   ],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2007_moss.safetensors": {
+   "title": "2007 年手機照",
+   "note": "【照片風】稍微清楚但還是軟：雜訊、失焦、閃光燈很硬、暗部壓黑。強度 0.6，觸發詞要整句寫",
+   "triggers": [
+    "An amateur low-quality photo with visible noise, soft focus and dull colors."
+   ],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2020_moss.safetensors": {
+   "title": "2020 年手機照",
+   "note": "【照片風】乾淨的手機照：HDR、曝光平均、顏色自然，膚色稍悶。強度 0.6；觸發詞後面直接接拍的東西",
+   "triggers": [
+    "This is a candid photograph taken with a low-end smartphone of"
+   ],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2025_moss.safetensors": {
+   "title": "2025 年手機照",
+   "note": "【照片風】AI 增強的超清晰手機照：曝光完美、細節銳利到有點假。強度 0.6；觸發詞後面直接接拍的東西",
+   "triggers": [
+    "This is a candid photograph taken with a smartphone of"
+   ],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\lenovo_moss.safetensors": {
+   "title": "通用人像臉模",
+   "note": "【臉模】通用寫實人像臉。沒附說明，先用 0.6 左右試",
+   "triggers": [],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\nicegirls_v2_moss.safetensors": {
+   "title": "甜美女性臉模",
+   "note": "【臉模】甜美系女性臉，建議 0.6",
+   "triggers": [],
+   "strength": 0.6,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\ultra_real_moss_sft_v1_pro_Weight_0.6_0.8.safetensors": {
+   "title": "超寫實人像 pro",
+   "note": "【寫實】超寫實人像（SFT pro 版），建議 0.6～0.8",
+   "triggers": [],
+   "strength": 0.7,
+   "base_model": "MOSS",
+   "min": 0.6,
+   "max": 0.8
+  },
+  "moss\\Excellent-Loras\\脸模等\\ultra_real_moss_v2.safetensors": {
+   "title": "超寫實人像 v2",
+   "note": "【寫實】超寫實人像 v2，皮膚、光線更像照片",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\亚洲写实NexBlend01MossImage.safetensors": {
+   "title": "亞洲寫實臉 NexBlend01",
+   "note": "【臉模】亞洲寫實臉（NexBlend01）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\韩系写实NexBlend02Moss.safetensors": {
+   "title": "韓系寫實臉 NexBlend02",
+   "note": "【臉模】韓系寫實臉（NexBlend02，跟 01 同系列可以對照）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\Japanese AI girl_T_kz_yuuko.safetensors": {
+   "title": "日系 AI 女孩 yuuko",
+   "note": "【臉模】日系寫實女孩臉（kz_yuuko）。觸發詞 kz_yuuko，小強度先試",
+   "triggers": [
+    "kz_yuuko"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\Japanese AI girl_T_ kz_miyuka_W_1±0.2.safetensors": {
+   "title": "日系 AI 女孩 miyuka",
+   "note": "【臉模】日系寫實女孩臉（kz_miyuka），建議 0.8～1.2。觸發詞 kz_miyuka",
+   "triggers": [
+    "kz_miyuka"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS",
+   "min": 0.8,
+   "max": 1.2
+  },
+  "moss\\Excellent-Loras\\脸模等\\realistic-moss-nikastyle-moss-image-base-epoch-20.safetensors": {
+   "title": "寫實臉 nikastyle",
+   "note": "【臉模】寫實人像（nikastyle，Base 模型訓的）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\ViRealismMoss_V1_T_virealism.safetensors": {
+   "title": "ViRealism 寫實",
+   "note": "【寫實】寫實照片質感。觸發詞 virealism",
+   "triggers": [
+    "virealism"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\脸模等\\南宫婉Face.safetensors": {
+   "title": "南宮婉臉模",
+   "note": "【臉模】國風女性角色臉（南宮婉），建議 0.6～0.8 開始試",
+   "triggers": [],
+   "strength": 0.7,
+   "base_model": "MOSS",
+   "min": 0.4,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\脸模等\\中国大叔moss-cn-uncle.safetensors": {
+   "title": "中年大叔臉",
+   "note": "【臉模】中式中年男性（大叔）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\2.5D 动画风格Impasto Anime Style.safetensors": {
+   "title": "2.5D 厚塗動畫風",
+   "note": "【畫風】2.5D 動畫、厚塗質感",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\CGI style.safetensors": {
+   "title": "CGI 3D 渲染風",
+   "note": "【畫風】CGI／3D 渲染質感",
+   "triggers": [
+    "oblivioncgi style, 3d render, cgi,"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\Illustration style_numoss.safetensors": {
+   "title": "插畫風 numoss",
+   "note": "【畫風】插畫風格",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\Nyalia_moss_v1_lokr.safetensors": {
+   "title": "Nyalia 畫風",
+   "note": "【畫風】Nyalia 的畫風（LyCORIS lokr 格式，ComfyUI 內建載入器讀得到）",
+   "triggers": [
+    "@nyalia,"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\TJFilmMoss_V1_T_vifilm.safetensors": {
+   "title": "電影感 vifilm",
+   "note": "【照片風】電影劇照質感。觸發詞 vifilm",
+   "triggers": [
+    "vifilm"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\anireal_moss_lora_v1.safetensors": {
+   "title": "動漫寫實化 anireal",
+   "note": "【畫風】把動漫往寫實推的風格",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\blue-archive-style.safetensors": {
+   "title": "蔚藍檔案動畫風",
+   "note": "【畫風】蔚藍檔案（Blue Archive）動畫截圖風",
+   "triggers": [
+    "weilandanganstyle,",
+    "anime screenshot,"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\dlss5风格（鸣潮、终末地、异环）T_@DLSS5.safetensors": {
+   "title": "鳴潮／終末地遊戲風",
+   "note": "【畫風】鳴潮、終末地、異環那種遊戲 CG 風。觸發詞 @DLSS5",
+   "triggers": [
+    "@DLSS5"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\iPhone15_W1to3.safetensors": {
+   "title": "iPhone 15 照片風",
+   "note": "【照片風】iPhone 15 拍的照片感，原作者標強度 1～3",
+   "triggers": [],
+   "strength": 1.5,
+   "base_model": "MOSS",
+   "min": 1,
+   "max": 3
+  },
+  "moss\\Excellent-Loras\\风格\\instagram_aesthetic_v1.safetensors": {
+   "title": "IG 網美風",
+   "note": "【照片風】Instagram 網美感：飽和、乾淨構圖",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\krealistick_现实主义写实风格.safetensors": {
+   "title": "現實主義寫實",
+   "note": "【寫實】現實主義寫實風",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\nu-moss semi-PVC style.safetensors": {
+   "title": "半 PVC 公仔風",
+   "note": "【畫風】半 PVC 公仔、手辦質感",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\pseudo-3D matte anime style.safetensors": {
+   "title": "偽 3D 霧面動畫風",
+   "note": "【畫風】偽 3D、霧面質感的動畫風",
+   "triggers": [
+    "unity_style,"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\rebelmidjourney_W_0.1-0.8.safetensors": {
+   "title": "Midjourney 感",
+   "note": "【畫風】Midjourney 那種強對比、華麗的感覺，強度 0.1～0.8",
+   "triggers": [],
+   "strength": 0.5,
+   "base_model": "MOSS",
+   "min": 0.1,
+   "max": 0.8
+  },
+  "moss\\Excellent-Loras\\风格\\reversesty_mossimage_style.safetensors": {
+   "title": "reversesty 畫風",
+   "note": "【畫風】reversesty 風格，原作者建議 1.0～1.4",
+   "triggers": [
+    "reversesty"
+   ],
+   "strength": 1.2,
+   "base_model": "MOSS",
+   "min": 1.0,
+   "max": 1.4
+  },
+  "moss\\Excellent-Loras\\风格\\school-gal_dw_moss_Anima_v0_1.safetensors": {
+   "title": "日系辣妹制服",
+   "note": "【角色裝扮】日系校園辣妹（ギャル）二次元風，觸發詞 school-gal_dw；原作者的整套服裝提示：pink leopard-print bikini, short-sleeved white crop shirt, pink plaid mini skirt, white decorative belt, loose socks, brown loafers…",
+   "triggers": [
+    "school-gal_dw"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\动漫插画风格SepiaBlue_Luminous_T_qsv2style_W0.6-1_v1.safetensors": {
+   "title": "褐藍光感插畫風",
+   "note": "【畫風】深褐配藍、帶光感的動漫插畫風（SepiaBlue Luminous），強度 0.6～1。觸發詞 qsv2style",
+   "triggers": [
+    "qsv2style"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS",
+   "min": 0.6,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\风格\\半写实风格NexBlend Semi Realistic LoRA - MOSS Image.safetensors": {
+   "title": "半寫實風",
+   "note": "【畫風】半寫實（介於動漫和照片之間）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\国风3DCG风格.safetensors": {
+   "title": "國風 3DCG",
+   "note": "【畫風】古風、國風的三維 CG 質感",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\小马美学风格duckymix-Anima_W0.7-1_T_@ducky.safetensors": {
+   "title": "小馬美學 duckymix",
+   "note": "【畫風】duckymix 混搭美學風，強度 0.7～1。觸發詞 @ducky",
+   "triggers": [
+    "@ducky"
+   ],
+   "strength": 0.85,
+   "base_model": "MOSS",
+   "min": 0.7,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\风格\\彩色胶片快照风格_directflashfilmconcept.safetensors": {
+   "title": "彩色底片直閃快照",
+   "note": "【照片風】彩色底片、閃光燈直打的快照感",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\暗黑奇幻哥特风格Emberveil Gothic.safetensors": {
+   "title": "暗黑奇幻哥德風",
+   "note": "【畫風】暗黑奇幻、哥德風",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\服装模特_female_mannequin_lora_v1.safetensors": {
+   "title": "服裝人台",
+   "note": "【特殊】女性服裝人台（假人模特兒）。觸發詞 mannequin，前面可以加材質：white、black、glass、crystal glass、wood、stone、gold",
+   "triggers": [
+    "mannequin"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\梦幻复古艺术风格.safetensors": {
+   "title": "夢幻復古藝術",
+   "note": "【畫風】夢幻、復古的藝術感",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\水下镜头拍摄underwateractioncamconcept.safetensors": {
+   "title": "水下運動相機",
+   "note": "【照片風】水下運動相機拍的感覺（光線衰減、懸浮顆粒）",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\水粉墨水风格_T_ral-gouache-ink.safetensors": {
+   "title": "水粉＋墨水",
+   "note": "【畫風】水粉畫加墨線。觸發詞 ral-gouache-ink",
+   "triggers": [
+    "ral-gouache-ink"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\水粉温暖风格_T_ral-gouache-warm.safetensors": {
+   "title": "暖色水粉",
+   "note": "【畫風】暖色調水粉畫。觸發詞 ral-gouache-warm",
+   "triggers": [
+    "ral-gouache-warm"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\水粉粉彩风格_T_ral-gouache-pastel.safetensors": {
+   "title": "粉彩水粉",
+   "note": "【畫風】粉彩調水粉畫。觸發詞 ral-gouache-pastel",
+   "triggers": [
+    "ral-gouache-pastel"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\瑜伽T_YogaBowPose.safetensors": {
+   "title": "瑜伽弓式姿勢",
+   "note": "【姿勢】瑜伽弓式（Bow Pose）。這顆管姿勢，不是畫風。觸發詞 YogaBowPose",
+   "triggers": [
+    "YogaBowPose"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\粗犷水墨画风格SumiInk_moss_v1.safetensors": {
+   "title": "粗獷水墨畫",
+   "note": "【畫風】粗獷水墨：墨點飛濺、筆觸、宣紙底",
+   "triggers": [
+    "ink splatter, brush strokes, rice paper background, ink wash painting"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\线稿moss_Lineart_T_Lineart.safetensors": {
+   "title": "線稿",
+   "note": "【畫風】線稿、輪廓線。觸發詞 Lineart",
+   "triggers": [
+    "Lineart"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\网拍写实风格_cyber-shot_moss_NW.safetensors": {
+   "title": "網拍寫實",
+   "note": "【照片風】網拍、數位相機（cyber-shot）的寫實照片",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\网络摄像头风格_webcamviewconcept.safetensors": {
+   "title": "網路攝影機",
+   "note": "【照片風】網路攝影機、低畫質監視器畫面",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\美式几何漫画风格American_Geometric_Comic_MOSS.safetensors": {
+   "title": "美式幾何漫畫（jgdxstyle）",
+   "note": "【畫風】美式幾何漫畫風，觸發詞 jgdxstyle",
+   "triggers": [
+    "jgdxstyle"
+   ],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\西部牛仔风格_1950s_western_moss_200.safetensors": {
+   "title": "1950 西部片",
+   "note": "【照片風】1950 年代西部牛仔電影的畫面",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\铅笔画风格pencil_sketch_W_0.6-1_T_A pencil sketch on textured paper.safetensors": {
+   "title": "鉛筆素描",
+   "note": "【畫風】紙上鉛筆素描，強度 0.6～1",
+   "triggers": [
+    "A pencil sketch on textured paper"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS",
+   "min": 0.6,
+   "max": 1.0
+  },
+  "moss\\Excellent-Loras\\风格\\铅笔绘画风格Pencil style_bf16.safetensors": {
+   "title": "鉛筆繪畫",
+   "note": "【畫風】鉛筆繪畫風",
+   "triggers": [],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\风格\\魔法光环aura-moss-image-sft-epoch-10_T_ 4ur4.safetensors": {
+   "title": "魔法光環",
+   "note": "【特效】魔法光環、輝光特效。觸發詞 4ur4",
+   "triggers": [
+    "4ur4"
+   ],
+   "strength": 0.8,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\4B文本编码适配器\\mossImage4BTextEncoder_1600Fit.safetensors": {
+   "title": "（不是 LoRA）4B 轉接器",
+   "note": "【不要掛】這是 MOSS 4B 文字編碼器的投影轉接器，不是 LoRA。要用 4B 請在生成頁把「MOSS 文字編碼器」切到 4B",
+   "triggers": [],
+   "strength": 0.0,
+   "base_model": "MOSS"
+  },
+  "moss\\Excellent-Loras\\model_patches\\moss-color-depth-control.safetensors": {
+   "title": "MOSS 色彩／深度控制",
+   "note": "【控制】MOSS 的色彩／深度控制轉接器。生成頁開「構圖控制」會自動掛，不用手動加",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\moss_speed_dmd_lodestones.safetensors": {
+   "title": "MOSS 快速",
+   "note": "【加速】lodestones 的 8 步 DMD 加速。生成頁勾「MOSS 快速」自動掛 0.35、步數 10",
+   "triggers": [],
+   "strength": 0.35,
+   "base_model": "MOSS",
+   "min": 0.2,
+   "max": 1.0
+  },
+  "moss\\moss_edit_chinoll.safetensors": {
+   "title": "MOSS 照指令改圖",
+   "note": "【改圖】chinoll 的 MOSS 編輯 LoRA。圖生圖勾「照指令改圖」自動掛 1.0，提示詞寫要改什麼",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
+  },
+  "moss\\moss-color-depth-control.safetensors": {
+   "title": "MOSS 色彩／深度控制",
+   "note": "【控制】MOSS 的色彩／深度控制轉接器（darask0）。生成頁 MOSS 文生圖開「構圖控制」會自動掛，不用手動加",
+   "triggers": [],
+   "strength": 1.0,
+   "base_model": "MOSS"
   }
  },
  "presets": [],

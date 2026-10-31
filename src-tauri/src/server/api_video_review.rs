@@ -1,4 +1,4 @@
-//! LTX／自訂圖生影片的人工接續選幀。只讀取使用者明確指定鏡頭的成片。
+//! 導演台（內建 H3／自訂圖生影片）的人工接續選幀。只讀取使用者明確指定鏡頭的成片。
 use super::{bad, blocking, file_response, internal, not_found, ok, ApiResult, Body, Shared};
 use crate::{director::{self as d, tx}, film_takes as takes, video_review as vr};
 use axum::extract::{Path as UrlPath, State};

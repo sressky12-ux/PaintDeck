@@ -1,7 +1,7 @@
-"""Anima Prompt Enhance：在 ComfyUI 工作流裡用 Qwen-Image 2.1 PE Heretic（社群無審查版 GGUF）改寫提示詞。
+"""Anima Prompt Enhance：在 ComfyUI 工作流裡用通用模型（Qwen3.5 9B／Qwen3.6 35B GGUF）照 Qwen-Image 2.1 官方寫法改寫提示詞（官方 PE Heretic 2026-10-30 起拿掉）。
 
 節點：
-  Anima Prompt Enhance (Qwen PE Heretic)   想法 → 官方格式的完整英文提示詞（＋建議比例、思考過程）
+  Anima Prompt Enhance                     想法 → 官方格式的完整英文提示詞（＋建議比例、思考過程）
   Anima Prompt Edit (preview)              顯示改寫結果，可以手動修改後再往下傳
   Anima Ratio To Size                      wh_ratio（例如 3:2）→ 寬、高（對齊 32）
 
@@ -57,7 +57,7 @@ class AnimaPromptEnhance:
     FUNCTION = "run"
     RETURN_TYPES = ("STRING", "STRING", "STRING")
     RETURN_NAMES = ("prompt", "wh_ratio", "thinking")
-    DESCRIPTION = ("用 Qwen-Image 2.1 PE Heretic（無審查版）把一句想法改寫成官方格式的完整英文提示詞。"
+    DESCRIPTION = ("用通用模型（Qwen3.5 9B／Qwen3.6 35B）把一句想法改寫成 Qwen-Image 2.1 官方格式的完整英文提示詞。"
                    "t2i＝文生圖；i2i＝改圖／多圖參考（要接圖）；anima＝Anima 動漫 tag 寫法。"
                    "填了「上一版提示詞」和「調整指令」就只改指令提到的部分。")
 
@@ -199,7 +199,7 @@ NODE_CLASS_MAPPINGS = {
     "AnimaRatioToSize": AnimaRatioToSize,
 }
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AnimaPromptEnhance": "Anima Prompt Enhance (Qwen PE Heretic)",
+    "AnimaPromptEnhance": "Anima Prompt Enhance",
     "AnimaPromptEdit": "Anima Prompt Edit (preview)",
     "AnimaRatioToSize": "Anima Ratio To Size",
 }

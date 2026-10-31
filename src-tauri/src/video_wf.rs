@@ -1,4 +1,4 @@
-//! 影片模型（2026-10-20）：內建的 LTX-2.3（graphs::build_video），或使用者匯入的 ComfyUI 影片工作流。
+//! 影片模型（2026-10-20）：內建的 MiniMax H3（2026-10-30 起；h3.rs，之前是 LTX-2.3），或使用者匯入的 ComfyUI 影片工作流。
 //! 選哪個存在 settings.json 的 video_engine（內建＝BUILTIN，其他＝工作流的代號）。
 //!
 //! 自訂工作流是在 ComfyUI 用「匯出（API）」存的 JSON，放在 data\video_workflows\<代號>.json。
@@ -25,15 +25,23 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Map, Value};
 use std::path::{Path, PathBuf};
 
-/// 內建流程的代號（settings.json 的 video_engine 預設值）
-pub const BUILTIN: &str = "ltx23";
-pub const BUILTIN_NAME: &str = "LTX-2.3 10Eros（內建）";
-/// MiniMax H3：不是工作流，「動起來」改開導演頁的 H3 影片台（h3.rs、server\api_h3.rs）
-pub const H3: &str = "h3";
+/// 內建影片的代號（settings.json 的 video_engine 預設值）：MiniMax H3（h3.rs、server\api_h3.rs）。
+/// 2026-10-30 LTX-2.3 退場（使用者：「把那個ltx2.3 狠狠的遺棄了…我們恭迎minimax h3」）
+pub const BUILTIN: &str = "h3";
+pub const BUILTIN_NAME: &str = "MiniMax H3（內建）";
+/// 同一個值的舊名字，其他檔照用
+pub const H3: &str = BUILTIN;
+/// 以前內建 LTX 的代號：舊設定、導演台專案、拍攝紀錄裡還會出現，讀到一律當 H3
+pub const LEGACY_LTX: &str = "ltx23";
 
-/// 不用匯入就有的影片模型（內建 LTX、H3 影片台）
+/// 舊代號換成現在的（ltx23 → h3），其他原樣
+pub fn normalize_engine(id: &str) -> &str {
+    if id == LEGACY_LTX { BUILTIN } else { id }
+}
+
+/// 不用匯入就有的影片模型（H3；舊的 ltx23 也算，會被當成 H3）
 pub fn is_builtin(id: &str) -> bool {
-    id == BUILTIN || id == H3
+    normalize_engine(id) == BUILTIN
 }
 const PROMPT: &str = "{{prompt}}";
 const IMAGE: &str = "{{image}}";
@@ -938,7 +946,7 @@ pub fn id_of(name: &str) -> String {
             && up.as_bytes()[3].is_ascii_digit());
     if s.is_empty() {
         "workflow".into()
-    } else if s == BUILTIN || s == H3 || reserved {
+    } else if s == BUILTIN || s == LEGACY_LTX || reserved {
         format!("{s}_wf")
     } else {
         s
@@ -1539,6 +1547,15 @@ mod tests {
             assert_eq!(g["2"]["inputs"]["length"], n, "{secs} 秒");
             assert_eq!(info["frames"], n);
         }
+    }
+
+    /// 2026-10-30 LTX 退場：內建影片就是 H3；設定、導演台、拍攝紀錄裡留著的 ltx23 一律讀成 h3
+    #[test]
+    fn legacy_engine_maps_to_h3() {
+        assert_eq!(BUILTIN, "h3");
+        assert_eq!(normalize_engine("ltx23"), "h3");
+        assert_eq!(normalize_engine("h3"), "h3");
+        assert_eq!(normalize_engine("wan-a"), "wan-a");
     }
 
     #[test]

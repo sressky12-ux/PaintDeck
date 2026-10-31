@@ -313,6 +313,10 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
             let (name, fam) = match_model(&list, &want).or_else(|| match_family(&list, &want)).cloned().ok_or_else(|| {
                 format!("No model named \"{want}\". Models: {}", clip(&list.iter().map(|(n, f)| format!("{n} ({f})")).collect::<Vec<_>>().join(", "), 1500))
             })?;
+            // 跟網頁的換模型（api_agent::base_model）同一條規則：別的家族會配錯文字編碼器和 VAE（2026-10-29 盤點）
+            if !crate::families::is_builtin(&fam) {
+                return Err(format!("{name} is a {fam} model; you can only use Anima, Qwen 2.1 and MOSS-Image models. Pick one of those, or stay on the current model."));
+            }
             let b = switch_base(cx.base, &name, &fam, &neg);
             // 9B 換完模型會把上一個請求的提示詞整段搬過來（2026-10-27 實測：要橘貓，畫成上一張的銀髮女孩）：把這次的要求貼回去
             out.text = format!(
@@ -412,6 +416,10 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
         }
         "video" => {
             let mut q = Map::from_iter([("mode".into(), json!("video")), ("prompt".into(), args["prompt"].clone()), ("video_seconds".into(), args["seconds"].clone())]);
+            // 設定選了 H3：明講要本機 H3（不帶的話 submit_jobs 只會回「到 H3 影片台做」，2026-10-29 盤點）
+            if super::api_gen::video_engine(&app.paths, &q) == crate::video_wf::H3 {
+                q.insert("video_engine".into(), json!(crate::video_wf::H3));
+            }
             if args["id"].is_i64() || args["ref"].is_i64() {
                 let (name, _, _) = input_of(app, args, cx.user_images).await?;
                 q.insert("init_image".into(), json!(name));

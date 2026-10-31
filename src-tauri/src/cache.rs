@@ -56,7 +56,7 @@ impl Group {
     }
 }
 
-fn linked(meta: &std::fs::Metadata) -> bool {
+pub(crate) fn linked(meta: &std::fs::Metadata) -> bool {
     #[cfg(windows)]
     {
         use std::os::windows::fs::MetadataExt;

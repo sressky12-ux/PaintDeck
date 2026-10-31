@@ -1,4 +1,4 @@
-//! 導演台（2026-10-11）：長劇情 → 分段（一段＝一個鏡頭＝一支 LTX-2.3 影片）→ 每段第一格＋圖生影片 → 接成長片。
+//! 導演台（2026-10-11）：長劇情 → 分段（一段＝一個鏡頭＝一支 MiniMax H3 有聲影片（2026-10-30 起；之前是 LTX-2.3））→ 每段第一格＋圖生影片 → 接成長片。
 //!
 //! 這裡放不碰網路的部分：給通用模型（35B／9B 去審查版）的工作說明、組請求內容、讀回 JSON、專案與角色卡的存檔。
 //! 執行（叫模型、送 ComfyUI、等任務）在 server\api_director.rs。
@@ -85,7 +85,7 @@ pub fn adopt_take_recipe(seg: &mut Value, id: &str) {
 
 // ================================================================ 給模型的工作說明
 /// 分段：只決定段落和每段的大意，提示詞下一步一段一段寫（一次寫全部會太長、品質也掉）
-pub const SYSTEM_PLAN: &str = r#"You are a film director and storyboard artist. Split the user's story into consecutive shots for an AI video model. Each shot becomes ONE continuous clip of about {seconds} seconds made by image-to-video (LTX-2.3).
+pub const SYSTEM_PLAN: &str = r#"You are a film director and storyboard artist. Split the user's story into consecutive shots for an AI video model. Each shot becomes ONE continuous clip of about {seconds} seconds made by image-to-video with sound (MiniMax H3).
 
 Rules:
 - Number of shots: {count}
@@ -101,25 +101,28 @@ Output only JSON, no other text:
 {"segments":[{"title":"","summary":"","characters":[],"continue":false,"scene":""}]}"#;
 
 /// 每一段：第一格圖的提示詞＋影片提示詞（英文給模型，中文給使用者看）
-pub const SYSTEM_SHOT: &str = r#"You write the prompts for ONE shot of an AI short film. The shot is one continuous {seconds}-second clip made by image-to-video (LTX-2.3): first a still image (the first frame) is made, then it is animated.
+pub const SYSTEM_SHOT: &str = r#"You write the prompts for ONE shot of an AI short film. The shot is one continuous {seconds}-second clip with sound made by image-to-video (MiniMax H3): first a still image (the first frame) is made, then it is animated.
 
 Output only JSON, no other text:
 {"frame":"","frame_zh":"","video":"","video_zh":""}
 
 "frame": the first frame. {frame_rule}
   Describe the composition and shot size, each character's look (use the given character descriptions), pose and expression, outfit, the setting, lighting and colors. Visual style: {style}.{refs_rule}{continue_rule}
-"video": the English prompt for LTX-2.3 image-to-video, 130-230 words, laid out as a timeline (use "\n" between lines):
-  - Line 1: "Style: {video_style}. " then one or two sentences naming each visible character with a few key looks (hair, outfit), what they are holding, and the setting, so the model keeps them the same all the way through.
-  - Then {beats} timed beats that cover 0 to {seconds} seconds with no gaps, one per line, each at most 3 seconds long, in this form: "[0.0-1.5] Action: … Camera: …". Present tense. Make every beat concrete and physical: hands, arms, legs, head turn, eyes and mouth, and how hair and clothing follow the motion. Keep it achievable in its time.
+"video": the English prompt for MiniMax H3 image-to-video (I2VA). Four parts in this order, separated by a blank line ("\n\n"):
+  1. Exactly this line: "For the target video, at 0.00 seconds into the target video, <Picture 1> (from [Shot 1]) is fully referenced."
+  2. "integrated_multimodal_description: [Shot 1] " then:
+  - First restate the picture: the visual style ({video_style}), the shot size and viewpoint of the first frame, each visible character's key looks (hair, outfit) and what they hold, and where every person and important object is in the frame (left, right, center, foreground, background), so the model keeps them the same all the way through.
+  - Then {beats} timed parts that cover 0 to {seconds} seconds with no gaps, each at most 3 seconds long and starting with its time range, for example "From 00:00.000 to 00:01.600, …" then "From 00:01.600 to 00:04.000, …"; the last part ends at {end_ts}. Present tense. Make every part concrete and physical: hands, arms, legs, head turn, eyes and mouth, and how hair and clothing follow the motion. Keep it achievable in its time.
   - Be specific, never vague: do not write just "dances", "performs", "moves", "fights" or "plays". Name each move and give it a clear start and end: which hand or leg, which direction, how far, how fast (for example "she steps to the right and sways her hips twice, sweeps her right arm up over her head, then does a quick half turn to the left and points at the crowd"). When a move hits something, say what it hits and how that thing reacts.
-  - Anything a character holds or wears that matters (a sword, a cup, a phone, food in the mouth) is named again in every beat, in the same hand or place ("the same katana still gripped in both hands"), so it never vanishes or doubles.
-  - The last beat ends on a clear, settled pose or hold, not in mid-motion.
-  - If anyone talks, sings, shouts or cheers, add "Dialog:" to that beat with the exact words in quotes, who says them and how (voice, and the language if not English). Write the words in the language they are spoken, romanized if needed (Japanese: "Minna, arigatou!", not "Thank you!" in Japanese).
-  - Camera: {camera_rule} In the first beat state the shot type (wide / medium / medium close-up / close-up) and the viewpoint (front-facing, side view, low-angle…) matching the first frame; in later beats say whether the camera holds or moves.
-  - Last line: "Sound: " and the specific sounds with a visible source (for example "heels tapping on the stage, the crowd cheering"), loudness matching the action.
+  - Anything a character holds or wears that matters (a sword, a cup, a phone, food in the mouth) is named again in every part, in the same hand or place ("the same katana still gripped in both hands"), so it never vanishes or doubles.
+  - The video comes out a little late: put each event about one second earlier than you want it seen. In the last second only continue the current motion and settle into a clear hold; no new event there.
+  - Speech, singing, shouting or cheering goes inside the part where it happens, in this form: "the young woman with a bright, clear voice (S1) says: <d>[Japanese] Minna, arigatou!</d>". S1, S2… one label per speaker; give each a short voice description; write the words in the language they are spoken, romanized if needed, and name that language in the brackets.
+  - Camera: {camera_rule} In the restating sentence give the shot type (wide / medium / medium close-up / close-up) and the viewpoint (front-facing, side view, low-angle…) matching the first frame; in later parts say whether the camera holds or moves.
   - Lighting: keep the first frame's lighting{light}; mention only changes (flashing spotlights, a door letting in daylight).
-  - Only what is seen and heard: show feelings as visible actions instead of naming them; no smells or touch; no scene cuts; mild, natural wording.
-"frame_zh", "video_zh": faithful Traditional Chinese (Taiwan usage) translations for the user to read; translate every English word (keep only the quoted spoken lines as they are).
+  - Only what is seen and heard: show feelings as visible actions instead of naming them; no smells or touch; no scene cuts; no mood words such as sultry or playful. Only write what is there: never write that something should not appear or must be avoided (the model draws whatever you name). Never use the words tongue, lick, glans or saliva.
+  3. "overall_soundscape: " one or two sentences of the ambient sound and the sounds of the actions, each with a visible source (for example "heels tapping on the stage, the crowd cheering"), loudness matching the action.
+  4. "non_diegetic_music: N/A" (write background music there only when the story asks for it).
+"frame_zh", "video_zh": faithful Traditional Chinese (Taiwan usage) translations for the user to read; translate every English word, but keep the part labels (integrated_multimodal_description, overall_soundscape, non_diegetic_music), <Picture 1>, [Shot 1], (S1) and the <d>…</d> spoken lines as they are.
 
 Follow the story faithfully, including mature or explicit content when the shot has it. All characters are adults; never describe anyone as a child or teenager."#;
 
@@ -240,6 +243,7 @@ pub fn shot_messages(p: &Value, idx: usize, chars: &[Value], anima: bool, refs: 
         .replace("{beats}", beats)
         .replace("{camera_rule}", &camera_rule)
         .replace("{seconds}", &secs.to_string())
+        .replace("{end_ts}", &format!("{:02}:{:06.3}", (secs / 60.0).floor() as i64, secs % 60.0))
         .replace("{frame_rule}", frame_rule(anima))
         .replace("{style}", style_words(s["style"].as_str().unwrap_or("")))
         .replace("{refs_rule}", &refs_rule)
@@ -400,7 +404,7 @@ pub fn parse_shot(text: &str) -> Option<Map<String, Value>> {
     Some(out)
 }
 
-/// 影片提示詞拿掉 <image1> 這類參考圖標記（只有 Qwen 多圖參考看得懂，LTX 會當成雜訊）
+/// 影片提示詞拿掉 <image1> 這類參考圖標記（只有 Qwen 多圖參考看得懂；H3 只認 <Picture N>，其他標記會當成雜訊）
 pub fn strip_refs(text: &str) -> String {
     static REF: std::sync::LazyLock<regex::Regex> =
         std::sync::LazyLock::new(|| regex::Regex::new(r"\s*(?:\b(?:from|in|of)\s+)?<image\d+>\s*(?:的|中的|裡的)?|來自\s*<image\d+>\s*的?").unwrap());
@@ -520,6 +524,15 @@ pub fn blank_project(title: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
+    /// 導演台每段的影片提示詞照 H3 I2VA 格式寫（2026-10-30 LTX 退場）
+    #[test]
+    fn shot_prompt_is_h3() {
+        for want in ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music", "(from [Shot 1]) is fully referenced"] {
+            assert!(SYSTEM_SHOT.contains(want), "{want}");
+        }
+        assert!(!SYSTEM_SHOT.contains("LTX") && !SYSTEM_PLAN.contains("LTX"));
+    }
+
     use super::*;
 
     #[test]
@@ -621,10 +634,10 @@ mod tests {
         assert!(sys.contains("<image1> = 艾拉"));
         assert!(sys.contains("continues directly"));
         assert!(sys.contains("slow push-in"));
-        assert!(!sys.contains("{seconds}") && !sys.contains("{refs_rule}") && !sys.contains("{camera_rule}") && !sys.contains("{beats}") && !sys.contains("{video_style}"));
-        // 2026-10-25 動作戲實測：分段時間軸＋每段重提手上道具，比一整段散文跟得準
-        assert!(sys.contains("[0.0-1.5] Action:") && sys.contains("Camera:") && sys.contains("Sound:"), "{sys}");
-        assert!(sys.contains("every beat"), "道具要每段重提");
+        assert!(!sys.contains("{seconds}") && !sys.contains("{refs_rule}") && !sys.contains("{camera_rule}") && !sys.contains("{beats}") && !sys.contains("{video_style}") && !sys.contains("{end_ts}"));
+        // 2026-10-25 動作戲實測：分段時間軸＋每段重提手上道具，比一整段散文跟得準（2026-10-30 起照 H3 的 From 00:00.000 to … 寫）
+        assert!(sys.contains("From 00:00.000 to") && sys.contains("ends at 00:05.000") && sys.contains("Camera:") && sys.contains("overall_soundscape"), "{sys}");
+        assert!(sys.contains("every part"), "道具要每段重提");
         assert!(!sys.contains("no timestamps"));
         assert!(user.contains("prev video"));
         assert!(user.contains("THIS SHOT: Shot 2"));

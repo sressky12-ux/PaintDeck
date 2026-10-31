@@ -28,17 +28,24 @@
     "note": null
   },
   {
-    "path": "LLM/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf",
-    "size": 5627045248,
-    "sha256": "ea1858ef4dc4b648b8dbb44612962a0333e945060dd0545ac0f28d7c4416e4b3",
-    "url": "https://huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/9f646d7eda193ddf2348134f3bff3d49eed7a2c6/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf",
+    "path": "LLM/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-IQ3_M.gguf",
+    "size": 5615267104,
+    "sha256": "88cce3a5c2793a801e1c3f9b7ec4eaaa8d4c68ad2017718b517b6d019281eaea",
+    "url": "https://huggingface.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF/resolve/d5f3139249b7ee2535c20ab81125c9a6ab0c4915/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-IQ3_M.gguf",
     "note": null
   },
   {
-    "path": "LLM/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf",
-    "size": 918166016,
-    "sha256": "56f07ff42fc9ab24fc06a93dce5a48fb2dbe08bff1a1c6e519d50af450820148",
-    "url": "https://huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/9f646d7eda193ddf2348134f3bff3d49eed7a2c6/Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf",
+    "path": "LLM/Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf",
+    "size": 918166080,
+    "sha256": "f70dc3509053962b0d0d3ee8a7eacebf5d60aa560cad78254ae8698516ae029f",
+    "url": "https://huggingface.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-Uncensored-Heretic-NEO-IMATRIX-MAX-MTP-GGUF/resolve/d5f3139249b7ee2535c20ab81125c9a6ab0c4915/mmproj-F16.gguf",
+    "note": null
+  },
+  {
+    "path": "LLM/Qwen3-Embedding-0.6B-Q8_0.gguf",
+    "size": 639150592,
+    "sha256": "06507c7b42688469c4e7298b0a1e16deff06caf291cf0a5b278c308249c3e439",
+    "url": "https://huggingface.co/Qwen/Qwen3-Embedding-0.6B-GGUF/resolve/370f27d7550e0def9b39c1f16d3fbaa13aa67728/Qwen3-Embedding-0.6B-Q8_0.gguf",
     "note": null
   },
   {
@@ -53,27 +60,6 @@
     "size": 899283072,
     "sha256": "c8e702344a81f8c226a914aa980ed6e1f604bce9374f1fed8e65c896908af414",
     "url": "https://huggingface.co/SC117/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-APEX-GGUF/resolve/313e55f61a045dd18ac023d28fe845ee35988a5d/mmproj-Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-APEX-F16.gguf",
-    "note": null
-  },
-  {
-    "path": "LLM/pe_i2i_heretic-Q4_K_M.gguf",
-    "size": 5891334720,
-    "sha256": "4fa7d846acc6b6366f2b959293fb073f304d18c2d0a73d7a193cb09cc87bf074",
-    "url": "https://huggingface.co/pottokao/Qwen-Image-2.1-PE-I2I-Heretic-GGUF/resolve/564f783ebea6c244c7dae8460ece65eb174479a6/pe_i2i_heretic-Q4_K_M.gguf",
-    "note": null
-  },
-  {
-    "path": "LLM/pe_i2i_heretic.mmproj-bf16.gguf",
-    "size": 921704608,
-    "sha256": "171a59a76e498252fb0ee5c145633c6f3a2eaaad03a171e3d5828de230369807",
-    "url": "https://huggingface.co/pottokao/Qwen-Image-2.1-PE-I2I-Heretic-GGUF/resolve/564f783ebea6c244c7dae8460ece65eb174479a6/pe_i2i_heretic.mmproj-bf16.gguf",
-    "note": null
-  },
-  {
-    "path": "LLM/pe_t2i_heretic-Q4_K_M.gguf",
-    "size": 5891334688,
-    "sha256": "9b54cb855d6565e6f330bd6fd35879b6d79e250121c7ea263be88256edd6d262",
-    "url": "https://huggingface.co/pottokao/Qwen-Image-2.1-PE-T2I-Heretic-GGUF/resolve/143825976126abcfa68722d3e48819c5647f9cd8/pe_t2i_heretic-Q4_K_M.gguf",
     "note": null
   },
   {
@@ -566,6 +552,20 @@
     "note": null
   },
   {
+    "path": "loras/moss/moss_speed_dmd_lodestones.safetensors",
+    "size": 1189176800,
+    "sha256": "be82ab2bef78194651815bb6de443cec67553e01c14559f2ad365449445f0452",
+    "url": "https://huggingface.co/lodestones/MOSS-Image-SFT-8-steps-dmd/resolve/f95df83b5e90ae91ea412434b3f9b7f1c8c6314f/lora_latest.safetensors",
+    "note": "MOSS 快速（8 步 DMD 加速 LoRA，lodestones 的 lora_latest）"
+  },
+  {
+    "path": "loras/moss/moss_edit_chinoll.safetensors",
+    "size": 297382216,
+    "sha256": "17a48b8c605dcffdedb92a2b887d18cf316505be90802717669fb6556098dcdf",
+    "url": "https://huggingface.co/chinoll/Moss-Image-Edit/resolve/3be9c40037e1b89b17aa85ff6f8ee805872aa558/adapter_model.safetensors",
+    "note": "MOSS 照指令改圖（chinoll/Moss-Image-Edit 編輯 LoRA）"
+  },
+  {
     "path": "text_encoders/qwen3.5_9b_w4a8_gptq.safetensors",
     "size": 7343591088,
     "sha256": "4cc6a1543ad2061806da46f35f90cadb4801dcba246c44782cf42ec0feb6407c",
@@ -592,5 +592,600 @@
     "sha256": "9ab37426bf4de0567af6b5d21b16151357149139362e6e8992021b8ce356a154",
     "url": "https://huggingface.co/Comfy-Org/BiRefNet/resolve/25511f8787e51912e1480706b4e47b8f467fbf72/background_removal/birefnet.safetensors",
     "note": "一鍵去背（BiRefNet）"
+  },
+  {
+    "path": "diffusion_models/10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors",
+    "size": 13997668774,
+    "sha256": "a8067999c65594b462d581c02b8a0573dd42d9812a14c586150a947c13388f2e",
+    "url": "https://huggingface.co/TenStrip/10Eros-Max/resolve/682e73d12dcaf766dd31b4bb2991084119c2df8c/10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors",
+    "note": "H3 影片主模型（10Eros-Max w4a8，8GB 顯卡能跑）"
+  },
+  {
+    "path": "text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "size": 15687142551,
+    "sha256": "35a88d51044231fe332301d7a62aa81e3f2cba62febeb446e2c1e3e0ef76f2c6",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/912b6e38b2092ec4d2e86d24183e0d59ea059d48/text_encoders/qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors",
+    "note": "H3 影片的文字編碼器"
+  },
+  {
+    "path": "vae/minimax_h3_video_vae_int8_convrot.safetensors",
+    "size": 2811065184,
+    "sha256": "52a2c8c73583c86e4f41cdcce3a6ad0ea562987bc0bf3d60a0cef5f5c8e60c0e",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/912b6e38b2092ec4d2e86d24183e0d59ea059d48/vae/minimax_h3_video_vae_int8_convrot.safetensors",
+    "note": "H3 影片的畫面 VAE"
+  },
+  {
+    "path": "vae/minimax_h3_audio_vae_fp32.safetensors",
+    "size": 605254808,
+    "sha256": "8e505d95dd1561d47abd43d4238fd40d9bb1ae9e147ed0a4cba778d76ae4db48",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/912b6e38b2092ec4d2e86d24183e0d59ea059d48/vae/minimax_h3_audio_vae_fp32.safetensors",
+    "note": "H3 影片的聲音 VAE"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors",
+    "size": 1132530600,
+    "sha256": "01329abd340dd9cf55677381a11558fe5307c7fd648f1988b441172fbbd86fd5",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/02db0aac993b27721672bfe9da9c952b3390c3af/SFT%E4%BC%AA%E5%BD%B1%E4%BF%AE%E5%A4%8D/moss_image_sft_banding_fix_L37-41_bf16.safetensors",
+    "note": "MOSS 合集：MOSS 去色帶（主）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L32-36_extra_bf16.safetensors",
+    "size": 1132530600,
+    "sha256": "7f6e43c7566b0c04ad9772cf3efdf9da973b65e242d1a384b17e8db91a6337cd",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/02db0aac993b27721672bfe9da9c952b3390c3af/SFT%E4%BC%AA%E5%BD%B1%E4%BF%AE%E5%A4%8D/moss_image_sft_banding_fix_L32-36_extra_bf16.safetensors",
+    "note": "MOSS 合集：MOSS 去色帶（加強）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/加速LoRA/moss_image_sft_4step_v2.0.safetensors",
+    "size": 1189176752,
+    "sha256": "154c7f1455c3bf9925945c2f1ea2e4f09d0d0c67256081384a094b2b585f913f",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/caac44400dcc6ccc711a32a8ef99c3df51b79e12/%E5%8A%A0%E9%80%9FLoRA/moss_image_sft_4step_v2.0.safetensors",
+    "note": "MOSS 合集：MOSS 4 步加速"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/加速LoRA/lodestones-8-steps-dmd2-lora.safetensors",
+    "size": 1189176800,
+    "sha256": "7683fe1fb51f73f5d690f24dd6b7f46f31ab9a9873729a854ac5c9a420ffe6f2",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/6198d3096cde78cee57c3f668ed665ef06b53ad4/%E5%8A%A0%E9%80%9FLoRA/lodestones-8-steps-dmd2-lora.safetensors",
+    "note": "MOSS 合集：MOSS 8 步加速（DMD2）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/加速LoRA/MOSS-Image-16step-cfg1-BF16.safetensors",
+    "size": 594627072,
+    "sha256": "29f627838213636b0eb4a1396ea084c85b47674a7ca585ba5ee731455f2e91db",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/ea97e9e48dc7f29c54110d465babbdd1a35c5c54/%E5%8A%A0%E9%80%9FLoRA/MOSS-Image-16step-cfg1-BF16.safetensors",
+    "note": "MOSS 合集：MOSS 16 步 CFG1"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/美妆滤镜滑块_beautyFilter_-3to3.safetensors",
+    "size": 37263568,
+    "sha256": "bc601a20c2ee34063b03380e7d750c0f9ccb7e85cb1a501578d02c75e84fa33f",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/a06b2d69d782790d02ce26562b97ea1bfb4d40a2/%E6%BB%91%E5%9D%97/%E7%BE%8E%E5%A6%86%E6%BB%A4%E9%95%9C%E6%BB%91%E5%9D%97_beautyFilter_-3to3.safetensors",
+    "note": "MOSS 合集：美顏濾鏡滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/体重滑块weight_slider_moss_v5_W_-5+5.safetensors",
+    "size": 18196304,
+    "sha256": "2e3ac80379c2f65ff5b3cce2cf8ac1eaf6ddd924a87d4bcddfcd1238378e1421",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/8550c55476164fa25aa932ad3ee0e9a7bab3335b/%E6%BB%91%E5%9D%97/%E4%BD%93%E9%87%8D%E6%BB%91%E5%9D%97weight_slider_moss_v5_W_-5%2B5.safetensors",
+    "note": "MOSS 合集：體重滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/waist_slider_-3_+3.safetensors",
+    "size": 36423204,
+    "sha256": "580a4c44541abaec56bcfe7712c476b45d33667d63cb48c9936415fa2e1244cf",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/74a8f1feeb514ace920302e95108379adf5c52cf/%E6%BB%91%E5%9D%97/waist_slider_-3_%2B3.safetensors",
+    "note": "MOSS 合集：腰圍滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/肤色滑块skin_tone_W_-3+3.safetensors",
+    "size": 12169016,
+    "sha256": "747448aa7f1bae078622d18e532759fe4d39c9c1b143a1c6ac107ae5529cf9a9",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/a33cb5f08ddd0857094b84e3aa22985d4b8ffb20/%E6%BB%91%E5%9D%97/%E8%82%A4%E8%89%B2%E6%BB%91%E5%9D%97skin_tone_W_-3%2B3.safetensors",
+    "note": "MOSS 合集：膚色滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/mossbase质量增强滑块_anima_pure_text_slider_rank16.safetensors",
+    "size": 74401176,
+    "sha256": "29d7b624a374104a79cbe5d3d07127caf6f175e5a530baa095a7bdf6a887ccc8",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/7109c893b6311f7b4cc25a67cbe9e3723809d980/%E6%BB%91%E5%9D%97/mossbase%E8%B4%A8%E9%87%8F%E5%A2%9E%E5%BC%BA%E6%BB%91%E5%9D%97_anima_pure_text_slider_rank16.safetensors",
+    "note": "MOSS 合集：畫質增強滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/细节滑块-0.75-+0.75.safetensors",
+    "size": 9371960,
+    "sha256": "1d3e8e03c256e48e241f2d4ff9a23a6f2185b5d35b9359771d3865504923ebab",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/77736c28b6ec1c23f92b0fd976eda52f3d64b03f/%E6%BB%91%E5%9D%97/%E7%BB%86%E8%8A%82%E6%BB%91%E5%9D%97-0.75-%2B0.75.safetensors",
+    "note": "MOSS 合集：細節滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/细节imagefinish-sft-epoch0150-W-2+2.safetensors",
+    "size": 9372144,
+    "sha256": "f07fe895c110e33df8002039588d47ee412f2646cce273b89b5aff5b4925b35c",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/d820625322d3ca7a7c313918450a072eb13724b9/%E6%BB%91%E5%9D%97/%E7%BB%86%E8%8A%82imagefinish-sft-epoch0150-W-2%2B2.safetensors",
+    "note": "MOSS 合集：細節滑桿（finish）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/细节target-epoch0150-W-0.75+0.75.safetensors",
+    "size": 9372136,
+    "sha256": "d50d8d89328d5a7ea59fcd3de959a32503268fba3bb02af041f36035095a5a7d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3f7e9eff187ac35cb2806c95ca8f930e9ba866c6/%E6%BB%91%E5%9D%97/%E7%BB%86%E8%8A%82target-epoch0150-W-0.75%2B0.75.safetensors",
+    "note": "MOSS 合集：細節滑桿（target）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/moss_vector滑块_-2+2.safetensors",
+    "size": 9372016,
+    "sha256": "ff5aeb09f4d59c948033d8e9711614a2a42569c117599db11d5bf1bb3de87ed6",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/717a4ef75f2fbd7d45907b139b3c2c1282de598f/%E6%BB%91%E5%9D%97/moss_vector%E6%BB%91%E5%9D%97_-2%2B2.safetensors",
+    "note": "MOSS 合集：向量／線稿感滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/moss_lighting_slider_-1+1.safetensors",
+    "size": 4726736,
+    "sha256": "83353f05cf0b5fee14c555da6f5805676f98224ec42d7dc9b00be6338c39de6d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/cded09b1faf937081ba1fbcc2509555543ec91a3/%E6%BB%91%E5%9D%97/moss_lighting_slider_-1%2B1.safetensors",
+    "note": "MOSS 合集：光線滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/contrast_HDR_slider--3+2.5.safetensors",
+    "size": 37279824,
+    "sha256": "a59dcac7d666696823fdcc617a7b26093179311d124660849266119196adcf92",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/e2f7aeaa4d7b940de546265c922a42e92733e7a5/%E6%BB%91%E5%9D%97/contrast_HDR_slider--3%2B2.5.safetensors",
+    "note": "MOSS 合集：對比／HDR 滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/white_balance_slide_-3+3_v1.safetensors",
+    "size": 37292216,
+    "sha256": "560c433e2c9e02a5f0c5654dd2b04535ab6a66e23f961d46afca7dbcb89b5e8c",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/b6a01046a06ab843c50e25588fbcd2c4d70b5cd3/%E6%BB%91%E5%9D%97/white_balance_slide_-3%2B3_v1.safetensors",
+    "note": "MOSS 合集：白平衡滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/背景清晰度_BackgroundSharpness_MOSS-sft_v1.safetensors",
+    "size": 37246680,
+    "sha256": "f34612a0ed5383f5d4b72ff380ca70481e065ba20f7935968a8bdfa5fd38f8d9",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/b34612ee1a16c8fd3081a91477d7d747a8947cfe/%E6%BB%91%E5%9D%97/%E8%83%8C%E6%99%AF%E6%B8%85%E6%99%B0%E5%BA%A6_BackgroundSharpness_MOSS-sft_v1.safetensors",
+    "note": "MOSS 合集：背景清晰度滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/photo and illustrations_Slider_MOSS-sft_-2+2.safetensors",
+    "size": 37246680,
+    "sha256": "4bd319a3855d018341eac5f641054fa31e062d4e89815fa788ff3c5a686ed858",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/dc580c59a5a6666d211a07796fb5da6663c09485/%E6%BB%91%E5%9D%97/photo%20and%20illustrations_Slider_MOSS-sft_-2%2B2.safetensors",
+    "note": "MOSS 合集：照片↔插畫滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/EDIT/MOSS_CAOTICA_REMIX_000000050.safetensors",
+    "size": 18196304,
+    "sha256": "705a7f079e93ecdfe9ccac41ac64b10f3166c72394e281009b57ed0077a98544",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/62a2981a96184fe36d1e176b1994e825ee99e589/EDIT/MOSS_CAOTICA_REMIX_000000050.safetensors",
+    "note": "MOSS 合集：CAOTICA 混搭編輯"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/EDIT/moss_image_charref_v2.safetensors",
+    "size": 148697656,
+    "sha256": "1a77e98228242d7ca79dd01df737d751f211f2ae676f16cce664987dbf0bac05",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/ebce44ee7948fd3712a2b5941738df87ffb7b329/EDIT/moss_image_charref_v2.safetensors",
+    "note": "MOSS 合集：角色參考 v2"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/真漫转换/NO1.anime2real.safetensors",
+    "size": 129016016,
+    "sha256": "fffd416e2663ab1a4a5a64db4f24949d98b4981ac3e80a3cc2633cececbd0bb6",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/c96ed109ade25e4fb6bbbabf6c7cac03bfcf229e/%E7%9C%9F%E6%BC%AB%E8%BD%AC%E6%8D%A2/NO1.anime2real.safetensors",
+    "note": "MOSS 合集：動漫轉寫實 NO1"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/真漫转换/Moss_SFT_Edit_A2R_v1_000006000.safetensors",
+    "size": 290254376,
+    "sha256": "e62400fd3215337e17f260ac80cb5f5dac42dd958ff115c31cb7d7321e11cb05",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/8078625e00442e5f00870a05ba5b7ab3acba371f/%E7%9C%9F%E6%BC%AB%E8%BD%AC%E6%8D%A2/Moss_SFT_Edit_A2R_v1_000006000.safetensors",
+    "note": "MOSS 合集：動漫轉寫實 A2R（6000 步）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/真漫转换/漫转真Moss_SFT_Edit_A2R_v1_000003000.safetensors",
+    "size": 290254376,
+    "sha256": "0af9a7c6d72431778ee3afbbf047ddcb1a9718875a599d443c3e314ff2a47614",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/845458d0a63c8082ae922e50a522c4ed918d11ab/%E7%9C%9F%E6%BC%AB%E8%BD%AC%E6%8D%A2/%E6%BC%AB%E8%BD%AC%E7%9C%9FMoss_SFT_Edit_A2R_v1_000003000.safetensors",
+    "note": "MOSS 合集：動漫轉寫實 A2R（3000 步）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/Phone Photography (2000-2025)/phone_photography_2000_moss.safetensors",
+    "size": 129017224,
+    "sha256": "8c76d51a622feb8f17e621235227096892b8e6bee940567cccb7b9a71a01fc68",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/27ef550dfb3f82a7bb52a889d0ee73248858d85f/Phone%20Photography%20%282000-2025%29/phone_photography_2000_moss.safetensors",
+    "note": "MOSS 合集：2000 年手機照"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/Phone Photography (2000-2025)/phone_photography_2007_moss.safetensors",
+    "size": 129017232,
+    "sha256": "c039e7b8cc19c13e049d2a31cfbd34282755ba39d01d11922730bf6fd4d11205",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/27ef550dfb3f82a7bb52a889d0ee73248858d85f/Phone%20Photography%20%282000-2025%29/phone_photography_2007_moss.safetensors",
+    "note": "MOSS 合集：2007 年手機照"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/Phone Photography (2000-2025)/phone_photography_2020_moss.safetensors",
+    "size": 129017232,
+    "sha256": "0f140dfb888e390e96565accdc63634c86ec837137e26afd8c563c889d5a18c0",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/27ef550dfb3f82a7bb52a889d0ee73248858d85f/Phone%20Photography%20%282000-2025%29/phone_photography_2020_moss.safetensors",
+    "note": "MOSS 合集：2020 年手機照"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/Phone Photography (2000-2025)/phone_photography_2025_moss.safetensors",
+    "size": 129017232,
+    "sha256": "ffdeb1c0310cad155b74b1569bd7fe3e8e468c689672a866e50cef79be2ac6c9",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/27ef550dfb3f82a7bb52a889d0ee73248858d85f/Phone%20Photography%20%282000-2025%29/phone_photography_2025_moss.safetensors",
+    "note": "MOSS 合集：2025 年手機照"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/lenovo_moss.safetensors",
+    "size": 64527960,
+    "sha256": "f28ab12e33e60146c8740a86730385cf5ba488e9f6eda50b14383d6ddbf300fb",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/cebad3f68fc134ff6e07c8ed9bb8ecc0120950e1/%E8%84%B8%E6%A8%A1%E7%AD%89/lenovo_moss.safetensors",
+    "note": "MOSS 合集：通用人像臉模"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/nicegirls_v2_moss.safetensors",
+    "size": 64527976,
+    "sha256": "544264014d2712bc812c78920ae8480c8bfa0826736309d6b428ecce55783b5c",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/101e189be6f98f38c46b3ccd3d0462f75d5a450f/%E8%84%B8%E6%A8%A1%E7%AD%89/nicegirls_v2_moss.safetensors",
+    "note": "MOSS 合集：甜美女性臉模"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/ultra_real_moss_sft_v1_pro_Weight_0.6_0.8.safetensors",
+    "size": 129017232,
+    "sha256": "fd20fef216f8d30c94ea2812acdb80b04981f3d5922778aba7e9b52ec9d0feaa",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/f2b673b56dc92123ba40aa05037f348144a8c52a/%E8%84%B8%E6%A8%A1%E7%AD%89/ultra_real_moss_sft_v1_pro_Weight_0.6_0.8.safetensors",
+    "note": "MOSS 合集：超寫實人像 pro"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/ultra_real_moss_v2.safetensors",
+    "size": 129015496,
+    "sha256": "b7574656d90d668bde19c809812cee5f342433533173e34416f6177cd736ba4e",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/300bfad44fab0cd28399d4910bd115040b973e33/%E8%84%B8%E6%A8%A1%E7%AD%89/ultra_real_moss_v2.safetensors",
+    "note": "MOSS 合集：超寫實人像 v2"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/亚洲写实NexBlend01MossImage.safetensors",
+    "size": 290254168,
+    "sha256": "2e17195808dd4f88e64d0de21959e9fde8767ed261cf745a63b7d10219f67c85",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/e6d120ab9cb4aeaac9b26c08c8d8fb4c318a01c9/%E8%84%B8%E6%A8%A1%E7%AD%89/%E4%BA%9A%E6%B4%B2%E5%86%99%E5%AE%9ENexBlend01MossImage.safetensors",
+    "note": "MOSS 合集：亞洲寫實臉 NexBlend01"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/韩系写实NexBlend02Moss.safetensors",
+    "size": 290254320,
+    "sha256": "1d01d4bf49e45c57965950529b128e6b3e10a87230d61c17c1320292dbf730d1",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/8cc86de9f7c140fd9694ba84e6522d6015e48c3d/%E8%84%B8%E6%A8%A1%E7%AD%89/%E9%9F%A9%E7%B3%BB%E5%86%99%E5%AE%9ENexBlend02Moss.safetensors",
+    "note": "MOSS 合集：韓系寫實臉 NexBlend02"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/Japanese AI girl_T_kz_yuuko.safetensors",
+    "size": 72608496,
+    "sha256": "f6f2b4da233d647d1a4ab9ba13253554252a96a4938bfad0c394530128e85908",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/905492fcac70bca3ad8f1eca72c85b3d795c8e58/%E8%84%B8%E6%A8%A1%E7%AD%89/Japanese%20AI%20girl_T_kz_yuuko.safetensors",
+    "note": "MOSS 合集：日系 AI 女孩 yuuko"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/Japanese AI girl_T_ kz_miyuka_W_1±0.2.safetensors",
+    "size": 145157224,
+    "sha256": "dc984efcfa8308cc3b93945c60abaf948300d87fca1c645cfcc294978df09bff",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5a7d01b2fa2b47eee2cdd738688b561a3330f0f6/%E8%84%B8%E6%A8%A1%E7%AD%89/Japanese%20AI%20girl_T_%20kz_miyuka_W_1%C2%B10.2.safetensors",
+    "note": "MOSS 合集：日系 AI 女孩 miyuka"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/realistic-moss-nikastyle-moss-image-base-epoch-20.safetensors",
+    "size": 257992368,
+    "sha256": "9f96fda73b085e23027ab0f8478e66488f7dcab9be730e800207d269b701b387",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/96f337244f7e0a078967027f78752433872b08ae/%E8%84%B8%E6%A8%A1%E7%AD%89/realistic-moss-nikastyle-moss-image-base-epoch-20.safetensors",
+    "note": "MOSS 合集：寫實臉 nikastyle"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/ViRealismMoss_V1_T_virealism.safetensors",
+    "size": 290254368,
+    "sha256": "122a128ca3c12bd35a98fbd93f4b88893af03d5e249ff8967ece1614b39054d4",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/1b7ba2095971fa84bba44307e57b4b62d1aca007/%E8%84%B8%E6%A8%A1%E7%AD%89/ViRealismMoss_V1_T_virealism.safetensors",
+    "note": "MOSS 合集：ViRealism 寫實"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/南宫婉Face.safetensors",
+    "size": 148763984,
+    "sha256": "de751fd61cca99d80a56bb9b2702fa38f6a6db6b2b151a8adcde8af81ce39dc5",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/a2269796c02f30eef5df89057bed676726af19f8/%E8%84%B8%E6%A8%A1%E7%AD%89/%E5%8D%97%E5%AE%AB%E5%A9%89Face.safetensors",
+    "note": "MOSS 合集：南宮婉臉模"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/脸模等/中国大叔moss-cn-uncle.safetensors",
+    "size": 129017232,
+    "sha256": "69a558a635f6527fbe149d11841a3f719becf5f0fbe213b540b4bc911b27d854",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3f9718691601f841f123ef4245c3d8200f81d00d/%E8%84%B8%E6%A8%A1%E7%AD%89/%E4%B8%AD%E5%9B%BD%E5%A4%A7%E5%8F%94moss-cn-uncle.safetensors",
+    "note": "MOSS 合集：中年大叔臉"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/2.5D 动画风格Impasto Anime Style.safetensors",
+    "size": 64528288,
+    "sha256": "c793c19be6c8bdfccdd31a34e9fb4d7c529b032e68adc7901b1305d122dd37d1",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/97e9f908e854e4b2f41e2457bf11f7ee13315df4/%E9%A3%8E%E6%A0%BC/2.5D%20%E5%8A%A8%E7%94%BB%E9%A3%8E%E6%A0%BCImpasto%20Anime%20Style.safetensors",
+    "note": "MOSS 合集：2.5D 厚塗動畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/CGI style.safetensors",
+    "size": 145223150,
+    "sha256": "f48d83e05d8989cb7ef3b3888d8ebba1d7d87afb27fadf5dc66cab3a06910e2d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5356273da89da58328bba3ff6b473a762ecab932/%E9%A3%8E%E6%A0%BC/CGI%20style.safetensors",
+    "note": "MOSS 合集：CGI 3D 渲染風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/Illustration style_numoss.safetensors",
+    "size": 129015960,
+    "sha256": "5573143a6259b44b13bebcc544857cd16c4b1c19d16d5a12d8f35a68b4c49763",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/24622eef0e9657c108fcb79cfd884483224ec569/%E9%A3%8E%E6%A0%BC/Illustration%20style_numoss.safetensors",
+    "note": "MOSS 合集：插畫風 numoss"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/Nyalia_moss_v1_lokr.safetensors",
+    "size": 145174053,
+    "sha256": "4dfc6dfb4d823455a2783bed90d874fa07f2d1782d6cdc942cc7e44aa51c5303",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/Nyalia_moss_v1_lokr.safetensors",
+    "note": "MOSS 合集：Nyalia 畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/TJFilmMoss_V1_T_vifilm.safetensors",
+    "size": 145157296,
+    "sha256": "1c08050f20869c0be01102118caeeaf9b3d405bd1ec529f67d80495924cbe51d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/fffee62e069525480063cc9ee66f406a37240b07/%E9%A3%8E%E6%A0%BC/TJFilmMoss_V1_T_vifilm.safetensors",
+    "note": "MOSS 合集：電影感 vifilm"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/anireal_moss_lora_v1.safetensors",
+    "size": 129015928,
+    "sha256": "827b1f76485d0cb63c6f84fa0ad5a2e4045667ad41b000f00c0a6f10d6e94f36",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/anireal_moss_lora_v1.safetensors",
+    "note": "MOSS 合集：動漫寫實化 anireal"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/blue-archive-style.safetensors",
+    "size": 129017232,
+    "sha256": "acb4c62b0a8488e7a3c7ebe182c5733d704fc079f08386a5e9f8814ac946dc35",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5356273da89da58328bba3ff6b473a762ecab932/%E9%A3%8E%E6%A0%BC/blue-archive-style.safetensors",
+    "note": "MOSS 合集：蔚藍檔案動畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/dlss5风格（鸣潮、终末地、异环）T_@DLSS5.safetensors",
+    "size": 148697352,
+    "sha256": "ef633b64777406aa8c06f7751f75b9d220a18319cf211a7a4b906442d6099b6b",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/a5431981cebc826ea346784af664ca8b7b54d15f/%E9%A3%8E%E6%A0%BC/dlss5%E9%A3%8E%E6%A0%BC%EF%BC%88%E9%B8%A3%E6%BD%AE%E3%80%81%E7%BB%88%E6%9C%AB%E5%9C%B0%E3%80%81%E5%BC%82%E7%8E%AF%EF%BC%89T_%40DLSS5.safetensors",
+    "note": "MOSS 合集：鳴潮／終末地遊戲風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/iPhone15_W1to3.safetensors",
+    "size": 37246680,
+    "sha256": "e0a680502c0a953ee485cf0e45a7654886ed36fb82580dfe5b43479b456c8790",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131e0afc012ac2e37bbd48fc060f884513d38046/%E9%A3%8E%E6%A0%BC/iPhone15_W1to3.safetensors",
+    "note": "MOSS 合集：iPhone 15 照片風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/instagram_aesthetic_v1.safetensors",
+    "size": 129017232,
+    "sha256": "ca8fa0b237184636f5844d88cfefb1462da4dfe13d64c36216a5dfffae6ad5a8",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5d94467eef082f05da4c52edd49b4d7c01ba5ad1/%E9%A3%8E%E6%A0%BC/instagram_aesthetic_v1.safetensors",
+    "note": "MOSS 合集：IG 網美風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/krealistick_现实主义写实风格.safetensors",
+    "size": 285350562,
+    "sha256": "9a49fe40a2765f30bba9e0049b4cc1c45a5e048279556f7f1108701a806c4cb8",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/4f669103329e0eed9286b2dc136ef84e1dabdaf0/%E9%A3%8E%E6%A0%BC/krealistick_%E7%8E%B0%E5%AE%9E%E4%B8%BB%E4%B9%89%E5%86%99%E5%AE%9E%E9%A3%8E%E6%A0%BC.safetensors",
+    "note": "MOSS 合集：現實主義寫實"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/nu-moss semi-PVC style.safetensors",
+    "size": 145157296,
+    "sha256": "6d28201eddcd7875b413a470f18eb48fe7015746924e110ce5bd5d9e340fe042",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/342680a40efcd166d1747b965d75a7279bbfaaca/%E9%A3%8E%E6%A0%BC/nu-moss%20semi-PVC%20style.safetensors",
+    "note": "MOSS 合集：半 PVC 公仔風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/pseudo-3D matte anime style.safetensors",
+    "size": 148697616,
+    "sha256": "8f38fae65d835d5244cdfcee21239183f6381fde312091b6c675062df98c29c2",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5356273da89da58328bba3ff6b473a762ecab932/%E9%A3%8E%E6%A0%BC/pseudo-3D%20matte%20anime%20style.safetensors",
+    "note": "MOSS 合集：偽 3D 霧面動畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/rebelmidjourney_W_0.1-0.8.safetensors",
+    "size": 129017224,
+    "sha256": "1d18300865fdd435df39d740e1b9bc8754c7114fce1ab1e1bcf17c3523ef0032",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/260aaeffb924e9556a041765529f57d2b1f6f0f0/%E9%A3%8E%E6%A0%BC/rebelmidjourney_W_0.1-0.8.safetensors",
+    "note": "MOSS 合集：Midjourney 感"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/reversesty_mossimage_style.safetensors",
+    "size": 77765576,
+    "sha256": "a903e13cec2faedf74572f31f6c2fec682aaa985ca1564028c98b123248adb08",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/reversesty_mossimage_style.safetensors",
+    "note": "MOSS 合集：reversesty 畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/school-gal_dw_moss_Anima_v0_1.safetensors",
+    "size": 148729792,
+    "sha256": "dbfd1c0b8ad0452720940a6f452f4e9b2c7e2b39fc6026bbeb421eded96b4c61",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/9748d84aaee77bf65f1ca5a4ac013954ab9be57e/%E9%A3%8E%E6%A0%BC/school-gal_dw_moss_Anima_v0_1.safetensors",
+    "note": "MOSS 合集：日系辣妹制服"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/动漫插画风格SepiaBlue_Luminous_T_qsv2style_W0.6-1_v1.safetensors",
+    "size": 66102264,
+    "sha256": "cdb5f16a09ce83ebad902221ccc19e46649f4eb2609157acfb3dfcf9468d7442",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/bfe27178c3a6657d974bce8bf25a8b71eb389005/%E9%A3%8E%E6%A0%BC/%E5%8A%A8%E6%BC%AB%E6%8F%92%E7%94%BB%E9%A3%8E%E6%A0%BCSepiaBlue_Luminous_T_qsv2style_W0.6-1_v1.safetensors",
+    "note": "MOSS 合集：褐藍光感插畫風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/半写实风格NexBlend Semi Realistic LoRA - MOSS Image.safetensors",
+    "size": 290254336,
+    "sha256": "286921525b8386568cd63f611e9dcc2fcbab491cd8a1e8b5e546e3568ca9ed4d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/36f6a6d86bb7a4697ec3605f4c26434412b0880d/%E9%A3%8E%E6%A0%BC/%E5%8D%8A%E5%86%99%E5%AE%9E%E9%A3%8E%E6%A0%BCNexBlend%20Semi%20Realistic%20LoRA%20-%20MOSS%20Image.safetensors",
+    "note": "MOSS 合集：半寫實風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/国风3DCG风格.safetensors",
+    "size": 148723768,
+    "sha256": "35ade9d4e7b378ef13ed0c9ef141c2e4cbafb81e7c9570cf62876c2fe31eb539",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/41cc5327f8595c1a76ebe0d3e6d6e937a79189de/%E9%A3%8E%E6%A0%BC/%E5%9B%BD%E9%A3%8E3DCG%E9%A3%8E%E6%A0%BC.safetensors",
+    "note": "MOSS 合集：國風 3DCG"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/小马美学风格duckymix-Anima_W0.7-1_T_@ducky.safetensors",
+    "size": 129017240,
+    "sha256": "b66d8098b9f618916a40157db96f6508e481ed008b8ebff2c95ed4923036efa1",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/e3957d8e9cce026103bd8ff22aaa305d04416be2/%E9%A3%8E%E6%A0%BC/%E5%B0%8F%E9%A9%AC%E7%BE%8E%E5%AD%A6%E9%A3%8E%E6%A0%BCduckymix-Anima_W0.7-1_T_%40ducky.safetensors",
+    "note": "MOSS 合集：小馬美學 duckymix"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/彩色胶片快照风格_directflashfilmconcept.safetensors",
+    "size": 148697176,
+    "sha256": "4aaf0bc2fe0cef858d7e461b801fc8aba484404fbd38a82814bcf689511bceeb",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/4ad2793446a2343270e9f97e9b4ed021f9c6889b/%E9%A3%8E%E6%A0%BC/%E5%BD%A9%E8%89%B2%E8%83%B6%E7%89%87%E5%BF%AB%E7%85%A7%E9%A3%8E%E6%A0%BC_directflashfilmconcept.safetensors",
+    "note": "MOSS 合集：彩色底片直閃快照"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/暗黑奇幻哥特风格Emberveil Gothic.safetensors",
+    "size": 148836456,
+    "sha256": "206f31f1484e8fb87125bca3e4a686d30587c2a3d21aa24b128220a2f44a9f1c",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/1c685c8d5fb777148c94b4599e552f81b7da2599/%E9%A3%8E%E6%A0%BC/%E6%9A%97%E9%BB%91%E5%A5%87%E5%B9%BB%E5%93%A5%E7%89%B9%E9%A3%8E%E6%A0%BCEmberveil%20Gothic.safetensors",
+    "note": "MOSS 合集：暗黑奇幻哥德風"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/服装模特_female_mannequin_lora_v1.safetensors",
+    "size": 148761584,
+    "sha256": "7563ff8cced0e72ba3e0995094628ff0ab4b1bd90016039cd2aaa3728a1ec9b1",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/9748d84aaee77bf65f1ca5a4ac013954ab9be57e/%E9%A3%8E%E6%A0%BC/%E6%9C%8D%E8%A3%85%E6%A8%A1%E7%89%B9_female_mannequin_lora_v1.safetensors",
+    "note": "MOSS 合集：服裝人台"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/梦幻复古艺术风格.safetensors",
+    "size": 129017232,
+    "sha256": "d3f1af9b5bad61f615a058625d9ec389fdfe12fd07fabaf0466a5d185d0877a7",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/%E6%A2%A6%E5%B9%BB%E5%A4%8D%E5%8F%A4%E8%89%BA%E6%9C%AF%E9%A3%8E%E6%A0%BC.safetensors",
+    "note": "MOSS 合集：夢幻復古藝術"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/水下镜头拍摄underwateractioncamconcept.safetensors",
+    "size": 148697184,
+    "sha256": "9f92b99ad3443275b636446c2a61cfac6c2b0cdf81eb96df78ddc0cfd0b2e32d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/1c685c8d5fb777148c94b4599e552f81b7da2599/%E9%A3%8E%E6%A0%BC/%E6%B0%B4%E4%B8%8B%E9%95%9C%E5%A4%B4%E6%8B%8D%E6%91%84underwateractioncamconcept.safetensors",
+    "note": "MOSS 合集：水下運動相機"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/水粉墨水风格_T_ral-gouache-ink.safetensors",
+    "size": 74401048,
+    "sha256": "4a3bfdb9be0f7cf2a6fc3476abf2343edc6ff26ea76b3548558ff984b3a7b09d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131e0afc012ac2e37bbd48fc060f884513d38046/%E9%A3%8E%E6%A0%BC/%E6%B0%B4%E7%B2%89%E5%A2%A8%E6%B0%B4%E9%A3%8E%E6%A0%BC_T_ral-gouache-ink.safetensors",
+    "note": "MOSS 合集：水粉＋墨水"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/水粉温暖风格_T_ral-gouache-warm.safetensors",
+    "size": 74401056,
+    "sha256": "cf36f3ef4808cfcfbab9764bd8b674603bf69bb72703acffb5c71fd4ac0a24c2",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131e0afc012ac2e37bbd48fc060f884513d38046/%E9%A3%8E%E6%A0%BC/%E6%B0%B4%E7%B2%89%E6%B8%A9%E6%9A%96%E9%A3%8E%E6%A0%BC_T_ral-gouache-warm.safetensors",
+    "note": "MOSS 合集：暖色水粉"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/水粉粉彩风格_T_ral-gouache-pastel.safetensors",
+    "size": 74401056,
+    "sha256": "881193c3bcc0696d7c63ea5c56d5668c0458611a4a4b068bca7ec114a0b3c8ac",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131e0afc012ac2e37bbd48fc060f884513d38046/%E9%A3%8E%E6%A0%BC/%E6%B0%B4%E7%B2%89%E7%B2%89%E5%BD%A9%E9%A3%8E%E6%A0%BC_T_ral-gouache-pastel.safetensors",
+    "note": "MOSS 合集：粉彩水粉"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/瑜伽T_YogaBowPose.safetensors",
+    "size": 37245144,
+    "sha256": "2f58ea45981b76810b6503fd606eb3110e3ad610bb48e9b0262eca20df628181",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/83545020a9d8ad55e39f1df7c07e6609f2dcf58b/%E9%A3%8E%E6%A0%BC/%E7%91%9C%E4%BC%BDT_YogaBowPose.safetensors",
+    "note": "MOSS 合集：瑜伽弓式姿勢"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/粗犷水墨画风格SumiInk_moss_v1.safetensors",
+    "size": 129017240,
+    "sha256": "85bd78cc8b8a0ac214d606da1486bf25aa83e3ae249936a2d3b9849730714c33",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/%E7%B2%97%E7%8A%B7%E6%B0%B4%E5%A2%A8%E7%94%BB%E9%A3%8E%E6%A0%BCSumiInk_moss_v1.safetensors",
+    "note": "MOSS 合集：粗獷水墨畫"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/线稿moss_Lineart_T_Lineart.safetensors",
+    "size": 74401152,
+    "sha256": "1e09d55e1671ff6d2a07ed5107ad642126f4481556daa4fc327237cf94c4ea32",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/7ebc96d95556bbbff43bf0c3e42cfd2c784b2bea/%E9%A3%8E%E6%A0%BC/%E7%BA%BF%E7%A8%BFmoss_Lineart_T_Lineart.safetensors",
+    "note": "MOSS 合集：線稿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/网拍写实风格_cyber-shot_moss_NW.safetensors",
+    "size": 145183100,
+    "sha256": "045be2be3e20afb76df03c1747fac286ebdc9c9769eea3202bfde758fb0d4afd",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/436d36593fed61e9e06f7bff490012b546f89993/%E9%A3%8E%E6%A0%BC/%E7%BD%91%E6%8B%8D%E5%86%99%E5%AE%9E%E9%A3%8E%E6%A0%BC_cyber-shot_moss_NW.safetensors",
+    "note": "MOSS 合集：網拍寫實"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/网络摄像头风格_webcamviewconcept.safetensors",
+    "size": 148697168,
+    "sha256": "d4b8e474a72c9a24592c8fb884d70552b87544d06d32f5e570a332bb07142363",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3aae2184ccf999ca333c709ef03a56d4b6be2159/%E9%A3%8E%E6%A0%BC/%E7%BD%91%E7%BB%9C%E6%91%84%E5%83%8F%E5%A4%B4%E9%A3%8E%E6%A0%BC_webcamviewconcept.safetensors",
+    "note": "MOSS 合集：網路攝影機"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/美式几何漫画风格American_Geometric_Comic_MOSS.safetensors",
+    "size": 129017232,
+    "sha256": "abf29a436062dde567e03555a26da928ab9feb594280ec64611ad3fc667afa3f",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/3e6adc2dbba56149166ce44a176508a55c5a1e32/%E9%A3%8E%E6%A0%BC/%E7%BE%8E%E5%BC%8F%E5%87%A0%E4%BD%95%E6%BC%AB%E7%94%BB%E9%A3%8E%E6%A0%BCAmerican_Geometric_Comic_MOSS.safetensors",
+    "note": "MOSS 合集：美式幾何漫畫（jgdxstyle）"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/西部牛仔风格_1950s_western_moss_200.safetensors",
+    "size": 277655144,
+    "sha256": "32969f64f8506f8655935b288ba32d7f59110957e8ac2824f5369cd47b020d4c",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/f7c749afd4d770907361b9ae0c48094fe9d3bc8b/%E9%A3%8E%E6%A0%BC/%E8%A5%BF%E9%83%A8%E7%89%9B%E4%BB%94%E9%A3%8E%E6%A0%BC_1950s_western_moss_200.safetensors",
+    "note": "MOSS 合集：1950 西部片"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/铅笔画风格pencil_sketch_W_0.6-1_T_A pencil sketch on textured paper.safetensors",
+    "size": 129017232,
+    "sha256": "e3e1d0495ccb8f7a4ad3078105aab6fe6cf5792d1ec70a737d0b938b9947c4c1",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131e0afc012ac2e37bbd48fc060f884513d38046/%E9%A3%8E%E6%A0%BC/%E9%93%85%E7%AC%94%E7%94%BB%E9%A3%8E%E6%A0%BCpencil_sketch_W_0.6-1_T_A%20pencil%20sketch%20on%20textured%20paper.safetensors",
+    "note": "MOSS 合集：鉛筆素描"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/铅笔绘画风格Pencil style_bf16.safetensors",
+    "size": 297357744,
+    "sha256": "d91c42c490fd180e2ba2c3e1ff960407a1f49bae5728f6727e2f7c5abe26bf78",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/5356273da89da58328bba3ff6b473a762ecab932/%E9%A3%8E%E6%A0%BC/%E9%93%85%E7%AC%94%E7%BB%98%E7%94%BB%E9%A3%8E%E6%A0%BCPencil%20style_bf16.safetensors",
+    "note": "MOSS 合集：鉛筆繪畫"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/风格/魔法光环aura-moss-image-sft-epoch-10_T_ 4ur4.safetensors",
+    "size": 129017224,
+    "sha256": "3cfd8061a40e868d3e25960c718e673da48b01df54c5d53ece195d9f6b3f8013",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/1a2372de6c8d2083046a95db100f4b5f821f0f72/%E9%A3%8E%E6%A0%BC/%E9%AD%94%E6%B3%95%E5%85%89%E7%8E%AFaura-moss-image-sft-epoch-10_T_%204ur4.safetensors",
+    "note": "MOSS 合集：魔法光環"
+  },
+  {
+    "path": "loras/moss/moss-color-depth-control.safetensors",
+    "size": 313063368,
+    "sha256": "e5c0c3efd05e4269207a39de6005798f14c90c6687c89c54eaffe4b76c43a763",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/76065cca58a296b8b9cd2b3e881c073c2f3b56d2/model_patches/moss-color-depth-control.safetensors",
+    "note": "MOSS 色彩／深度控制（darask0）"
+  },
+  {
+    "path": "text_encoders/Qwen3.5-4B_int8_convrot.safetensors",
+    "size": 4823474720,
+    "sha256": "f5c9a4e45fbd4b20956b830456e781804821e2b04500b598ce3473fd0aca43a9",
+    "url": "https://huggingface.co/beycanai/Qwen-LM/resolve/65be86eff5aab8bf7c1fe0d9a363e1fa8433d1ca/Qwen3.5-4B_int8_convrot.safetensors",
+    "note": null
+  },
+  {
+    "path": "moss_encoder_adapters/moss_qwen35_4b_to_9b_1600_train.safetensors",
+    "size": 21025440,
+    "sha256": "df5ed7fa15f4c628ad6cb3539d9cd16d68f198df9cd1e07740e9bd7b162c954b",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/c643d94097abd44b6f2f4b066647ad0d7a6d44ba/4B%E6%96%87%E6%9C%AC%E7%BC%96%E7%A0%81%E9%80%82%E9%85%8D%E5%99%A8/mossImage4BTextEncoder_1600Fit.safetensors",
+    "note": null
   }
 ]

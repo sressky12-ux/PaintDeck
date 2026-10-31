@@ -295,7 +295,15 @@ pub async fn import(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     let roots = model_roots(&app.paths);
     entry["family"] = json!(pick_family(&roots, entry["model_file"].as_str(), entry["family"].as_str().unwrap_or("")));
     let warnings: Vec<String> = warnings.into_iter().chain(warns2).collect();
-    ok(json!({"ok": true, "workflow": entry, "warnings": warnings, "source": source, "mode": if is_set { Value::Null } else { json!(mode) }}))
+    // 用到、這台電腦沒有的模型：網頁每個給一顆「到下載中心找」（整組匯入不看）
+    let missing = match probe {
+        Some(g) => {
+            let a = app.clone();
+            blocking(move || super::api_hub::missing_models(&a, &g)).await
+        }
+        None => vec![],
+    };
+    ok(json!({"ok": true, "workflow": entry, "warnings": warnings, "source": source, "mode": if is_set { Value::Null } else { json!(mode) }, "missing_models": missing}))
 }
 
 // ---------------------------------------------------------------- 選項、刪除

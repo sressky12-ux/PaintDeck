@@ -4,7 +4,7 @@ import * as gen from "./gen.js";
 import * as gallery from "./gallery.js";
 import * as assets from "./assets.js";
 import * as loras from "./loras.js";
-import * as civitai from "./civitai.js";
+import * as hub from "./hub.js";
 import * as feature from "./feature.js";
 import * as settings from "./settings.js";
 import * as pe from "./pe.js";
@@ -15,6 +15,7 @@ import * as deck from "./deck.js";
 import * as director from "./director.js";
 import * as studio from "./studio.js";
 import * as comic from "./comic.js";
+import * as colorbook from "./colorbook.js";
 import * as agent from "./agent.js";
 import { onAgentUi } from "./agentui.js";
 import * as play from "./play.js";
@@ -34,10 +35,10 @@ function showPage(p) {
   if (p === "gallery") gallery.show();
   if (p === "assets") assets.show();
   if (p === "loras") loras.showPage();
-  if (p === "civitai") civitai.show();
+  if (p === "civitai") hub.show();
   if (p === "settings") settings.show();
   if (p === "director") { director.show(); studio.show(); }
-  if (p === "comic") comic.show();
+  if (p === "comic") { comic.show(); colorbook.show(); }
   if (p === "agent") agent.show();
 }
 $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-page]"); if (b && !b.disabled) showPage(b.dataset.page); });
@@ -92,6 +93,7 @@ function connect() {
       case "image": if (gen.S.pending.has(m.job)) queue.onImage(m.job, m.image); play.onImage(m.job, m.image); gen.onImage(m.job, m.image); gallery.onNewImage(m.image); charsheet.onImage(m.job, m.image); h3.onImage(m.job, m.image); framepick.onImage(m.job, m.image); break;
       case "director": case "director_llm": director.onEvent(m); break;
       case "comic": comic.onEvent(m); break;
+      case "colorbook": colorbook.onEvent(m); break;
       case "agent": case "agent_llm": case "agent_lora": agent.onEvent(m); break;
       case "agent_ui": onAgentUi(m); break;
       case "agent_cloud": agent.onEvent(m); h3.onEvent(m); h3chain.onEvent(m); break;
@@ -106,7 +108,8 @@ function connect() {
         deck.onFinish(m);
         break;
       }
-      case "download": civitai.onDownload(m); break;
+      case "download": hub.onDownload(m); break;
+      case "hubrun": hub.onRun(m); break;
       case "pe": if (app.state) app.state.pe = m; pe.onStatus(m); settings.onPe?.(m); deck.onPe(m); break;
     }
   };
@@ -180,7 +183,7 @@ gen.init();
 gallery.init();
 assets.init();
 loras.init();
-civitai.init();
+hub.init();
 feature.initFeatures();
 settings.init();
 queue.init();
@@ -190,6 +193,7 @@ h3.init();
 h3chain.init();
 shotsheet.init();
 comic.init();
+colorbook.init();
 agent.init();
 charsheet.init();
 refreshState();

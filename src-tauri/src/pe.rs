@@ -1,4 +1,4 @@
-//! AI 改寫提示詞（Qwen-Image 2.1 PE Heretic GGUF，社群無審查版）。
+//! AI 改寫提示詞（llama-server 跑通用模型：Qwen3.5 Defiant Fable 9B／Qwen3.6 35B；官方 PE 2026-10-30 起拿掉）。
 //!
 //! 前半（Core 和純函式）對照 ComfyUI 自訂節點的 pe_core.py；後半（Service）對照舊站的 app\pe.py。
 //! ComfyUI 的「Anima Prompt Enhance」節點繼續用 Python 的 pe_core.py，兩邊共存：
@@ -29,8 +29,6 @@ use tokio_util::sync::CancellationToken;
 pub const HOST: &str = "127.0.0.1";
 pub const PORT: u16 = 8199;
 pub const CTX: i64 = 16384;
-/// 找模型檔時的優先順序（8GB 顯卡用 Q4_K_M 才放得下）
-pub const QUANTS: [&str; 3] = ["Q4_K_M", "Q6_K", "Q8_0"];
 /// MoE 模型 GPU 模式放 CPU 的專家層數（-ncmoe）
 pub const MOE_CPU_LAYERS: i64 = 30;
 pub const CAPTION_ASK: &str = "Write the caption for this image.";
@@ -79,23 +77,53 @@ pub fn image_part(png: &[u8]) -> Value {
     json!({"type": "image_url", "image_url": {"url": format!("data:image/png;base64,{b64}")}})
 }
 
-/// AI 改寫要載入哪一種模型。official＝設定頁選了官方 PE；has＝那種模型檔在不在。
-/// - 看圖寫說明：通用讀圖模型（官方格式要 400～500 字，小模型只寫兩百多字還會洗白，2026-10-11／10-15 實測）
-/// - 有參考圖：通用讀圖模型；選了官方 PE 且有檔才用 PE i2i
-/// - 文字：通用模型；選了官方 PE 且有檔、又不是 Anima／露骨的想法才用 PE t2i（PE 寫 Anima 會接回 Qwen 長段落，露骨的會洗白）
-pub fn rewrite_kind(task: &str, captioning: bool, has_images: bool, official: bool, explicit: bool, has: impl Fn(&str) -> bool) -> &'static str {
-    if captioning && has("adult_vision") {
-        return "adult_vision";
-    }
-    if task == "i2i" || has_images {
-        return if (official && has("i2i")) || !has("adult_vision") { "i2i" } else { "adult_vision" };
-    }
-    let pe_ok = official && task != "anima" && !(task == "t2i" && explicit) && has("t2i");
-    if pe_ok || !has("adult") {
-        "t2i"
+/// AI 改寫要載入哪一種模型。2026-10-30 官方 PE 整個拿掉（使用者：「直接砍掉，砍死，再也不見，半強迫的使用Qwen 通用的9B模型」），
+/// 只剩通用模型：看圖寫說明、改圖、有參考圖＝通用讀圖模型（adult_vision），其他＝通用模型（adult）。缺檔就照實報錯、教人去下載，不再退回 PE
+pub fn rewrite_kind(task: &str, captioning: bool, has_images: bool) -> &'static str {
+    if captioning || task == "i2i" || has_images {
+        "adult_vision"
     } else {
         "adult"
     }
+}
+
+/// 舊版留下的 kind 名稱（server_state.json、舊呼叫端的 t2i／i2i＝以前的官方 PE）一律換成通用模型
+fn general_kind(kind: &str) -> &str {
+    match kind {
+        "t2i" => "adult",
+        "i2i" => "adult_vision",
+        k => k,
+    }
+}
+
+/// 官方 PE 改寫模型（pe_t2i_heretic*、pe_i2i_heretic*，含看圖檔、下載到一半的檔）：升級後真刪除
+fn is_official_pe(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.starts_with("pe_t2i_heretic") || n.starts_with("pe_i2i_heretic")
+}
+
+/// 程式以前發的 9B（Huihui abliterated，模型＋看圖檔）：換上 Defiant Fable 之後真刪除
+fn is_old_huihui(name: &str) -> bool {
+    name.to_lowercase().starts_with("huihui-qwen3.5-9b-abliterated")
+}
+
+/// 現在預設的 9B（Qwen3.5 Defiant Fable）
+fn is_fable(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.contains("qwen3.5") && n.contains("defiant-fable") && !n.contains("mmproj")
+}
+
+/// 升級換模型要做的事（Core::retire_plan）
+#[derive(Debug, Default)]
+pub struct RetirePlan {
+    /// 要真刪除的官方 PE
+    pub pe: Vec<PathBuf>,
+    /// 新 9B 換好才刪的舊 Huihui 9B
+    pub old: Vec<PathBuf>,
+    /// 已經有 Defiant Fable 9B
+    pub has_fable: bool,
+    /// 用過 AI 改寫（有 PE 或任何通用模型）：這種人才自動下載新 9B，從沒裝過改寫的不硬塞 6GB
+    pub had_llm: bool,
 }
 
 /// 明確指定畫面文字時逐字保留；一般用引號強調衣服／風格不算文字內容。
@@ -420,12 +448,6 @@ pub fn strip_ratio(p: &str) -> String {
 }
 
 // ================================================================ 純函式：解析輸出
-/// 想法裡寫了性行為、性器官或裸露：官方改寫模型會把它洗白（2026-10-11 實測女上位寫成穿內衣接吻），交給通用模型照同一份官方規則寫。
-/// 2026-10-26 補上裸露類與簡體字：朋友回報「全裸」的想法被寫成穿衣服，因為原本只認性行為的字。
-/// 同日補上巨乳類：實測 PE 就算系統提示詞要求保留，10 次只有 2 次寫出 huge breasts，會把大胸藏進衣服描述裡
-static EXPLICIT_IDEA: LazyLock<Regex> = LazyLock::new(|| {
-    re(r"(?i)性交|做愛|做爱|陰莖|阴茎|肉棒|雞雞|鸡鸡|陰道|阴道|陰部|阴部|小穴|陰唇|阴唇|陰蒂|阴蒂|口交|乳交|足交|肛交|手淫|自慰|射精|內射|内射|顏射|颜射|口爆|深喉|中出|潮吹|精液|插入|抽插|女上位|騎乘|骑乘|傳教士|传教士|後入|后入|背後位|背后位|狗爬式|體位|体位|全裸|半裸|裸體|裸体|裸露|赤裸|一絲不掛|一丝不挂|露點|露点|乳房|奶子|乳頭|乳头|巨乳|爆乳|大奶|大胸|胸部|下體|下体|私處|私处|生殖器|色情|瑟瑟|\b(?:sex|penis|cock|dick|vagina|pussy|vulva|labia|clit\w*|penetrat\w*|fellatio|blowjob|deepthroat\w*|cunnilingus|handjob|footjob|paizuri|titjob|anal|cum|cumshot|creampie|squirt\w*|orgasm|missionary|cowgirl|doggystyle|masturbat\w*|nude|nudity|naked|topless|bottomless|nipples?|areolae?|breasts?|tits|boobs|genitals?|nsfw|porn\w*|hentai)\b")
-});
 static THINK: LazyLock<Regex> = LazyLock::new(|| re(r"(?s)<think>.*?</think>"));
 static CAPTION_META: LazyLock<Regex> = LazyLock::new(|| {
     re(
@@ -978,94 +1000,104 @@ impl Core {
 
     /// 只列語言模型檔；不讀圖庫，不追子資料夾連結（避免循環）。
     fn model_candidates(&self) -> Vec<PathBuf> {
-        fn collect(dir: &Path, depth: usize, out: &mut Vec<PathBuf>) {
+        self.llm_files(&|p| p.extension().is_some_and(|x| x.eq_ignore_ascii_case("gguf")))
+    }
+
+    /// LLM 資料夾＋外部模型資料夾（往下 4 層）裡 keep 說要的檔
+    fn llm_files(&self, keep: &dyn Fn(&Path) -> bool) -> Vec<PathBuf> {
+        fn collect(dir: &Path, depth: usize, keep: &dyn Fn(&Path) -> bool, out: &mut Vec<PathBuf>) {
             let Ok(rd) = std::fs::read_dir(dir) else { return };
             let mut entries: Vec<_> = rd.flatten().collect();
             entries.sort_by_key(|e| e.file_name());
             for e in entries {
                 let Ok(ft) = e.file_type() else { continue };
                 if ft.is_dir() && depth < 4 {
-                    collect(&e.path(), depth + 1, out);
-                } else if e.path().is_file() && e.path().extension().is_some_and(|x| x.eq_ignore_ascii_case("gguf")) {
+                    collect(&e.path(), depth + 1, keep, out);
+                } else if e.path().is_file() && keep(&e.path()) {
                     out.push(e.path());
                 }
             }
         }
         let mut out = vec![];
-        for root in self.model_roots() { collect(&root, 0, &mut out); }
+        for root in self.model_roots() { collect(&root, 0, keep, &mut out); }
         out
     }
 
+    /// 外掛寫法挑段用的意思座標模型（檔名有 embedding 的 gguf，例如 Qwen3-Embedding-0.6B-Q8_0.gguf；embed.rs 用）
+    pub fn embedding_model(&self) -> Option<PathBuf> {
+        let mut v: Vec<PathBuf> = self.model_candidates().into_iter().filter(|p| is_embedding(&file_name(p))).collect();
+        v.sort();
+        v.into_iter().next()
+    }
+
     /// (模型路徑, mmproj 路徑)；找不到就是錯誤
+    /// _quant：以前挑官方 PE 的量化版本用，PE 拿掉之後沒作用了（留著免得動到每個呼叫端）
     pub fn model_files(
         &self,
         kind: &str,
-        quant: Option<&str>,
+        _quant: Option<&str>,
     ) -> Result<(PathBuf, Option<PathBuf>), PeError> {
-        let order: Vec<&str> = match quant {
-            Some(q) => vec![q],
-            None => QUANTS.to_vec(),
-        };
         let dir = self.models.display();
         // 助手：adult_vision@9b／adult_vision@35b 指定腦袋
         let (kind, brain) = match kind.split_once('@') {
             Some((k, b)) => (k, Some(b)),
             None => (kind, None),
         };
+        let kind = general_kind(kind);
         if kind == "adult" || kind == "adult_vision" {
             // 通用版去審查模型：Qwen3.6-35B-A3B heretic 或 Qwen3.5-9B abliterated。
             // adult 只寫文字、不載 mmproj；adult_vision（導演台看角色圖）同一個模型加上它的 mmproj
-            let all = self.model_candidates();
-            let (mmprojs, files): (Vec<PathBuf>, Vec<PathBuf>) = all
-                .into_iter()
-                .partition(|p| file_name(p).to_lowercase().contains("mmproj"));
-            let pick = |want: &dyn Fn(&str) -> bool| {
-                let mut v: Vec<&PathBuf> = files
-                    .iter()
-                    .filter(|p| want(&file_name(p).to_lowercase()))
-                    .collect();
-                v.sort();
-                v.first().map(|p| (*p).clone())
+            let (mmprojs, files) = self.general_files();
+            let pick = |want: &dyn Fn(&str) -> bool| files.iter().find(|p| want(&file_name(p).to_lowercase())).cloned();
+            let pref = self.general.lock().map(|g| g.clone()).unwrap_or_default();
+            // 2026-10-29 使用者：「讓別人自己決定要用什麼模型」：設定頁可以直接指定 LLM 資料夾裡的某個檔。
+            // 那個檔不見了（搬走、刪掉）就照自動挑，不讓改寫整個壞掉
+            let chosen = (!matches!(pref.as_str(), "" | "auto" | "9b" | "35b"))
+                .then(|| files.iter().find(|p| file_name(p).eq_ignore_ascii_case(&pref)).cloned())
+                .flatten();
+            let big = |p: &PathBuf| is_big_brain(&file_name(p));
+            let moe = chosen.clone().filter(big).or_else(|| pick(&|n| n.contains("qwen3.6") && is_moe(n)));
+            // 9B：2026-10-29 擂台贏的 DavidAU Defiant Fable 有就優先，再來 Huihui abliterated，再來任何一顆 Qwen3.5（別人做的去審查版）
+            let q9 = chosen.clone().filter(|p| !big(p))
+                .or_else(|| pick(&|n| n.contains("qwen3.5") && n.contains("defiant-fable")))
+                .or_else(|| pick(&|n| n.contains("qwen3.5") && n.contains("abliterated")))
+                .or_else(|| pick(&|n| n.contains("qwen3.5") && !is_big_brain(n)));
+            let found = match (brain, &chosen) {
+                // 助手指定 9b／35b 腦袋：照那一類挑（指定的檔剛好是那一類就用它）
+                (Some(b), _) => if b == "9b" { q9.or(moe) } else { moe.or(q9) },
+                (None, Some(c)) => Some(c.clone()),
+                (None, None) => if pref == "9b" { q9.or(moe) } else { moe.or(q9) },
             };
-            let moe = pick(&|n| n.contains("qwen3.6") && is_moe(n));
-            let q9 = pick(&|n| n.contains("qwen3.5") && n.contains("abliterated"));
-            let pref = match brain {
-                Some(b) => b.to_string(),
-                None => self.general.lock().map(|g| g.clone()).unwrap_or_default(),
-            };
-            let found = if pref == "9b" { q9.or(moe) } else { moe.or(q9) };
             let model = found.ok_or_else(|| {
                 PeError(format!(
-                    "找不到通用模型 Qwen3.6-35B-A3B*.gguf 或 Huihui-Qwen3.5-9B-abliterated*.gguf（放在 {dir}；到「安裝與修復」勾「AI 改寫、生圖助手」會下載 9B）"
+                    "找不到 AI 改寫用的通用模型（Qwen3.5-9B-The-Defiant-Fable*.gguf 或 Qwen3.6-35B-A3B*.gguf，放在 {dir}）。到「安裝與修復」勾「AI 改寫、生圖助手」會下載 9B；以前的官方 PE 改寫模型已經不再支援"
                 ))
             })?;
             if kind == "adult" {
                 return Ok((model, None));
             }
-            // mmproj 跟模型同一個系列（qwen3.6／qwen3.5）
-            let fam = if file_name(&model).to_lowercase().contains("qwen3.6") { "qwen3.6" } else { "qwen3.5" };
-            let mut mm: Vec<&PathBuf> = mmprojs
-                .iter()
-                .filter(|p| file_name(p).to_lowercase().contains(fam))
-                .collect();
-            mm.sort();
-            return match mm.first() {
-                Some(m) => Ok((model, Some((*m).clone()))),
-                None => err(self.mmproj_missing_msg(&model, fam)),
+            return match pair_mmproj(&model, &mmprojs) {
+                Some(m) => Ok((model, Some(m))),
+                None => err(self.mmproj_missing_msg(&model, &mmproj_family(&model))),
             };
         }
-        let all = self.model_candidates();
-        for q in order {
-            let name = format!("pe_{kind}_heretic-{q}.gguf");
-            if let Some(p) = all.iter().find(|p| file_name(p).eq_ignore_ascii_case(&name)) {
-                let mm = if kind == "i2i" {
-                    Some(all.iter().find(|m| file_name(m).eq_ignore_ascii_case("pe_i2i_heretic.mmproj-bf16.gguf"))
-                        .cloned().ok_or_else(|| PeError(format!("找不到讀圖用的 pe_i2i_heretic.mmproj-bf16.gguf（放在 {dir}；到「安裝與修復」勾「官方改寫模型（選配）」補下載，或在設定頁把「改寫用的模型」換回通用模型）")))?)
-                } else { None };
-                return Ok((p.clone(), mm));
-            }
-        }
-        err(format!("找不到 pe_{kind}_heretic-*.gguf（放在 {dir}）。這是選配的官方改寫模型：到「安裝與修復」勾「官方改寫模型（選配）」補下載，或在設定頁把「改寫用的模型」換回通用模型；也要有通用模型（勾「AI 改寫、生圖助手」）。若已下載，請在「設定 → 外部模型資料夾」加入它的 LLM 資料夾。"))
+        err(format!("不認得的模型種類：{kind}"))
+    }
+
+    /// 升級換模型要做的事：站找得到的（LLM 資料夾＋外部模型資料夾）官方 PE、舊 Huihui 9B，有沒有新 9B、有沒有用過改寫
+    /// 要刪的連下載到一半的暫存檔（<檔名>.verify、.verify.part）一起算；有沒有新 9B 只看下載完的 .gguf
+    pub fn retire_plan(&self) -> RetirePlan {
+        let all = self.llm_files(&|p| is_official_pe(&file_name(p)) || is_old_huihui(&file_name(p)));
+        let names = |f: fn(&str) -> bool| all.iter().filter(|p| f(&file_name(p))).cloned().collect::<Vec<_>>();
+        let pe = names(is_official_pe);
+        let had_llm = !pe.is_empty() || !self.general_files().1.is_empty();
+        let has_fable = self.model_candidates().iter().any(|p| is_fable(&file_name(p)));
+        RetirePlan { has_fable, old: names(is_old_huihui), pe, had_llm }
+    }
+
+    /// 站找得到這個檔名的語言模型嗎（不分大小寫；LLM 資料夾＋外部模型資料夾）
+    pub fn has_file(&self, name: &str) -> bool {
+        self.model_candidates().iter().any(|p| file_name(p).eq_ignore_ascii_case(name))
     }
 
     /// 缺讀圖用的 mmproj：講清楚去哪下載、放哪裡、檔名怎麼取。安裝清單裡有這個系列的（9B）就給網址，
@@ -1107,11 +1139,39 @@ impl Core {
             Ok(_) => return Ok(None),
             Err(_) => self.model_files(&kind.replace("adult_vision", "adult"), None)?.0,
         };
-        let fam = if file_name(&model).to_lowercase().contains("qwen3.6") { "qwen3.6" } else { "qwen3.5" };
-        match self.res.as_deref().and_then(|r| crate::setup::mmproj_source(r, fam)) {
+        // 安裝清單只有 Qwen3.5／3.6 的看圖檔；使用者自己指定的別家模型沒有來源，照 mmproj_missing_msg 教他去哪找
+        let fam = mmproj_family(&model);
+        match self.res.as_deref().filter(|_| fam.starts_with("qwen3.")).and_then(|r| crate::setup::mmproj_source(r, &fam)) {
             Some((name, size, url, sha)) => Ok(Some((model.parent().unwrap_or(&self.models).join(name), url, size, sha))),
-            None => err(self.mmproj_missing_msg(&model, fam)),
+            None => err(self.mmproj_missing_msg(&model, &fam)),
         }
+    }
+
+    /// (看圖檔, 能對話的通用模型)：LLM 資料夾裡的 gguf，扣掉挑段用的 embedding 和官方 PE（pe_*，已經不支援），照路徑排序
+    fn general_files(&self) -> (Vec<PathBuf>, Vec<PathBuf>) {
+        let (mmprojs, mut files): (Vec<PathBuf>, Vec<PathBuf>) = self
+            .model_candidates()
+            .into_iter()
+            .partition(|p| file_name(p).to_lowercase().contains("mmproj"));
+        files.retain(|p| {
+            let n = file_name(p);
+            !is_embedding(&n) && !n.to_lowercase().starts_with("pe_")
+        });
+        files.sort();
+        (mmprojs, files)
+    }
+
+    /// 設定頁「通用模型」選單可以指定的檔：名字、大小、配不配得到看圖檔、是不是 Qwen 系列（別家不保證寫得出生圖站要的 JSON）
+    pub fn general_choices(&self) -> Vec<Value> {
+        let (mmprojs, files) = self.general_files();
+        files
+            .iter()
+            .map(|p| {
+                let n = file_name(p);
+                json!({"name": n, "size": std::fs::metadata(p).map(|m| m.len()).unwrap_or(0),
+                       "vision": pair_mmproj(p, &mmprojs).is_some(), "qwen": n.to_lowercase().contains("qwen3"), "big": is_big_brain(&n)})
+            })
+            .collect()
     }
 
     /// 設定頁「通用模型」：auto／35b／9b
@@ -1127,7 +1187,7 @@ impl Core {
                 .map(|(p, _)| json!(file_name(&p)))
                 .unwrap_or(Value::Null)
         };
-        json!({"t2i": name("t2i"), "i2i": name("i2i"), "adult": name("adult"), "server": self.bin.exists()})
+        json!({"adult": name("adult"), "vision": name("adult_vision"), "server": self.bin.exists()})
     }
 
     pub fn system_prompt(&self, task: &str) -> Result<String, PeError> {
@@ -1141,17 +1201,18 @@ impl Core {
     pub fn default_prompt(&self, task: &str) -> Result<String, PeError> {
         let (file, _) =
             task_info(task).ok_or_else(|| PeError(format!("未知的改寫類型：{task}")))?;
-        let mut p = self.prompts.join(file);
-        // 新版才加的提示詞檔：舊安裝的節點資料夾裡沒有（安裝程式不覆蓋節點），改讀程式附帶的那份
-        if !p.is_file() {
-            if let Some(b) = self.bundled.as_ref().map(|d| d.join(file)).filter(|b| b.is_file()) {
-                p = b;
-            }
-        }
-        // 換行統一成 \n（跟 Python 文字模式讀檔一樣）：git 在 Windows checkout 可能把 .txt 換成 CRLF
-        std::fs::read_to_string(&p)
-            .map(|s| strip(&s).replace("\r\n", "\n"))
-            .map_err(|e| PeError(format!("讀不到系統提示詞 {}：{e}", p.display())))
+        // 程式附帶的那份優先，沒有才讀節點資料夾。2026-10-29 盤點：安裝程式不覆蓋已經有的節點，
+        // 已安裝的人一直讀 10-11 的舊 anima.txt／t2i_official.txt，之後改的規則（體位、paizuri…）都沒生效。
+        // 使用者自己改的走 override_text（data\pe_prompts），不靠改節點檔
+        let p = self.bundled.as_ref().map(|d| d.join(file)).filter(|b| b.is_file()).unwrap_or_else(|| self.prompts.join(file));
+        read_prompt(&p).map_err(|e| PeError(format!("讀不到系統提示詞 {}：{e}", p.display())))
+    }
+
+    /// 在用的預設提示詞跟 ComfyUI 節點資料夾那份不一樣時回傳它（快取鍵要帶它的雜湊，不能跟節點的舊結果共用）
+    pub fn default_differs_from_node(&self, task: &str) -> Option<String> {
+        let (file, _) = task_info(task)?;
+        let used = self.default_prompt(task).ok()?;
+        (read_prompt(&self.prompts.join(file)).ok().as_deref() != Some(used.as_str())).then_some(used)
     }
 
     /// 使用者自訂的版本（沒有就是 None）
@@ -1612,6 +1673,51 @@ pub fn is_moe(name: &str) -> bool {
     name.to_lowercase().contains("a3b")
 }
 
+/// 算「35B 那一類」的大腦（助手選 35B 時用）：MoE，或檔名寫了 30B 以上
+fn is_big_brain(name: &str) -> bool {
+    let n = name.to_lowercase();
+    is_moe(&n) || n.split(|c: char| !c.is_ascii_alphanumeric()).any(|w| w.strip_suffix('b').and_then(|d| d.parse::<u32>().ok()).is_some_and(|b| b >= 30))
+}
+
+/// 看圖檔要跟模型同一個系列：Qwen 是 qwen3.6／qwen3.5，別家用檔名第一個像名字的字（gemma、llama、mistral…）
+fn mmproj_family(model: &Path) -> String {
+    let n = file_name(model).to_lowercase();
+    for f in ["qwen3.6", "qwen3.5"] {
+        if n.contains(f) {
+            return f.to_string();
+        }
+    }
+    n.split(|c: char| !c.is_ascii_alphanumeric())
+        .find(|w| w.len() >= 3 && w.chars().next().is_some_and(|c| c.is_ascii_alphabetic()))
+        .unwrap_or("mmproj")
+        .to_string()
+}
+
+/// 模型配哪個看圖檔：同系列裡挑檔名跟模型最像的（同系列有好幾個不同人做的看圖檔時，免得照字母排序配到別人的）
+fn pair_mmproj(model: &Path, mmprojs: &[PathBuf]) -> Option<PathBuf> {
+    let fam = mmproj_family(model);
+    let words = name_words(&file_name(model));
+    let mut mm: Vec<&PathBuf> = mmprojs.iter().filter(|p| file_name(p).to_lowercase().contains(&fam)).collect();
+    mm.sort_by_key(|p| (std::cmp::Reverse(name_words(&file_name(p)).intersection(&words).count()), (*p).clone()));
+    mm.first().map(|p| (*p).clone())
+}
+
+/// 讀系統提示詞檔：換行統一成 \n（跟 Python 文字模式讀檔一樣）：git 在 Windows checkout 可能把 .txt 換成 CRLF
+fn read_prompt(p: &Path) -> std::io::Result<String> {
+    std::fs::read_to_string(p).map(|s| strip(&s).replace("\r\n", "\n"))
+}
+
+/// 檔名拆成小寫的字（配看圖檔用）：「Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf」→ huihui、qwen3、5、9b、abliterated…
+fn name_words(name: &str) -> std::collections::HashSet<String> {
+    name.to_lowercase().split(|c: char| !c.is_ascii_alphanumeric()).filter(|w| !w.is_empty() && *w != "gguf" && *w != "mmproj").map(str::to_string).collect()
+}
+
+/// 意思座標模型（不是拿來對話的 LLM）
+pub fn is_embedding(name: &str) -> bool {
+    let n = name.to_lowercase();
+    n.contains("embedding") && !n.contains("mmproj")
+}
+
 /// llama-server 這次啟動（log 裡最後一個「] start 」之後）是不是顯存不夠才失敗的。
 /// Vulkan（A 卡、Intel）是 ErrorOutOfDeviceMemory／unable to allocate，CUDA 是 cudaMalloc failed: out of memory
 pub fn vram_short(log: &str) -> bool {
@@ -1991,9 +2097,13 @@ pub struct Service {
     cancels: Mutex<HashMap<String, CancellationToken>>,
     /// 上一次改寫的摘要（秒數等），狀態列用
     last: Mutex<Value>,
+    /// 升級換模型（拿掉官方 PE、換新 9B，server\api_pe.rs retire_old_models）做到哪：{phase, msg, pct}；沒在做＝null
+    retire: Mutex<Value>,
     http: reqwest::Client,
     /// 姿勢大彙整（成人改寫用）
     pub poses: Arc<crate::poses::Poses>,
+    /// 外掛寫法挑段用的意思座標（CPU 的 Qwen3-Embedding，另一顆 llama-server）
+    pub embed: Arc<crate::embed::Embedder>,
 }
 
 impl Service {
@@ -2026,7 +2136,6 @@ impl Service {
             .build()
             .expect("建立 HTTP client");
         Arc::new(Service {
-            core,
             error,
             input_dir: input_dir.to_path_buf(),
             comfy,
@@ -2036,14 +2145,17 @@ impl Service {
             waiting: AtomicI64::new(0),
             cancels: Mutex::new(HashMap::new()),
             last: Mutex::new(Value::Null),
+            retire: Mutex::new(Value::Null),
             http,
             poses: Arc::new(crate::poses::Poses::load(res)),
+            embed: crate::embed::Embedder::new(core.clone()),
+            core,
         })
     }
 
     // ---------------------------------------------------------------- 自訂系統提示詞（設定頁）
     /// 網頁上列出來可以改的系統提示詞：(編號, 名稱, 說明, 一定要保留的佔位符)
-    const EDITABLE: [(&'static str, &'static str, &'static str, &'static [&'static str]); 24] = [
+    const EDITABLE: [(&'static str, &'static str, &'static str, &'static [&'static str]); 23] = [
         ("t2i", "文生圖改寫（MOSS-Image）", "想法 → Qwen-Image 官方格式的英文長段落（MOSS 也吃這種寫法）。模型要回 JSON：{\"rewritten_prompt\": ..., \"wh_ratio\": ...}，改格式會讀不出來。", &[]),
         ("i2i", "改圖改寫（會讀參考圖）", "改圖、局部重繪、多圖參考用（Qwen 2.1）。一樣要回 JSON（rewritten_prompt、wh_ratio）。", &[]),
         ("anima", "Anima 改寫", "寫成 Danbooru tag＋英文句子。一樣要回 JSON（rewritten_prompt）。", &[]),
@@ -2063,7 +2175,6 @@ impl Service {
         ("agent_moss", "生圖助手：MOSS-Image 提示詞寫法", "生圖模型是 MOSS-Image 時，填進工作說明的 {model_guide}。", &[]),
         ("agent_anima", "生圖助手：Anima 提示詞寫法", "生圖模型是 Anima 時，填進工作說明的 {model_guide}。", &[]),
         ("agent_other", "生圖助手：其他模型提示詞寫法", "其他生圖模型（SDXL 系）用的 {model_guide}。", &[]),
-        ("agent_ltx", "生圖助手：LTX-2.3 影片寫法", "做影片工具、只寫詞模式寫影片時用。", &[]),
         ("agent_h3_base", "H3 影片台：AI 幫我寫（文生、圖生、首尾幀）", "H3 影片台按「AI 幫我寫」時用（文生影片、圖生影片、首尾幀、接續）。照 MiniMax H3 官方寫法輸出一段英文提示詞，不要加說明。", &[]),
         ("agent_h3_ref", "H3 影片台：AI 幫我寫（多素材參考）", "H3 影片台按「AI 幫我寫」時用（多素材參考、關鍵幀、換角色、特效、換畫風、動作控制）。素材依序叫 <Picture N>、<Video N>、<Audio N>。", &[]),
         ("agent_h3_board", "H3 影片台：AI 幫我寫滿分鏡（素材板）", "H3 影片台素材板按「AI 幫我寫滿分鏡」時用。照素材板的用途寫，回 JSON 分鏡（每一鏡從第幾秒、鏡頭、畫面、台詞、聲音），網頁再組成官方格式。", &[]),
@@ -2170,6 +2281,7 @@ impl Service {
     pub fn start(self: &Arc<Self>) {
         let me = self.clone();
         tokio::spawn(async move { me.idle_loop().await });
+        self.embed.start();
     }
 
     // ---------------------------------------------------------------- 設定與狀態
@@ -2211,10 +2323,22 @@ impl Service {
             Value::Null
         };
         let g = |k: &str| st.get(k).cloned().unwrap_or(Value::Null);
-        json!({"ok": true, "available": core.available(), "running": !st.is_empty(), "kind": g("kind"), "ngl": g("ngl"),
+        json!({"ok": true, "available": core.available(), "general_models": core.general_choices(), "running": !st.is_empty(), "kind": g("kind"), "ngl": g("ngl"),
                "load_seconds": g("load_seconds"), "busy": busy || self.locked(), "waiting": self.waiting.load(Ordering::SeqCst),
                "idle_left": left, "mode": self.opt("pe_mode"), "modes": modes(),
-               "last": self.last.lock().unwrap_or_else(|e| e.into_inner()).clone()})
+               "last": self.last.lock().unwrap_or_else(|e| e.into_inner()).clone(),
+               "retire": self.retire.lock().unwrap_or_else(|e| e.into_inner()).clone()})
+    }
+
+    /// 檔案位置那一層（升級換模型要看 LLM 資料夾）；找不到 AI 改寫節點＝None
+    pub fn core(&self) -> Option<Arc<Core>> {
+        self.core.clone()
+    }
+
+    /// 升級換模型的進度（見 retire 欄位），順便推給網頁
+    pub fn set_retire(&self, v: Value) {
+        *self.retire.lock().unwrap_or_else(|e| e.into_inner()) = v;
+        self.push_status();
     }
 
     fn push_status(&self) {
@@ -2764,12 +2888,9 @@ impl Service {
             &body.get("zh").cloned().unwrap_or_else(|| self.opt("pe_zh")),
         ));
         let ngl = self.ngl();
-        // 用哪顆模型（2026-10-27 模型精簡）：預設全部交給通用模型 9B／35B（設定頁 pe_engine＝general）。
-        // 使用者原話：「基本上就留助手這兩顆比較通用的 9b跟35b的」；PE 會洗白、授權不能商用，降成選配（pe_engine＝official），
-        // 選了官方 PE 但沒下載就照樣用通用模型。
+        // 用哪顆模型：一律通用模型 9B／35B（2026-10-27 預設改通用、2026-10-30 官方 PE 整個拿掉，見 rewrite_kind）
         core.set_general(self.opt("pe_general").as_str().unwrap_or("auto"));
-        let official = self.opt("pe_engine").as_str() == Some("official");
-        let kind = rewrite_kind(&task, captioning, !images.is_empty(), official, EXPLICIT_IDEA.is_match(&idea), |k| core.model_files(k, None).is_ok()).to_string();
+        let kind = rewrite_kind(&task, captioning, !images.is_empty()).to_string();
         let model_name = file_name(&core.model_files(&kind, None)?.0);
         let mut parts = vec![
             ("task", json!(task)),
@@ -2784,7 +2905,7 @@ impl Service {
             ("model", json!(model_name)),
         ];
         // 自訂了系統提示詞：快取要分開（沒自訂時鍵跟舊版 Python 一樣，兩邊共用快取）
-        if let Some(t) = core.override_text(&task) {
+        if let Some(t) = core.override_text(&task).or_else(|| core.default_differs_from_node(&task)) {
             parts.push(("system", json!(sha256_hex(t.as_bytes()))));
         }
         // Anima 版、文生圖版也照助手的做法查體位庫（網頁選「自動」永遠不會走「成人（體位）」；2026-10-28 實測 9B 不認得乳交，
@@ -2793,12 +2914,16 @@ impl Service {
         if let Some(n) = &pose_note {
             parts.push(("pose", n["id"].clone()));
         }
-        // 外掛寫法（2026-10-29）：這個家族的寫法接了使用者的 skill，照想法挑段接在使用者訊息後面（快取鍵帶挑到的內容）
-        let skill_note = skill_guide(&task, &s("family"))
+        // 外掛寫法（2026-10-29）：這個家族的寫法接了使用者的 skill，照想法挑段接在使用者訊息後面（快取鍵帶挑到的內容）。
+        // 裝了 Qwen3-Embedding 就照意思挑，沒有就照關鍵字（embed.rs）
+        let skill = skill_guide(&task, &s("family"))
             .zip(self.settings_path.parent())
-            .and_then(|(g, data)| crate::skills::for_guide(data, &self.settings_path, g))
-            .map(|sk| sk.pick_block(&format!("{idea} {instruction}"), crate::skills::PICK_WRITE))
-            .filter(|t| !t.is_empty());
+            .and_then(|(g, data)| crate::skills::for_guide(data, &self.settings_path, g));
+        let skill_note = match &skill {
+            Some(sk) => Some(self.embed.pick_block(sk, &format!("{idea} {instruction}"), crate::skills::PICK_WRITE).await),
+            None => None,
+        }
+        .filter(|t| !t.is_empty());
         if let Some(t) = &skill_note {
             parts.push(("skill", json!(sha256_hex(t.as_bytes()))));
         }
@@ -3252,9 +3377,9 @@ impl Service {
             let ngl = self.ngl();
             let kind = match st.get("kind") {
                 Some(k) if !st.is_empty() && st.get("ngl").and_then(py::int) == Some(ngl) => {
-                    str_of(k)
+                    general_kind(&str_of(k)).to_string()
                 }
-                _ => "t2i".to_string(),
+                _ => "adult".to_string(),
             };
             self.ensure(core, &kind, ngl, em).await?;
             let msgs = core.build_messages("zh", prompt, &[], "", "", false, "")?;
@@ -3634,55 +3759,179 @@ mod tests {
         assert_eq!(core.cache_get("again").unwrap()["prompt"], "works");
     }
     #[test]
-    fn pe_models_search_every_llm_root_and_subfolder() {
+    fn bundled_prompts_beat_the_old_node_copy() {
+        // 已安裝的節點資料夾留著舊版 anima.txt：程式附帶的新版優先，快取鍵要分開
+        let base = std::env::temp_dir().join(format!("anima_pe_bundled_{}", std::process::id()));
+        let (node, res) = (base.join("node"), base.join("res"));
+        std::fs::create_dir_all(&node).unwrap();
+        std::fs::create_dir_all(&res).unwrap();
+        std::fs::write(node.join("anima.txt"), "OLD rules\r\n").unwrap();
+        std::fs::write(res.join("anima.txt"), "NEW rules\n").unwrap();
+        std::fs::write(node.join("zh_summary.txt"), "same\n").unwrap();
+        std::fs::write(res.join("zh_summary.txt"), "same\r\n").unwrap();
+        let mut core = Core::with_dirs(&node, &node, &base);
+        assert_eq!(core.default_prompt("anima").unwrap(), "OLD rules");
+        assert_eq!(core.default_differs_from_node("anima"), None);
+        core.bundled = Some(res.clone());
+        assert_eq!(core.default_prompt("anima").unwrap(), "NEW rules");
+        assert_eq!(core.default_differs_from_node("anima").as_deref(), Some("NEW rules"));
+        assert_eq!(core.default_differs_from_node("zh"), None, "內容一樣（只差換行）就跟節點共用快取");
+        // 程式沒附帶的檔照舊讀節點
+        std::fs::write(node.join("refine.txt"), "node only\n").unwrap();
+        assert_eq!(core.default_prompt("refine").unwrap(), "node only");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    #[test]
+    fn embedding_model_is_found_but_never_used_as_the_brain() {
+        let base = std::env::temp_dir().join(format!("anima_pe_embed_{}", std::process::id()));
+        std::fs::create_dir_all(&base).unwrap();
+        let core = Core::with_dirs(&base, &base, &base);
+        std::fs::write(base.join("Qwen3-Embedding-0.6B-Q8_0.gguf"), b"test").unwrap();
+        assert_eq!(core.embedding_model().map(|p| file_name(&p)).as_deref(), Some("Qwen3-Embedding-0.6B-Q8_0.gguf"));
+        assert!(core.model_files("adult", None).is_err(), "只有意思座標模型時不能拿它當腦袋");
+        std::fs::write(base.join("Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"), b"test").unwrap();
+        assert_eq!(file_name(&core.model_files("adult", None).unwrap().0), "Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf");
+        assert!(is_embedding("Qwen3-Embedding-0.6B-Q8_0.gguf") && !is_embedding("mmproj-embedding.gguf") && !is_embedding("Qwen3.5-9B.gguf"));
+        // 兩組 Qwen3.5 看圖檔：配跟模型檔名最像的（照字母排會配到 Aria 那個）
+        std::fs::write(base.join("Aria-Qwen3.5-9B-mmproj-F16.gguf"), b"test").unwrap();
+        std::fs::write(base.join("Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf"), b"test").unwrap();
+        let (_, mm) = core.model_files("adult_vision", None).unwrap();
+        assert_eq!(file_name(&mm.unwrap()), "Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf");
+        // 擂台贏的 Defiant Fable 放進來：它優先，看圖檔也配它自己的
+        std::fs::write(base.join("Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q4_K_M.gguf"), b"test").unwrap();
+        std::fs::write(base.join("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"), b"test").unwrap();
+        let (m, mm) = core.model_files("adult_vision", None).unwrap();
+        assert_eq!(file_name(&m), "Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q4_K_M.gguf");
+        assert_eq!(file_name(&mm.unwrap()), "Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf");
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// 2026-10-29 使用者：「讓別人自己決定要用什麼模型，但同時又要確保通用性」
+    #[test]
+    fn users_pick_their_own_general_model() {
+        let base = std::env::temp_dir().join(format!("anima_pe_pick_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        std::fs::create_dir_all(&base).unwrap();
+        let core = Core::with_dirs(&base, &base, &base);
+        let put = |n: &str| std::fs::write(base.join(n), b"test").unwrap();
+        // 別人做的 Qwen3.5 9B（不是 Fable、也不是 Huihui）自動模式也認得
+        put("Qwen3.5-9B-heretic-v2-Q4_K_M.gguf");
+        put("mmproj-Qwen3.5-9b-heretic-v2-F16.gguf");
+        assert_eq!(file_name(&core.model_files("adult", None).unwrap().0), "Qwen3.5-9B-heretic-v2-Q4_K_M.gguf");
+        // 官方 PE、挑段模型不會出現在選單上
+        put("pe_t2i_heretic-Q4_K_M.gguf");
+        put("Qwen3-Embedding-0.6B-Q8_0.gguf");
+        put("gemma-3-12b-it-abliterated-Q4_K_M.gguf");
+        put("Qwen3.6-35B-A3B-heretic.gguf");
+        let names: Vec<String> = core.general_choices().iter().map(|c| c["name"].as_str().unwrap().to_string()).collect();
+        assert_eq!(names, ["Qwen3.5-9B-heretic-v2-Q4_K_M.gguf", "Qwen3.6-35B-A3B-heretic.gguf", "gemma-3-12b-it-abliterated-Q4_K_M.gguf"]);
+        let gemma = core.general_choices().into_iter().find(|c| c["name"] == "gemma-3-12b-it-abliterated-Q4_K_M.gguf").unwrap();
+        assert!(gemma["qwen"] == false && gemma["vision"] == false && gemma["big"] == false);
+        // 自動：有 35B 用 35B
+        assert_eq!(file_name(&core.model_files("adult", None).unwrap().0), "Qwen3.6-35B-A3B-heretic.gguf");
+        // 指定別家的檔：照用；看圖檔配同系列的（gemma），沒有就講清楚要放什麼，不給 Qwen 的下載
+        core.set_general("gemma-3-12b-it-abliterated-Q4_K_M.gguf");
+        assert_eq!(file_name(&core.model_files("adult", None).unwrap().0), "gemma-3-12b-it-abliterated-Q4_K_M.gguf");
+        let e = core.model_files("adult_vision", None).unwrap_err().0;
+        assert!(e.contains("gemma") && e.contains("mmproj"), "{e}");
+        put("mmproj-gemma-3-12b-it-f16.gguf");
+        assert_eq!(file_name(&core.model_files("adult_vision", None).unwrap().1.unwrap()), "mmproj-gemma-3-12b-it-f16.gguf");
+        // 助手指定 35B 腦袋：指定的檔不是那一類，就用那一類的；指定 9B：指定的檔算 9B 那類，用它
+        assert_eq!(file_name(&core.model_files("adult@35b", None).unwrap().0), "Qwen3.6-35B-A3B-heretic.gguf");
+        assert_eq!(file_name(&core.model_files("adult@9b", None).unwrap().0), "gemma-3-12b-it-abliterated-Q4_K_M.gguf");
+        // 指定的檔不見了：照自動挑，不會整個壞掉
+        core.set_general("deleted-model.gguf");
+        assert_eq!(file_name(&core.model_files("adult", None).unwrap().0), "Qwen3.6-35B-A3B-heretic.gguf");
+        assert!(is_big_brain("Llama-3.3-70B-Q4.gguf") && is_big_brain("Qwen3-30B-A3B.gguf") && !is_big_brain("Qwen3.5-9B-Q4.gguf"));
+        std::fs::remove_dir_all(&base).ok();
+    }
+
+    /// 只剩官方 PE 的舊安裝：當成沒有改寫模型（講清楚去下載通用模型），PE 檔永遠不會被載入；
+    /// 通用模型放在外部模型資料夾的子資料夾也找得到；舊的 kind 名稱（server_state 可能留著 t2i／i2i）照通用模型處理
+    #[test]
+    fn general_models_search_every_llm_root_and_never_pick_pe() {
         let base = std::env::temp_dir().join(format!("anima_pe_roots_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
         let own = base.join("own");
-        let extra = base.join("extra").join("PE");
+        let extra = base.join("extra").join("LLM9B");
         std::fs::create_dir_all(&own).unwrap();
         std::fs::create_dir_all(&extra).unwrap();
-        std::fs::write(own.join("Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"), b"test").unwrap();
-        std::fs::write(extra.join("PE_T2I_HERETIC-Q4_K_M.GGUF"), b"test").unwrap();
-        std::fs::write(extra.join("pe_i2i_heretic-Q6_K.gguf"), b"test").unwrap();
+        std::fs::write(own.join("pe_t2i_heretic-Q4_K_M.gguf"), b"test").unwrap();
+        std::fs::write(own.join("pe_i2i_heretic-Q4_K_M.gguf"), b"test").unwrap();
         std::fs::write(own.join("pe_i2i_heretic.mmproj-bf16.gguf"), b"test").unwrap();
         let mut c = Core::with_dirs(&base, &base, &own);
-        // 未下載：回覆要能直接告訴朋友補哪個功能包。
-        let e = c.model_files("t2i", None).unwrap_err().0;
-        assert!(e.contains("安裝與修復") && e.contains("AI 改寫、生圖助手"));
+        let e = c.model_files("adult", None).unwrap_err().0;
+        assert!(e.contains("安裝與修復") && e.contains("AI 改寫、生圖助手"), "{e}");
+        assert!(c.model_files("t2i", None).is_err() && c.model_files("i2i", None).is_err());
+        let fable = extra.join("Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-IQ3_M.gguf");
+        std::fs::write(&fable, b"test").unwrap();
+        std::fs::write(extra.join("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"), b"test").unwrap();
         c.model_dirs.push(base.join("extra"));
-        assert_eq!(c.model_files("t2i", None).unwrap().0, extra.join("PE_T2I_HERETIC-Q4_K_M.GGUF"));
+        assert_eq!(c.model_files("adult", None).unwrap().0, fable);
+        assert_eq!(c.model_files("t2i", None).unwrap(), (fable.clone(), None));
         let (m, mm) = c.model_files("i2i", None).unwrap();
-        assert_eq!(m, extra.join("pe_i2i_heretic-Q6_K.gguf"));
-        assert_eq!(mm.unwrap(), own.join("pe_i2i_heretic.mmproj-bf16.gguf"));
-        assert!(c.model_files("t2i", Some("Q8_0")).is_err());
-        // with_dirs 的獨立環境不會拿其他位置的模型冒充已安裝。
-        assert!(Core::with_dirs(&base, &base, &own).model_files("t2i", None).is_err());
+        assert_eq!(m, fable);
+        assert_eq!(mm.unwrap(), extra.join("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"));
+        assert!(c.available().get("t2i").is_none() && c.available()["adult"].is_string());
         std::fs::remove_dir_all(base).unwrap();
     }
 
-    /// 裸露、簡體字的成人想法也要交給通用模型（朋友回報「全裸」被官方改寫模型寫成穿衣服）；一般想法不能誤判
+    /// 2026-10-30 使用者：「把PE版的改寫模型在下一個版本直接砍掉…讓下一個更新的人，自動把舊模型真刪除，換新的上去。」
+    /// 要刪的：站找得到的官方 PE（不分大小寫、各種量化、看圖檔）；換好新 9B 才刪的：程式以前發的 Huihui 9B（模型＋看圖檔）。
+    /// 使用者自己放的別家模型、35B 不動
     #[test]
-    fn explicit_idea_catches_nudity_and_simplified() {
-        for idea in [
-            "一位28歲成年女性全裸站在窗邊，正面，看得到乳房和陰部",
-            "裸体的女人躺在床上",
-            "把衣服脱掉，露点",
-            "a naked woman on a beach, topless",
-            "close-up of her nipples",
-            "后入，内射",
-            "顏射之後的特寫",
-            "哥德風女生穿漁網上衣，巨乳",
-            "女生靠著欄杆看夕陽，胸部非常大",
-        ] {
-            assert!(EXPLICIT_IDEA.is_match(idea), "{idea}");
-        }
-        for idea in [
-            "黃昏的海邊小鎮，穿白色洋裝的女性騎腳踏車經過",
-            "咖啡店黑板菜單寫著「今日特調 拿鐵 120元」",
-            "a swimmer doing the breaststroke in a pool",
-            "her facial expression is calm, cumulus clouds overhead",
-        ] {
-            assert!(!EXPLICIT_IDEA.is_match(idea), "{idea}");
-        }
+    fn retire_plan_finds_pe_and_old_huihui() {
+        let base = std::env::temp_dir().join(format!("anima_pe_retire_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&base);
+        let own = base.join("own");
+        let extra = base.join("extra").join("sub");
+        std::fs::create_dir_all(&own).unwrap();
+        std::fs::create_dir_all(&extra).unwrap();
+        let put = |d: &Path, n: &str| std::fs::write(d.join(n), b"test").unwrap();
+        let names = |v: &[PathBuf]| v.iter().map(|p| file_name(p)).collect::<Vec<_>>();
+        let mut c = Core::with_dirs(&base, &base, &own);
+        let p = c.retire_plan();
+        assert!(p.pe.is_empty() && p.old.is_empty() && !p.has_fable && !p.had_llm);
+        put(&own, "pe_t2i_heretic-Q4_K_M.gguf");
+        put(&own, "pe_i2i_heretic.mmproj-bf16.gguf");
+        put(&extra, "PE_I2I_HERETIC-Q6_K.gguf");
+        put(&own, "Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf");
+        put(&own, "Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf");
+        put(&own, "Qwen3.6-35B-A3B-heretic.gguf");
+        put(&own, "Qwen3.5-9B.mmproj-bf16.gguf");
+        // 下載到一半的暫存檔（api_models 的 <檔名>.verify／.verify.part）也一起刪，不留幾 GB 的殘檔
+        put(&own, "pe_t2i_heretic-Q4_K_M.gguf.verify");
+        put(&extra, "Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf.verify.part");
+        c.model_dirs.push(base.join("extra"));
+        let mut p = c.retire_plan();
+        p.pe.sort_by_key(|x| file_name(x).to_lowercase());
+        p.old.sort_by_key(|x| file_name(x).to_lowercase());
+        assert_eq!(
+            names(&p.pe),
+            ["PE_I2I_HERETIC-Q6_K.gguf", "pe_i2i_heretic.mmproj-bf16.gguf", "pe_t2i_heretic-Q4_K_M.gguf", "pe_t2i_heretic-Q4_K_M.gguf.verify"]
+        );
+        assert_eq!(
+            names(&p.old),
+            [
+                "Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf",
+                "Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf",
+                "Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf.verify.part"
+            ]
+        );
+        assert!(!p.has_fable && p.had_llm);
+        // 新 9B 下載到一半不算有
+        put(&own, "Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-IQ3_M.gguf.verify.part");
+        assert!(!c.retire_plan().has_fable);
+        put(&own, "Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-IQ3_M.gguf");
+        assert!(c.retire_plan().has_fable);
+        // 只有 PE、沒有任何通用模型：也算用過改寫（要換上新的）
+        let only = base.join("only");
+        std::fs::create_dir_all(&only).unwrap();
+        put(&only, "pe_t2i_heretic-Q4_K_M.gguf");
+        let p = Core::with_dirs(&base, &base, &only).retire_plan();
+        assert!(p.had_llm && !p.has_fable && p.old.is_empty());
+        std::fs::remove_dir_all(base).unwrap();
     }
 
     /// 提示詞檔是 CRLF（git 在 Windows checkout）也讀成 \n，跟 Python 版一致（GitHub CI 抓到的）
@@ -3705,18 +3954,18 @@ mod tests {
         let llm = base.join("models").join("LLM");
         std::fs::create_dir_all(&llm).unwrap();
         std::fs::create_dir_all(base.join("node").join("x")).unwrap();
-        std::fs::write(llm.join("Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"), b"").unwrap();
+        std::fs::write(llm.join("Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q4_K_M.gguf"), b"").unwrap();
         let models = base.join("node").join("x").join("..").join("..").join("models").join("LLM");
         let mut c = Core::with_dirs(&base.join("node"), &base.join("node"), &models);
         c.res = Some(crate::paths::default_res());
         let e = c.model_files("adult_vision@9b", None).unwrap_err().0;
-        assert!(e.contains(MMPROJ_BUTTON) && e.contains("huggingface.co/mradermacher/Huihui-Qwen3.5-9B-abliterated-GGUF/resolve/"), "{e}");
-        assert!(e.contains("Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf") && !e.contains(".."), "{e}");
+        assert!(e.contains(MMPROJ_BUTTON) && e.contains("huggingface.co/DavidAU/Qwen3.5-9B-The-Defiant-Fable-"), "{e}");
+        assert!(e.contains("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf") && !e.contains(".."), "{e}");
         let (dest, url, size, sha) = c.mmproj_download(Some("9b")).unwrap().unwrap();
-        assert_eq!(dest, models.join("Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf"));
-        assert!(url.ends_with(".mmproj-f16.gguf") && size > 500_000_000 && sha.is_some());
+        assert_eq!(dest, models.join("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"));
+        assert!(url.ends_with("/mmproj-F16.gguf") && size > 500_000_000 && sha.is_some());
         // 放好以後就不缺了
-        std::fs::write(llm.join("Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf"), b"").unwrap();
+        std::fs::write(llm.join("Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"), b"").unwrap();
         assert!(c.model_files("adult_vision@9b", None).unwrap().1.is_some());
         assert!(c.mmproj_download(Some("9b")).unwrap().is_none());
         // 2026-10-29 起 35B 是安裝精靈的選配包：缺看圖檔時也給下載按鈕，存到 35B 主檔旁邊
@@ -3784,26 +4033,15 @@ mod tests {
         );
     }
 
+    /// 2026-10-30 官方 PE 拿掉了：文字一律通用模型，有圖或看圖寫說明一律通用讀圖模型，沒有退路
     #[test]
-    fn rewrite_goes_to_the_general_model_by_default() {
-        let all = |_: &str| true;
-        let no_pe = |k: &str| !matches!(k, "t2i" | "i2i");
-        let only_pe = |k: &str| matches!(k, "t2i" | "i2i");
-        // 預設（general）：文字 → 通用、有圖 → 通用讀圖
-        assert_eq!(rewrite_kind("t2i", false, false, false, false, all), "adult");
-        assert_eq!(rewrite_kind("zh", false, false, false, false, all), "adult");
-        assert_eq!(rewrite_kind("i2i", false, true, false, false, all), "adult_vision");
-        assert_eq!(rewrite_kind("caption", true, true, false, false, all), "adult_vision");
-        // 選了官方 PE：一般文字、改圖走 PE；Anima、露骨的照樣通用
-        assert_eq!(rewrite_kind("t2i", false, false, true, false, all), "t2i");
-        assert_eq!(rewrite_kind("t2i", false, false, true, true, all), "adult");
-        assert_eq!(rewrite_kind("anima", false, false, true, false, all), "adult");
-        assert_eq!(rewrite_kind("i2i", false, true, true, false, all), "i2i");
-        // 選了官方 PE 卻沒下載：通用；只有 PE（舊安裝沒通用模型）：PE
-        assert_eq!(rewrite_kind("t2i", false, false, true, false, no_pe), "adult");
-        assert_eq!(rewrite_kind("i2i", false, true, true, false, no_pe), "adult_vision");
-        assert_eq!(rewrite_kind("t2i", false, false, false, false, only_pe), "t2i");
-        assert_eq!(rewrite_kind("i2i", false, true, false, false, only_pe), "i2i");
+    fn rewrite_always_uses_the_general_model() {
+        assert_eq!(rewrite_kind("t2i", false, false), "adult");
+        assert_eq!(rewrite_kind("zh", false, false), "adult");
+        assert_eq!(rewrite_kind("anima", false, false), "adult");
+        assert_eq!(rewrite_kind("i2i", false, false), "adult_vision");
+        assert_eq!(rewrite_kind("t2i", false, true), "adult_vision");
+        assert_eq!(rewrite_kind("caption", true, true), "adult_vision");
     }
 
     #[test]

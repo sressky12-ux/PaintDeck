@@ -394,6 +394,24 @@ function flowOut(kind, head, lines = []) {
     ...(kind === "err" ? [el("div", { class: "wf-msg" }, lines.join("\n"))] : lines.length ? [el("ul", { class: "vid-rules" }, ...lines.map((t) => el("li", {}, t)))] : []));
 }
 
+/** 生成頁「讀圖片參數」的「匯入成工作流」：用這張圖新建一組（名字＝檔名，模式自動判斷），結果顯示在匯入欄 */
+export async function importImageFile(f) {
+  await focusImport();
+  const name = f.name.replace(/\.[^.]+$/, "");
+  if (FLOWS.some((w) => w.name === name) && !confirm(`已經有叫「${name}」的工作流組：這張圖會加進去（同一個模式會換成新的，其他模式保留）。要繼續嗎？`)) return;
+  let body;
+  try { body = { mode: "auto", file_name: f.name, data_b64: await toB64(f) }; }
+  catch (e) { flowOut("err", "匯入失敗", [e.message]); return; }
+  await sendFlow(body);
+}
+
+/** 下載中心「匯入生圖站」：/api/hub/workflow 拿到的檔（base64）新建一組（名字＝卡片名稱，模式自動判斷），結果顯示在匯入欄 */
+export async function importData(fileName, b64, name) {
+  await focusImport();
+  if (FLOWS.some((w) => w.name === name) && !confirm(`已經有叫「${name}」的工作流組：這個檔會加進去（同一個模式會換成新的，其他模式保留）。要繼續嗎？`)) return;
+  await sendFlow({ mode: "auto", file_name: fileName, data_b64: b64, name });
+}
+
 async function importFlow() {
   const f = $("#mdFlowFile").files[0];
   $("#mdFlowFile").value = "";
@@ -435,6 +453,7 @@ async function sendFlow(body) {
     const w = r.workflow;
     const got = r.mode ? `這個檔收成「${modeLabel(r.mode)}」；` : "";
     flowOut("ok", `已匯入「${w.name}」：${got}這組現在有${w.modes.map(modeLabel).join("、")}。到生成頁的模型選單最下面選「⚙ ${w.name}」。`, r.warnings || []);
+    missingOut(r.missing_models || []);
     toast(`已匯入「${w.name}」`, "ok");
     await loadFlows();
     await app.refreshState();
@@ -446,6 +465,17 @@ async function sendFlow(body) {
   } finally {
     btn.disabled = false;
   }
+}
+
+/** 匯入結果底下：工作流用到、這台電腦沒有的模型（api_wf::import 的 missing_models），LoRA／主模型／VAE 給一顆「到下載中心找」 */
+function missingOut(list) {
+  if (!list.length) return;
+  const KIND = { lora: "LoRA", model: "主模型", vae: "VAE", te: "文字編碼器" };
+  $("#mdFlowOut").append(el("div", { class: "wf-missing" },
+    el("div", { class: "st-err" }, `這個工作流用到 ${list.length} 個這台電腦沒有的模型，畫之前要先放好：`),
+    el("ul", { class: "vid-rules" }, ...list.map((m) => el("li", {},
+      el("span", { translate: "no" }, m.name), `（${KIND[m.kind] || m.kind}）`,
+      m.kind !== "te" && app.hubFind ? el("button", { class: "akey sm", type: "button", onclick: () => app.hubFind(m.name, m.kind) }, "到下載中心找") : null)))));
 }
 
 // 分析找不到某個地方（api_wf::import 回的 need）：問使用者是哪個節點。mark＝寫進去的標記，list＝candidates 裡的哪一類

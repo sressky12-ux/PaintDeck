@@ -128,7 +128,6 @@ export const modeName = { txt2img: "文生圖", img2img: "圖生圖", inpaint: "
 /** 圖庫紀錄是影片（mp4）：大圖要用 <video>，圖片才有的功能（圖生圖、局部重繪…）要藏起來 */
 export const isVideo = (rec) => /\.(mp4|webm|mkv)$/i.test(rec?.filename || "");
 /** 挑種子用的低解析度預覽影片（graphs::build_video 的 video_preview 存成 video_preview_*.mp4） */
-export const isVideoPreview = (rec) => /^video_preview_/i.test(rec?.filename || "") && isVideo(rec);
 /** 只對圖片有用的動作 */
 // 只有影片才有的動作（拆幀台）
 export const VIDEO_ONLY_ACTS = ["frames"];

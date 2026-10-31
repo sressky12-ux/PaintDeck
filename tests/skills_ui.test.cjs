@@ -11,7 +11,7 @@ function harness(data) {
     set innerHTML(v) { this.children = []; }, append(...k) { this.children.push(...k); },
     addEventListener(ev, f) { this.listeners[ev] = f; },
   });
-  const controls = new Map(['skInstall', 'skUrl', 'skOpen', 'skReload', 'skMsg', 'skList', 'skBind'].map(id => ['#' + id, node()]));
+  const controls = new Map(['skInstall', 'skUrl', 'skOpen', 'skReload', 'skMsg', 'skPick', 'skList', 'skBind'].map(id => ['#' + id, node()]));
   const box = { querySelector: id => controls.get(id) };
   const el = (tag, attrs = {}, ...kids) => ({ tag, attrs, children: kids.flat().filter(k => k !== null && k !== undefined), value: attrs.value || '',
     append(...k) { this.children.push(...k); } });
@@ -33,6 +33,7 @@ test('已裝的 skill 列出段數和授權，綁到不見的資料夾要講當�
       source: { repo: 'Moeblack/moss-image-prompt-skill', license: 'NOASSERTION' } }],
     bind: { moss: 'moss-image-prompt-skill', anima: 'gone' },
     guides: [{ name: 'moss', zh: 'MOSS-Image' }, { name: 'anima', zh: 'Anima' }],
+    pick: { semantic: true, model: 'Qwen3-Embedding-0.6B-Q8_0.gguf' },
   });
   h.mountSkills(h.box);
   await new Promise(r => setImmediate(r));
@@ -44,6 +45,14 @@ test('已裝的 skill 列出段數和授權，綁到不見的資料夾要講當�
   assert.equal(anima.value, 'gone');
   assert.match(text(anima.children.at(-1)), /找不到資料夾，當作不用/);
   assert.equal(h.get('skMsg').textContent, '');
+  assert.match(h.get('skPick').textContent, /照意思挑（Qwen3-Embedding-0\.6B-Q8_0\.gguf/);
+});
+
+test('沒裝意思座標模型：說照關鍵字挑、去哪補', async () => {
+  const h = harness({ skills: [], bind: {}, guides: [], dir: 'D:/data/skills', pick: { semantic: false, model: null } });
+  h.mountSkills(h.box);
+  await new Promise(r => setImmediate(r));
+  assert.match(h.get('skPick').textContent, /照關鍵字挑.*AI 改寫、生圖助手/);
 });
 
 test('授權欄：自己放的、沒標的、有標的', () => {

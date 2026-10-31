@@ -371,6 +371,8 @@ impl Comfy {
                 &job["params"],
                 Some(pid),
             ) {
+                // 整本上色的原始輸出：只記一筆給背景工作找（跑完就搬走、從圖庫隱藏），不推到網頁的圖庫
+                Ok(_) if job["params"].get("colorbook").is_some() => {}
                 Ok(iid) => {
                     let image = self
                         .db
@@ -529,11 +531,20 @@ pub fn explain(data: &Value) -> String {
 
 /// 常見錯誤 → 白話說明＋解法（原文附在後面，方便查）
 const FRIENDLY: &[(&[&str], &str)] = &[
+    // 要排在「少了節點」前面：MOSS 照指令改圖的節點在繪匣的 comfy_moss 補丁裡（2026-10-30），舊補丁沒有
+    (&["textencodemossimageedit"],
+     "這台 ComfyUI 的 MOSS 支援還是舊版，沒有「照指令改圖」要的節點。解法：ComfyUI 是 0.38.0 的話，到「設定 → 安裝與修復」再按一次安裝，會自動換上新的 MOSS 支援；其他版本請更新 ComfyUI 到 0.43 以後。"),
     // 新版 ComfyUI：missing_node_type「Node 'X' not found. The custom node may not be installed.」；舊版：「Cannot execute because node X does not exist.」
     (&["custom node may not be installed", "cannot execute because node"],
      "這台 ComfyUI 少了工作流要用的節點（自訂節點沒裝，或 ComfyUI 版本太舊）。解法：用 ComfyUI Manager 安裝缺少的節點（名稱在下面的原始訊息裡），裝完重開 ComfyUI；匯入的工作流也可以到「設定 → 模型與工作流」看缺哪些節點。"),
     (&["out of memory", "outofmemory", "cuda error: out", "allocation on device"],
      "顯示卡記憶體（VRAM）不夠。解法：張數改少、尺寸改小、關掉吃顯卡的遊戲；或到右上角狀態列按「釋放顯存」再試一次。"),
+    // 要排在「value not in list」前面：CLIPLoader 的 type 選單沒有 moss_image＝ComfyUI 程式太舊，跟模型檔無關（2026-10-30 有人因此重下模型）
+    (&["'moss_image' not in"],
+     "這台 ComfyUI 的程式還沒有 MOSS-Image 支援（模型檔沒問題，不用重新下載；官方正式版到 0.40.0 都還沒有 MOSS）。解法：ComfyUI 是 0.38.0 的話，到「設定 → 安裝與修復」再按一次安裝，會自動補上；其他版本的免安裝版執行 ComfyUI 資料夾裡的 update\\update_comfyui.bat 更新到最新開發版（不要用 update_comfyui_stable.bat），或讓安裝精靈另外下載一份 ComfyUI。"),
+    // 要排在「value not in list」前面：H3 影片的模型檔沒裝（2026-10-30 回報：站叫人去 LoRA 分頁刷新，方向錯）
+    (&["minimax_h3", "10eros_max_h3", "qwen3vl_32b_minimax"],
+     "這台 ComfyUI 沒有 H3 影片的模型檔（主模型、文字編碼器或 VAE）。解法：到安裝精靈勾「H3 影片（本機，選配）」下載，或在 H3 影片台改用雲端。"),
     (&["value not in list"],
      "找不到選的模型或 LoRA 檔（可能被移走或改名；匯入的工作流也可能寫著你沒有的檔）。解法：LoRA 分頁按「重新整理清單」，重新選一次模型／LoRA；用「⚙ 生圖工作流」時，到左欄「工作流參數」把標紅的欄位換成你有的檔（檔名在下面的原始訊息裡）。"),
     (&["mat1 and mat2", "size mismatch", "shapes cannot be multiplied", "lora key not loaded"],
@@ -751,6 +762,21 @@ mod tests {
         assert!(e.contains("MOSS") && e.contains(crate::graphs::MOSS_TE), "{e}");
     }
 
+    /// 2026-10-30 有人回報：ComfyUI 程式沒有 MOSS 支援，以前講成「找不到模型或 LoRA 檔」，害人去重下模型
+    #[test]
+    fn friendly_video_models() {
+        let m = friendly("CLIPLoader: Value not in list: clip_name: 'qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors' not in ['a.safetensors']");
+        assert!(m.contains("H3 影片（本機，選配）") && !m.contains("LoRA 分頁"), "{m}");
+        let g = friendly("UNETLoader: Value not in list: unet_name: 'anima-base.safetensors' not in ['b.safetensors']");
+        assert!(g.contains("LoRA 分頁") && !g.contains("H3"), "{g}");
+    }
+
+    #[test]
+    fn moss_type_missing_is_not_a_missing_file() {
+        let m = friendly("Prompt outputs failed validation；CLIPLoader: Value not in list: type: 'moss_image' not in (list of length 29)");
+        assert!(m.contains("MOSS-Image 支援") && m.contains("update_comfyui.bat") && !m.contains("找不到選的模型"), "{m}");
+    }
+
     #[test]
     fn listed_names_match_slashes_and_subfolders() {
         let list = have(&["SDXL\\juggernaut.safetensors", "anima\\Style.safetensors", "a\\dup.safetensors", "b\\dup.safetensors"]);
@@ -791,6 +817,14 @@ mod tests {
         assert_eq!(pick_alternative(crate::graphs::QWEN21_TE, &have(&["qwen3vl_8b_bf16.safetensors"])), Ok(Some("qwen3vl_8b_bf16.safetensors".into())));
         // 不是生圖站預設的名稱（使用者自己的工作流）：不管
         assert_eq!(pick_alternative("my_custom_vae.safetensors", &have(&["x.safetensors"])), Ok(None));
+    }
+
+    /// MOSS 照指令改圖（2026-10-30）：ComfyUI 還是舊補丁、沒有 TextEncodeMOSSImageEdit → 叫人重跑安裝精靈，不是去 Manager 找節點
+    #[test]
+    fn moss_edit_node_missing_points_to_setup() {
+        let v = json!({"error": {"type": "missing_node_type", "message": "Node 'TextEncodeMOSSImageEdit' not found. The custom node may not be installed."}, "node_errors": {}});
+        let e = explain(&v);
+        assert!(e.contains("安裝與修復") && !e.contains("ComfyUI Manager"), "{e}");
     }
 
     /// 匯入的工作流用到沒裝的自訂節點：新舊版 ComfyUI 的回應都要翻成白話，節點名稱留在原始訊息裡

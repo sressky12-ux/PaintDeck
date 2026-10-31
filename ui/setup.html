@@ -47,6 +47,8 @@
   .it .bar > i { display: block; height: 100%; width: 0; background: var(--ph-amber); }
   .it.done .bar > i, .it.skip .bar > i { background: var(--ph-green); width: 100%; }
   .it.error .bar > i { background: var(--ph-red); width: 100%; }
+  .it.warn .bar > i { background: var(--ph-amber); width: 100%; }
+  .it.warn .errmsg { color: var(--warn); }
   .it .num { text-align: right; font: 12px/1.2 var(--f-data); font-variant-numeric: tabular-nums; }
   .it .errmsg { grid-column: 1 / -1; color: var(--err); font-size: 12px; }
   .it .hintmsg { grid-column: 1 / -1; color: var(--ph-amber); font-size: 12px; }

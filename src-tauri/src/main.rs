@@ -26,6 +26,11 @@ const TITLE: &str = "繪匣 PaintDeck";
 struct Comfy(Mutex<Option<ComfyProc>>);
 
 fn main() {
+    // 解除安裝時 NSIS 叫的（nsis\hooks.nsh）：問要不要連資料一起刪，做完就結束，不搶 port、不開視窗
+    let args: Vec<String> = std::env::args().collect();
+    if args.iter().any(|a| a == "--uninstall-cleanup") {
+        std::process::exit(anima_app::uninstall::run_cli(&args));
+    }
     let port: u16 = std::env::var("ANIMA_PORT")
         .ok()
         .and_then(|p| p.parse().ok())
@@ -414,8 +419,29 @@ async fn start_main(
             fail(&format!("內建伺服器停止：{e}"));
         }
     });
-    std::thread::spawn(
-        move || match ComfyProc::start_if_needed(&dir, &logs, comfy_port) {
+    let res = paths.res.clone();
+    std::thread::spawn(move || {
+        // 官方免安裝版還比 COMFY_VERSION 舊：開 ComfyUI 之前自動升級（2026-10-31 使用者：「要確保他們升級後都能很直接地簡單的，
+        // 能享受到跟我一樣」）。ComfyUI 已經開著、「我自己開 ComfyUI」的不動；失敗（例如沒網路）照舊用舊版開
+        if !anima_app::launcher::port_open(comfy_port) && !anima_app::gpu::prefs().external {
+            if anima_app::setup::comfy_upgradable(&dir) {
+                anima_app::launcher::set_note(Some(format!("正在把 ComfyUI 升級到 {}（約 1～3 分鐘，只有這一次），好了會自己開", anima_app::setup::COMFY_VERSION)));
+            }
+            match anima_app::setup::auto_upgrade_comfy(&dir, &res) {
+                None => {}
+                Some(Ok(())) => {
+                    eprintln!("ComfyUI 自動升級到 {} 了", anima_app::setup::COMFY_VERSION);
+                    anima_app::launcher::set_note(None);
+                }
+                Some(Err(e)) => {
+                    eprintln!("ComfyUI 自動升級沒成功：{e}");
+                    anima_app::launcher::set_note(None);
+                }
+            }
+        }
+        // 程式附帶、已經裝進 ComfyUI 的東西（AI 改寫節點、工作流程、MOSS 補丁…）先換成這一版的，再開 ComfyUI
+        let updated = anima_app::setup::sync_bundled(&dir, &res);
+        match ComfyProc::start_if_needed(&dir, &logs, comfy_port) {
             Ok(Some(p)) => {
                 p.attach_diagnostics(diagnostics);
                 *handle
@@ -424,14 +450,18 @@ async fn start_main(
                     .lock()
                     .unwrap_or_else(|e| e.into_inner()) = Some(p)
             }
-            Ok(None) => eprintln!("ComfyUI 已經開著，直接使用"),
+            Ok(None) => {
+                eprintln!("ComfyUI 已經開著，直接使用");
+                // 開著的 ComfyUI 還是舊的程式：生成頁提醒重開
+                anima_app::setup::set_updated(updated);
+            }
             Err(e) => {
                 eprintln!("{e}");
                 // 視窗程式看不到 eprintln：記下來，/api/state 在 ComfyUI 離線時會帶給網頁
                 anima_app::launcher::set_note(Some(format!("ComfyUI 沒開起來：{e}")));
             }
-        },
-    );
+        }
+    });
 }
 
 /// 第一次啟動：只開精靈（同一個 port）。完成後關掉精靈的伺服器、換成正式畫面

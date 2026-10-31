@@ -1,6 +1,6 @@
 [package]
 name = "anima-app"
-version = "26.1029.1"
+version = "26.1031.4"
 description = "繪匣 PaintDeck：本機 AI 生圖（ComfyUI 前端）"
 edition = "2021"
 default-run = "anima-app"
@@ -34,7 +34,7 @@ tower-http = { version = "0.7.1", features = ["fs"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # 圖庫匯出用 Stored；第一次啟動精靈解 llama.cpp 的 zip 要 deflate
 zip = { version = "9.0.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Security_Cryptography", "Win32_System_JobObjects", "Win32_System_Registry"] }
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Security_Cryptography", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_UI_Controls", "Win32_System_Diagnostics_ToolHelp"] }
 csv = "1.4.0"
 webp = "0.3.1"
 sha2 = "0.10.9"
@@ -62,3 +62,10 @@ codegen-units = 1
 lto = true
 opt-level = "s"
 strip = true
+
+# 給自己試的安裝包：thin LTO＋多核心最佳化，打包快很多、exe 稍大；正式發行照舊用 release。
+# 用法：cargo tauri build --ci -- --profile trial（安裝檔在 target\trial\bundle\nsis\）
+[profile.trial]
+inherits = "release"
+codegen-units = 16
+lto = "thin"

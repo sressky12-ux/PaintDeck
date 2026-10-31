@@ -2,3 +2,9 @@ ComfyUI 0.38.0 的 MOSS-Image 支援（官方 commit e087d8f「feat: Add MOSS-im
 安裝精靈在 ComfyUI 是 0.38.0、而且還沒有 comfy_extras\nodes_moss_image.py 時，把這裡的 9 個檔蓋進 ComfyUI 資料夾。
 lora.py 是 cherry-pick 後再手動拿掉 0.38 沒有的 comfy.model_base.Flux3 那段。ComfyUI 是 GPL-3.0。
 ComfyUI 出了含 MOSS 的正式版之後，這個資料夾就可以拿掉。
+2026-10-30 繪匣加了 MOSS 照指令改圖：把官方 PR #17296「Support MOSS-Image edit LoRAs」（60aade0bb）和 #17320「Add attention bias conditioning and image strength for MOSS-Image edit」（9fe7ef764）
+手動移植到 e087d8f 版的 comfy\ldm\moss_image\model.py、comfy\model_base.py、comfy\lora.py、comfy_extras
+odes_moss_image.py（新增節點 TextEncodeMOSSImageEdit）。
+上游新版用了 0.38 沒有的 API（process_qwen、linear_input_act 的 situ），不能整檔換；nodes_flux.py 那一行只給 Flux 節點多兩個選項，沒帶。
+驗證（D:\AI\小克工作區\測試區\moss_edit）：MOSS 文生圖新舊補丁同種子逐像素完全一樣；編輯 LoRA（chinoll Moss-Image-Edit、ai-toolkit 版面）跟官方 v0.43.0 原生比，平均每像素差約 1/255。
+已經裝過舊補丁的 0.38（沒有 TextEncodeMOSSImageEdit）：安裝精靈會再蓋一次（setup.rs moss_support）。

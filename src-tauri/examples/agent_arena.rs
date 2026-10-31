@@ -65,7 +65,7 @@ fn catalog(cfg: &Value, family: &str) -> Vec<LoraInfo> {
 
 /// 退回後再問一次時，哪些退回會讓 app 把 nudged 設起來（照 api_agent.rs）
 fn nudges(fb: &str) -> bool {
-    ["You marked", "You were shown", "Everything in your check", "The user attached"].iter().any(|p| fb.starts_with(p))
+    ["You marked", "You were shown", "Everything in your check", "The user attached", "Your previous round built on user image"].iter().any(|p| fb.starts_with(p))
 }
 
 const REFUSE: &[&str] = &["i can't", "i cannot", "i'm sorry", "i am sorry", "i won't", "not able to", "against my", "無法協助", "不能幫", "抱歉", "无法", "不能提供"];
@@ -332,6 +332,10 @@ fn main() {
                     let mut body = pe::tune_for(&tx(&m["file"]), pe::payload(&msgs, 0.7, 1000 + run * 7 + attempt as i64, false, Some(2048), false));
                     if flag("ban_soft") {
                         body = pe::ban_soft_words(body);
+                    }
+                    // 題目檔每顆模型可另給 "sampling"（例如模型卡建議的 repeat_penalty），蓋過生圖站的預設
+                    for (k, v) in m["sampling"].as_object().into_iter().flatten() {
+                        body[k] = v.clone();
                     }
                     let t0 = Instant::now();
                     let r: Value = match http.post(format!("http://127.0.0.1:{port}/v1/chat/completions")).json(&body).send().and_then(|r| r.json()) {

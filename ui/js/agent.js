@@ -25,7 +25,7 @@ const TOOL_ZH = { models: "看模型清單", set_model: "換生圖模型", galle
   trash: "移到回收區", guide: "讀寫法", docs: "讀說明書", api: "直接呼叫 API", open_page: "切換頁面" };
 // 寫法庫（跟 src-tauri/src/agent.rs 的 GUIDES 一樣）
 const GUIDE_ZH = { anima: "Anima", qwen: "Qwen 2.1 文生圖", qwen_edit: "Qwen 2.1 改圖", qwen_multiref: "Qwen 2.1 多圖參考", moss: "MOSS-Image",
-  other: "SDXL 系", ltx_video: "LTX-2.3 影片", h3_video: "H3 影片" };
+  other: "SDXL 系", h3_video: "H3 影片" };
 const toolZh = (t) => TOOL_ZH[t] || t;
 
 let S = null;          // 目前的對話（整份）
@@ -814,10 +814,13 @@ export function onEvent(m) {
 }
 
 // ---------------------------------------------------------------- 附圖（上傳到 ComfyUI input，送出時一起交給助手）
+/** 之前的對話已經附過幾張：新附的圖從下一個編號算 */
+const attBase = () => (S?.events || []).reduce((n, e) => n + (e.kind === "user" ? (e.images || []).length : 0), 0);
+
 function paintAtt() {
   const box = F("agAttList");
   box.innerHTML = "";
-  const base = (S?.events || []).reduce((n, e) => n + (e.kind === "user" ? (e.images || []).length : 0), 0);
+  const base = attBase();
   att.forEach((a, k) => box.append(el("figure", {},
     el("img", { src: inputUrl(a.name), alt: a.name, onclick: () => peek(a.name) }),
     el("figcaption", {}, `圖 ${base + k + 1}`),
@@ -858,8 +861,19 @@ function initAttach() {
 
 // ---------------------------------------------------------------- 按鈕
 export function init() {
-  // 助手：只插文字
-  drawer.mount(F("agAssets"), { family: () => "moss", insert: drawer.appendTo(F("agSay")) });
+  // 助手：外觀文字寫進句子，圖放進附圖（句子裡寫「圖 N」，跟附圖的編號一樣）
+  drawer.mount(F("agAssets"), { family: () => "agent", insert: drawer.appendTo(F("agSay")), images: { ref: {
+    max: MAX_ATT, count: () => att.length, has: (name) => att.some((a) => a.name === name), tag: (n) => `圖 ${n}`,
+    add: (r) => {
+      let k = att.findIndex((a) => a.name === r.name);
+      if (k < 0) {
+        if (att.length >= MAX_ATT) return null;
+        k = att.push(r) - 1;
+        paintAtt();
+      }
+      return attBase() + k + 1;
+    },
+  } } });
   initAttach();
   F("agSess").onchange = (e) => openSession(e.target.value).catch((err) => toast(err.message, "err"));
   F("agNew").onclick = async () => {

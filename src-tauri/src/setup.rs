@@ -39,24 +39,26 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 use tokio::io::AsyncWriteExt;
 
-/// ComfyUI 官方 Windows 免安裝版（NVIDIA）。固定 0.38.0：新版站台是對這一版測過的
-pub const COMFY_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.38.0/ComfyUI_windows_portable_nvidia.7z";
-pub const COMFY_SIZE: u64 = 1_994_326_521;
+/// ComfyUI 官方 Windows 免安裝版（NVIDIA）。固定 0.43.0：新版站台是對這一版測過的（2026-10-31 從 0.38.0 升上來，
+/// MOSS-Image、MOSS 編輯、MOSS 色彩／深度控制都是官方內建，不用再蓋補丁）。大小是 2026-10-31 從 GitHub 查的
+pub const COMFY_VERSION: &str = "0.43.0";
+pub const COMFY_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.43.0/ComfyUI_windows_portable_nvidia.7z";
+pub const COMFY_SIZE: u64 = 2_039_673_203;
 /// 同一版的 AMD 免安裝版（A 卡：實驗性支援，開發機沒有 A 卡、沒實測過）。2026-10-21 從 GitHub 查到的大小，
 /// 並列出壓縮檔內容：PyTorch 2.9.1＋ROCm 7.2.1、Python 3.12；附的顯示卡程式只有 gfx1100～1102、gfx1150～1151、gfx1200～1201
 /// （RX 7000、Ryzen AI 300／Max 內顯、RX 9000）。其他 A 卡（RX 5000／6000、780M…）裝完再用 pip 換成 ROCm 10 PyTorch（gpu.rs rocm10_*）。
 /// 啟動方式跟 NVIDIA 版一樣（官方 run_amd_gpu.bat）
-pub const COMFY_AMD_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.38.0/ComfyUI_windows_portable_amd.7z";
-pub const COMFY_AMD_SIZE: u64 = 1_612_070_856;
+pub const COMFY_AMD_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.43.0/ComfyUI_windows_portable_amd.7z";
+pub const COMFY_AMD_SIZE: u64 = 1_656_949_572;
 /// 同一版的 Intel 免安裝版（Arc 獨顯、Core Ultra 的 Arc 內顯：實驗性支援，沒實測過）。2026-10-21 查的大小，列過壓縮檔內容：
 /// PyTorch 2.14.0＋xpu、oneAPI 2026.1 執行檔，解開約 5.3GB。啟動方式跟 NVIDIA 版一樣
-pub const COMFY_INTEL_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.38.0/ComfyUI_windows_portable_intel.7z";
-pub const COMFY_INTEL_SIZE: u64 = 1_427_214_780;
+pub const COMFY_INTEL_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.43.0/ComfyUI_windows_portable_intel.7z";
+pub const COMFY_INTEL_SIZE: u64 = 1_472_205_875;
 /// 同一版的 NVIDIA 舊卡版（GTX 10 系列以前：Maxwell、Pascal、Volta）：PyTorch 是 cu126（CUDA 12.6）。主版（cu130）的 CUDA 13 已經拿掉這幾代，
 /// 裝上去會 no kernel image。官方 README：「Supports Nvidia 10 series and older GPUs, DO NOT USE THIS ON NEWER 20 SERIES AND ABOVE GPUS」。
 /// 大小是 2026-10-21 從 GitHub 查到的（1,886,111,296 位元組）。驅動門檻 gpu::DRIVER_MIN_LEGACY
-pub const COMFY_CU126_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.38.0/ComfyUI_windows_portable_nvidia_cu126.7z";
-pub const COMFY_CU126_SIZE: u64 = 1_886_111_296;
+pub const COMFY_CU126_URL: &str = "https://github.com/Comfy-Org/ComfyUI/releases/download/v0.43.0/ComfyUI_windows_portable_nvidia_cu126.7z";
+pub const COMFY_CU126_SIZE: u64 = 1_930_972_692;
 /// 生圖站是對這一版測的：掃到比它舊的 ComfyUI 會提醒（缺的功能要到畫圖時才出錯）
 pub const COMFY_MIN_VERSION: &str = "0.38.0";
 /// llama.cpp b11505（CUDA 12.4）：AI 改寫用的 llama-server 和 CUDA 執行檔
@@ -114,6 +116,7 @@ const FFMPEG: (&str, u64) = (
 );
 const UA: &str = "Mozilla/5.0 (anima-app setup)";
 const NODE: &str = "anima_prompt_enhancer";
+const MOSS_NODES: &str = "anima_moss_nodes";
 
 mod reuse;
 
@@ -490,6 +493,104 @@ pub fn comfy_too_old(version: Option<&str>) -> bool {
     version_parts(COMFY_MIN_VERSION).zip(version.and_then(version_parts)).is_some_and(|(min, v)| v < min)
 }
 
+/// 這份 ComfyUI 要不要（能不能）由精靈升級到 COMFY_VERSION：官方免安裝版（python_embeded＋git 資料夾）、不是桌面版、
+/// 版本讀得到而且比 COMFY_VERSION 舊。自己 clone 的、桌面版、秋葉這類不動（升級方式各不同，亂動會壞）
+pub fn comfy_upgradable(comfy_dir: &Path) -> bool {
+    let Some(l) = comfy_layout(comfy_dir) else { return false };
+    let code = comfy_code(comfy_dir);
+    l.portable
+        && !l.desktop
+        && code.join(".git").is_dir()
+        && version_parts(COMFY_VERSION).zip(comfy_version(comfy_dir).as_deref().and_then(version_parts)).is_some_and(|(want, v)| v < want)
+}
+
+/// 把官方免安裝版的 ComfyUI 程式（code＝ComfyUI 資料夾）升級到 COMFY_VERSION，開站自動升級和安裝精靈共用：
+/// ① comfy_upgrade.py --req-only 讀出新版要的套件 → ② pip 先裝好 → ③ 都成功才換程式（自己改過、會被蓋掉的檔先備份到 backup）。
+/// ①② 失敗時程式還是舊版，照樣開得起來（沒網路的人不會被升級弄壞）
+pub fn upgrade_comfy_code(python: &Path, code: &Path, res: &Path, backup: &Path) -> Result<(), String> {
+    let script = res.join("extras").join("comfy_upgrade.py");
+    let s = |x: &Path| x.to_string_lossy().to_string();
+    let tag = format!("v{COMFY_VERSION}");
+    let req = std::env::temp_dir().join(format!("anima_comfy_req_{}.txt", std::process::id()));
+    let never = || false;
+    run_pip(python, &["-s".into(), s(&script), s(code), tag.clone(), s(backup), "--req-only".into(), s(&req)], None, never)
+        .map_err(|e| format!("讀不到新版要的套件（ComfyUI 沒動）：{e}"))?;
+    let r = run_pip(python, &["-s".into(), "-m".into(), "pip".into(), "install".into(), "--no-warn-script-location".into(), "-r".into(), s(&req)], None, never);
+    let _ = std::fs::remove_file(&req);
+    r.map_err(|e| format!("新版要的套件裝不起來（ComfyUI 還是舊版）：{e}"))?;
+    run_pip(python, &["-s".into(), s(&script), s(code), tag, s(backup)], None, never).map_err(|e| format!("換新版程式失敗：{e}"))
+}
+
+/// 升級時換掉的舊檔放哪：ComfyUI 程式資料夾旁邊的 待刪除\ComfyUI升級備份_<時間>
+fn upgrade_backup(code: &Path) -> PathBuf {
+    code.parent().unwrap_or(code).join("待刪除").join(format!("ComfyUI升級備份_{}", chrono::Local::now().format("%Y%m%d_%H%M%S")))
+}
+
+/// 開站時自動升級（main.rs 在開 ComfyUI 之前呼叫；ComfyUI 已經開著、「我自己開 ComfyUI」的不要叫）：
+/// 不用升級＝None；試了＝Some(結果)，失敗時還是舊版
+pub fn auto_upgrade_comfy(comfy_dir: &Path, res: &Path) -> Option<Result<(), String>> {
+    if !comfy_upgradable(comfy_dir) {
+        return None;
+    }
+    let l = comfy_layout(comfy_dir)?;
+    let code = comfy_code(comfy_dir);
+    Some(upgrade_comfy_code(&l.python, &code, res, &upgrade_backup(&code)))
+}
+
+/// 這份 ComfyUI 能不能跑 MOSS-Image。官方正式版到 0.40.0 都還沒有（2026-10-30 查），只有 2026-10-16 之後的 master 有
+#[derive(Debug, PartialEq)]
+pub enum MossSupport {
+    /// nodes.py 的 CLIPLoader 認得 moss_image（官方 master，或補丁蓋好了）
+    Ready,
+    /// 0.38.0：安裝時會把程式附的補丁蓋進去
+    Patchable,
+    /// 官方桌面版（讀不到版本＝None）：程式在它自己的安裝資料夾，桌面版更新時會整個換掉，不去改
+    Desktop(Option<String>),
+    /// 別的版本（讀不到版本＝None）：補丁是 0.38.0 的，蓋到別版會壞
+    Unsupported(Option<String>),
+}
+
+impl MossSupport {
+    /// 不能用的原因和解法（能用、或安裝時會補好＝None）
+    pub fn problem(&self) -> Option<String> {
+        match self {
+            MossSupport::Ready | MossSupport::Patchable => None,
+            MossSupport::Desktop(v) => Some(format!(
+                "ComfyUI 桌面版（{}）還沒有 MOSS-Image 支援，生圖站也不去改桌面版的程式：要用 MOSS 請等桌面版更新到含 MOSS 的版本，或在安裝精靈第二頁選「自動下載 ComfyUI」另外裝一份；模型檔不用重新下載",
+                version_label(v)
+            )),
+            MossSupport::Unsupported(v) => Some(format!(
+                "這份 ComfyUI（{}）的程式還沒有 MOSS-Image 支援（官方正式版 0.43.0 起內建）。解法：官方免安裝版按「安裝與修復」會自動升級；自己 clone 的切到 v0.43.0 以後（git checkout v0.43.0）再裝 requirements.txt；別的整合包用它自己的更新器更新到 0.43 以後；或在安裝精靈第二頁選「自動下載 ComfyUI」另外裝一份。模型檔不用重新下載",
+                version_label(v)
+            )),
+        }
+    }
+}
+
+/// 「版本 0.40.0」；讀不到＝「讀不到版本」
+fn version_label(v: &Option<String>) -> String {
+    v.as_deref().map(|v| format!("版本 {v}")).unwrap_or_else(|| "讀不到版本".into())
+}
+
+/// 看 nodes.py 的 CLIPLoader 有沒有 moss_image。只看 nodes_moss_image.py 在不在不準：ComfyUI 更新會把改過的 nodes.py 換回官方版，
+/// 沒被 git 追蹤的 nodes_moss_image.py 卻留著（2026-10-30 有人這樣中招）
+pub fn moss_support(comfy_dir: &Path) -> MossSupport {
+    let code = comfy_code(comfy_dir);
+    if std::fs::read_to_string(code.join("nodes.py")).is_ok_and(|s| s.contains("\"moss_image\"")) {
+        // 0.38 上的舊版補丁（2026-10-30 以前）沒有 MOSS 編輯節點：再蓋一次新補丁
+        let edit = std::fs::read_to_string(code.join("comfy_extras").join("nodes_moss_image.py")).is_ok_and(|s| s.contains("TextEncodeMOSSImageEdit"));
+        let old_patch = comfy_version(comfy_dir).is_some_and(|v| v == "0.38.0") && !comfy_layout(comfy_dir).is_some_and(|l| l.desktop);
+        return if edit || !old_patch { MossSupport::Ready } else { MossSupport::Patchable };
+    }
+    if comfy_layout(comfy_dir).is_some_and(|l| l.desktop) {
+        return MossSupport::Desktop(comfy_version(comfy_dir));
+    }
+    match comfy_version(comfy_dir) {
+        Some(v) if v == "0.38.0" => MossSupport::Patchable,
+        v => MossSupport::Unsupported(v),
+    }
+}
+
 // ---------------------------------------------------------------- 電腦要有的元件
 /// VC++ v14 執行階段（x64）：ComfyUI 的 PyTorch、反推的 onnxruntime.dll、AI 改寫的 ggml-cuda.dll 都要 msvcp140.dll，
 /// 生圖站只附了 vcruntime140.dll。微軟的永久網址（2026-10-21 指到 VS 2026 版，約 18MB）
@@ -739,17 +840,108 @@ pub(crate) fn skip_dir(name: &str) -> bool {
         .contains(&n.as_str())
 }
 
-/// 每顆硬碟往下找三層（X:\a\b\c），收集看起來是生圖站資料、ComfyUI 的資料夾
-fn find_installs() -> (Vec<PathBuf>, Vec<PathBuf>) {
+/// 找舊安裝最多花這麼久。2026-10-30 有人回報精靈第一步一直「超過 240 秒沒有回應」：硬碟多、硬碟在睡、防毒攔檔案、
+/// 網盤掛成本機磁碟（CloudDrive2、RaiDrive、rclone）時，三層掃下來好幾分鐘。時間到就先用找到的，沒掃完的硬碟另外講
+const FIND_BUDGET: Duration = Duration::from_secs(45);
+/// 時間到了再多等這麼久收結果（卡在讀資料夾的那顆硬碟不等）
+const FIND_GRACE: Duration = Duration::from_secs(2);
+
+/// 找到的舊安裝；unfinished＝時間內沒掃完的硬碟（照傳進來的順序）
+#[derive(Debug, Default)]
+struct Found {
+    data: Vec<PathBuf>,
+    comfy: Vec<PathBuf>,
+    unfinished: Vec<PathBuf>,
+}
+
+/// 每個 item 各開一條執行緒跑 f，最多等到 deadline；沒跑完的是 None（那條執行緒自己跑完或卡著，不影響這裡）
+fn each_until<I, T>(items: &[I], f: impl Fn(I) -> T + Send + Sync + 'static, deadline: Instant) -> Vec<Option<T>>
+where
+    I: Clone + Send + 'static,
+    T: Send + 'static,
+{
+    let f = Arc::new(f);
+    let (tx, rx) = std::sync::mpsc::channel();
+    for (i, item) in items.iter().cloned().enumerate() {
+        let (tx, f) = (tx.clone(), f.clone());
+        std::thread::spawn(move || {
+            let _ = tx.send((i, f(item)));
+        });
+    }
+    drop(tx);
+    let mut out: Vec<Option<T>> = items.iter().map(|_| None).collect();
+    while let Ok((i, v)) = rx.recv_timeout(deadline.saturating_duration_since(Instant::now())) {
+        out[i] = Some(v);
+    }
+    out
+}
+
+/// 每顆硬碟往下找三層（X:\a\b\c），收集看起來是生圖站資料、ComfyUI 的資料夾；再加上掃不到的固定位置（known_installs）
+fn find_installs() -> Found {
+    let mut f = find_installs_in(&fixed_drives(), FIND_BUDGET);
+    for k in known_installs() {
+        if comfy_install(&k) && !f.comfy.iter().any(|c| crate::model_dirs::same(c, &k)) {
+            f.comfy.push(k);
+        }
+    }
+    f
+}
+
+/// 正在掃的硬碟。上一次時間到放棄了、執行緒卻還卡在那顆硬碟上的，重掃時不再開新的執行緒（不然越重試越多條搶同一顆慢硬碟）
+static WALKING: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
+
+/// 掃完（或 panic）就從 WALKING 拿掉
+struct Walking(PathBuf);
+impl Drop for Walking {
+    fn drop(&mut self) {
+        WALKING.lock().unwrap_or_else(|e| e.into_inner()).retain(|x| x != &self.0);
+    }
+}
+
+/// 每個 root 一條執行緒同時掃，全部最多 budget；結果照 roots 的順序接起來
+fn find_installs_in(roots: &[PathBuf], budget: Duration) -> Found {
+    let deadline = Instant::now() + budget;
+    let busy = WALKING.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    let todo: Vec<PathBuf> = roots.iter().filter(|r| !busy.contains(r)).cloned().collect();
+    let walk = move |r: PathBuf| {
+        WALKING.lock().unwrap_or_else(|e| e.into_inner()).push(r.clone());
+        let _w = Walking(r.clone());
+        walk_installs(&r, deadline)
+    };
+    let mut results = todo.iter().zip(each_until(&todo, walk, deadline + FIND_GRACE));
+    let mut f = Found::default();
+    for root in roots {
+        let r = if busy.contains(root) { None } else { results.next().and_then(|(_, r)| r) };
+        let Some((data, comfy, done)) = r else {
+            f.unfinished.push(root.clone());
+            continue;
+        };
+        f.data.extend(data);
+        f.comfy.extend(comfy);
+        if !done {
+            f.unfinished.push(root.clone());
+        }
+    }
+    f
+}
+
+/// 一顆硬碟往下找三層；過了 deadline 就停（第三個值＝有沒有掃完）
+fn walk_installs(root: &Path, deadline: Instant) -> (Vec<PathBuf>, Vec<PathBuf>, bool) {
     let (mut data, mut comfy) = (vec![], vec![]);
-    let mut level: Vec<PathBuf> = fixed_drives();
+    let mut level: Vec<PathBuf> = vec![root.to_path_buf()];
     for depth in 0..3 {
         let mut next = vec![];
         for dir in &level {
+            if Instant::now() >= deadline {
+                return (data, comfy, false);
+            }
             let Ok(rd) = std::fs::read_dir(dir) else {
                 continue;
             };
             for e in rd.flatten() {
+                if Instant::now() >= deadline {
+                    return (data, comfy, false);
+                }
                 let name = e.file_name().to_string_lossy().to_string();
                 if skip_dir(&name) || !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
                     continue;
@@ -770,12 +962,7 @@ fn find_installs() -> (Vec<PathBuf>, Vec<PathBuf>) {
         }
         level = next;
     }
-    for k in known_installs() {
-        if comfy_install(&k) && !comfy.iter().any(|c| crate::model_dirs::same(c, &k)) {
-            comfy.push(k);
-        }
-    }
-    (data, comfy)
+    (data, comfy, true)
 }
 
 fn image_count(data_root: &Path) -> Option<i64> {
@@ -825,7 +1012,9 @@ fn detect_guarded(fresh: bool) -> Option<(Vec<Value>, bool)> {
 }
 
 pub fn scan(current: Option<&Config>) -> Value {
-    let (mut data, mut comfy) = find_installs();
+    // 偵測顯示卡（最多 DETECT_TIMEOUT）跟掃硬碟同時做，以前一個接一個，最慢要加起來
+    let gpu_job = std::thread::spawn(|| detect_guarded(true));
+    let Found { mut data, mut comfy, unfinished } = find_installs();
     let installations = reuse::installations();
     let program_dir = std::env::current_exe().ok().and_then(|p| p.parent().map(Path::to_path_buf));
     reuse::include_known(current, &installations, program_dir.as_deref(), &mut data, &mut comfy);
@@ -846,10 +1035,20 @@ pub fn scan(current: Option<&Config>) -> Value {
             json!({"path": c.to_string_lossy(), "version": v, "old": comfy_too_old(v.as_deref())})
         })
         .collect();
-    let disks: Vec<Value> = fixed_drives()
+    // 硬碟空間也可能卡住（掛載的網盤斷線）：每顆各自問，最多等 10 秒，問不到的不列，併進「沒掃完」一起提醒
+    let drives = fixed_drives();
+    let usage = each_until(&drives, |d| maint::disk_usage(&d), Instant::now() + Duration::from_secs(10));
+    let mut unscanned = unfinished;
+    for (d, _) in drives.iter().zip(&usage).filter(|(_, u)| u.is_none()) {
+        if !unscanned.contains(d) {
+            unscanned.push(d.clone());
+        }
+    }
+    let disks: Vec<Value> = drives
         .iter()
-        .filter_map(|d| {
-            maint::disk_usage(d).map(
+        .zip(usage)
+        .filter_map(|(d, u)| {
+            u.flatten().map(
                 |(free, total)| json!({"drive": d.to_string_lossy(), "free": free, "total": total}),
             )
         })
@@ -869,7 +1068,7 @@ pub fn scan(current: Option<&Config>) -> Value {
         .to_string();
     let base = PathBuf::from(best).join("AnimaStudio");
     // 顯示卡：偵測結果、自動判斷的版本、使用者在第二頁選過的（comfy.json）
-    let guarded = detect_guarded(true);
+    let guarded = gpu_job.join().ok().flatten();
     let detect_timeout = guarded.is_none();
     let (gpus, detected) = guarded.unwrap_or_default();
     let prefs = gpu::prefs();
@@ -883,13 +1082,15 @@ pub fn scan(current: Option<&Config>) -> Value {
         }),
         "installations": installations, "program_dir": program_dir,
         "data": data, "comfy": comfy, "disks": disks, "gpus": gpus, "driver_min": gpu::DRIVER_MIN, "driver_min_legacy": gpu::DRIVER_MIN_LEGACY,
+        // 時間內沒掃完的硬碟（找舊安裝）：精靈提醒「在那裡的話第二頁自己指定」
+        "unscanned": unscanned.iter().map(|d| d.to_string_lossy()).collect::<Vec<_>>(),
         "comfy_min_version": COMFY_MIN_VERSION,
         "variant": variant, "windows_build": gpu::windows_build(), "lite": lite_view(&gpus, ram_total()),
         "detected": detected, "detect_timeout": detect_timeout, "gpu": plan.view(), "auto": gpu::auto_plan(&gpus, detected).view(),
         "prefs": prefs, "amd_choices": gpu::AMD_GFX_CHOICES.iter().map(|(g, l)| json!({"gfx": g, "label": l})).collect::<Vec<_>>(),
         "vcredist": {"ok": vcredist_ok(), "version": vcredist_version().map(|(a, b, c)| format!("{a}.{b}.{c}"))},
         "fresh": {"data_root": base.join("anima_data").to_string_lossy(), "comfy_dir": base.join("ComfyUI_windows_portable").to_string_lossy()},
-        "comfy_download": {"version": "0.38.0", "size": comfy_package(variant, plan.legacy).1, "variant": variant, "legacy": plan.legacy},
+        "comfy_download": {"version": COMFY_VERSION, "size": comfy_package(variant, plan.legacy).1, "variant": variant, "legacy": plan.legacy},
     })
 }
 
@@ -1020,8 +1221,10 @@ fn missing_models(res: &Path, models: &Path, which: &str, extra: &[crate::model_
         }));
     }
     let newer = adopted_sizes(models);
+    let alias = aliases(models);
     manifest(res, which)
         .into_iter()
+        .filter(|m| !alias.get(&m.rel).is_some_and(|f| std::fs::metadata(f).is_ok_and(|md| md.len() == m.size)))
         .filter(|m| {
             // 清單的版本，或之前照來源新版下載的版本（adopted_sizes），哪個都算有
             let sizes = [Some(m.size), newer.get(&m.rel).copied()];
@@ -1062,6 +1265,142 @@ fn remember_adopted(models: &Path, rel: &str, size: u64, url: &str) -> std::io::
     std::fs::write(&p, serde_json::to_vec_pretty(&v).unwrap_or_default())
 }
 
+/// 清單裡的 LoRA 在別的地方已經有一模一樣的檔（same_lora_elsewhere 找到的）：{"loras/x.safetensors": "D:\…\實際的檔"}，記在模型資料夾。
+/// 2026-10-31 使用者：「如果檢測到同樣的個別lora則不重覆安裝那個各別的lora」
+const ALIAS_FILE: &str = "anima_model_aliases.json";
+
+fn aliases(models: &Path) -> std::collections::HashMap<String, PathBuf> {
+    let v: Value = std::fs::read(models.join(ALIAS_FILE))
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .unwrap_or(json!({}));
+    v.as_object()
+        .into_iter()
+        .flatten()
+        .filter_map(|(k, e)| Some((k.clone(), PathBuf::from(e.as_str()?))))
+        .collect()
+}
+
+fn remember_alias(models: &Path, rel: &str, found: &Path) -> std::io::Result<()> {
+    let p = models.join(ALIAS_FILE);
+    let mut v: Value = std::fs::read(&p)
+        .ok()
+        .and_then(|b| serde_json::from_slice(&b).ok())
+        .filter(Value::is_object)
+        .unwrap_or(json!({}));
+    v[rel] = json!(found.to_string_lossy());
+    std::fs::write(&p, serde_json::to_vec_pretty(&v).unwrap_or_default())
+}
+
+/// 清單裡的這顆 LoRA，在 loras 底下（含外部資料夾）別的路徑已經有一模一樣的檔？大小一樣的才算 SHA256（cache 記算過的，
+/// 同一次安裝很多顆一樣大的 LoRA 不重算）；清單沒寫 SHA256 的不猜
+fn same_lora_elsewhere(index: &[(PathBuf, u64)], cache: &mut std::collections::HashMap<PathBuf, String>, m: &ModelFile) -> Option<PathBuf> {
+    let want = m.sha256.as_deref()?;
+    index.iter().filter(|(_, n)| *n == m.size && m.size > 0).map(|(p, _)| p).find(|p| {
+        if !cache.contains_key(*p) {
+            let h = sha256_file(p).unwrap_or_default();
+            cache.insert(p.to_path_buf(), h);
+        }
+        cache[*p] == want
+    }).cloned()
+}
+
+/// 清單裡的這顆 LoRA（rel）在別的地方已經有一模一樣的檔：先看記過的別名，沒有再找大小＋SHA256 一樣的（找到就記下來）。
+/// 生成頁缺檔一鍵下載（/api/models/fetch_listed）用；不是 LoRA、清單沒有、沒寫 SHA256 的都回 None
+pub(crate) fn lora_elsewhere(res: &Path, models: &Path, extra: &[crate::model_dirs::Dir], rel: &str) -> Option<PathBuf> {
+    if !rel.starts_with("loras/") {
+        return None;
+    }
+    let m = manifest(res, "full").into_iter().find(|m| m.rel == rel)?;
+    if let Some(f) = aliases(models).remove(rel).filter(|f| std::fs::metadata(f).is_ok_and(|md| md.len() == m.size)) {
+        return Some(f);
+    }
+    let index = crate::model_dirs::size_index(models, extra, "loras");
+    let f = same_lora_elsewhere(&index, &mut Default::default(), &m)?;
+    if let Err(e) = remember_alias(models, rel, &f) {
+        eprintln!("[LoRA 別名] 記不下來：{e}");
+    }
+    Some(f)
+}
+
+/// 程式附的備註裡，由程式管的欄位（使用者在 LoRA 頁改的也是這些；AI 認識 LoRA 寫的 agent 不在內）
+const NOTE_FIELDS: &[&str] = &["title", "note", "triggers", "strength", "min", "max", "base_model"];
+
+/// 26.1031.2 附的備註（那時還沒記 bundle_sig）後來改過的原文：資料庫裡還是這段＝使用者沒改過，可以換新版
+const LEGACY_NOTES: &[&str] = &[
+    "【改圖】風格混搭的編輯 LoRA。原作者是配 ostris 的 MOSS Edit 節點包用；繪匣的「照指令改圖」沒驗證過能不能直接用",
+    "【改圖】給一張角色圖當 Picture 1，再寫新場景，畫出同一個角色（臉、髮型、衣服、畫風）。原作者配 ostris 的 MOSS Edit 節點包；繪匣的「照指令改圖」沒驗證過",
+];
+
+/// 這筆備註「程式管的欄位」的指紋：補進資料庫時記在 bundle_sig，之後一樣＝使用者沒改過，程式改版可以跟著更新
+fn note_sig(m: &Value) -> String {
+    use sha2::{Digest, Sha256};
+    let sub: Vec<Value> = NOTE_FIELDS.iter().map(|k| m.get(*k).cloned().unwrap_or(Value::Null)).collect();
+    Sha256::digest(Value::Array(sub).to_string().as_bytes()).iter().map(|b| format!("{b:02x}")).collect()
+}
+
+/// 開站時把程式附的 LoRA 備註（resources\share\lora設定.json 的 lora_meta）併進資料庫，回傳補／更新了幾筆：
+/// 資料庫沒有的 key 補上；有的話，程式管的欄位使用者沒改過（bundle_sig 對得上）才換成新版，改過的不蓋、AI 寫的 agent 留著。
+/// roots 底下的 LoRA 檔名跟某個備註一樣、卻放在別的資料夾（例如照合集 README 放進 loras\Excellent-Loras-for-MossImage\），用實際的名稱也一樣處理。
+/// 2026-10-31 使用者：「把每個LoRa都分別寫個備註…讓助手和各別的user一看就知道那個lora是幹啥用的」
+pub fn merge_lora_notes(db: &Db, res: &Path, roots: &[PathBuf]) -> usize {
+    let Ok(v) = std::fs::read(res.join("share").join("lora設定.json")).map_err(|e| e.to_string()).and_then(|b| serde_json::from_slice::<Value>(&b).map_err(|e| e.to_string())) else {
+        return 0;
+    };
+    let Some(bundled) = v["lora_meta"].as_object() else { return 0 };
+    let Ok(have) = db.lora_meta() else { return 0 };
+    let base = |k: &str| k.rsplit(['/', '\\']).next().unwrap_or(k).to_lowercase();
+    let by_base: std::collections::HashMap<String, &Value> = bundled.iter().map(|(k, m)| (base(k), m)).collect();
+    let mut want: Vec<(String, &Value)> = bundled.iter().filter(|(_, m)| m.is_object()).map(|(k, m)| (k.clone(), m)).collect();
+    for r in roots {
+        for f in files_under(r).into_iter().filter(|f| f.extension().is_some_and(|x| x.eq_ignore_ascii_case("safetensors"))) {
+            let Ok(rel) = f.strip_prefix(r) else { continue };
+            let name = rel.to_string_lossy().replace('/', "\\");
+            if want.iter().any(|(k, _)| *k == name) {
+                continue;
+            }
+            if let Some(m) = by_base.get(&base(&name)).filter(|m| m.is_object()) {
+                want.push((name, m));
+            }
+        }
+    }
+    let mut n = 0;
+    for (k, b) in want {
+        let sig = note_sig(b);
+        let next = match have.get(&k) {
+            None => {
+                let mut m = b.clone();
+                m["bundle_sig"] = json!(sig);
+                m
+            }
+            Some(cur) => {
+                let untouched = match cur.get("bundle_sig").and_then(Value::as_str) {
+                    Some(s) => s == note_sig(cur),
+                    None => cur.get("note").and_then(Value::as_str).is_some_and(|n| LEGACY_NOTES.contains(&n)),
+                };
+                if !untouched || note_sig(cur) == sig {
+                    continue;
+                }
+                let mut m = cur.clone();
+                for f in NOTE_FIELDS {
+                    match b.get(*f) {
+                        Some(x) => m[*f] = x.clone(),
+                        None => {
+                            m.as_object_mut().map(|o| o.remove(*f));
+                        }
+                    }
+                }
+                m["bundle_sig"] = json!(sig);
+                m
+            }
+        };
+        if db.set_lora_meta(&k, &next).is_ok() {
+            n += 1;
+        }
+    }
+    n
+}
+
 /// 設定頁「模型總覽」：安裝精靈的清單（基本版、完整版）還缺哪些（外部模型資料夾裡有的也算有）。
 /// 每一項的 maybe＝沒找到同名的檔，但同一類裡有大小完全一樣、檔名不同的檔（多半是改過名字的同一個模型）：附上那個檔的路徑，
 /// 沒有就是 null。這種檔不算「有」（內建流程寫死檔名，直接當有會找不到），只是提醒使用者可能不用重新下載
@@ -1093,6 +1432,80 @@ pub(crate) fn manifest_wants(res: &Path) -> Vec<crate::model_dirs::Want> {
         }
     }
     v
+}
+
+/// 「AI 改寫、生圖助手」包裡的語言模型檔（完整版清單 LLM/ 底下、歸到 pe 包的：9B、它的看圖檔、挑段模型）。
+/// 回傳（檔名, 大小, 網址, sha256）；升級換掉官方 PE 時照這份補下載（server\api_pe.rs retire_old_models）
+pub(crate) fn llm_pack_files(res: &Path) -> Vec<(String, u64, String, Option<String>)> {
+    manifest(res, "full")
+        .into_iter()
+        .filter(|m| pack_of(&m.rel) == "pe")
+        .filter_map(|m| {
+            let name = m.rel.strip_prefix("LLM/")?.to_string();
+            (!name.contains('/')).then_some(())?;
+            Some((name, m.size, m.url?, m.sha256))
+        })
+        .collect()
+}
+
+/// 安裝清單（完整版）裡某個檔（相對 models 的路徑，例如 loras/moss/xxx.safetensors）的（大小, 網址, sha256）；
+/// 清單沒有＝None。生成頁缺 MOSS LoRA 時一鍵下載用（/api/models/fetch_listed），只認清單、不收網頁給的網址
+pub(crate) fn listed_file(res: &Path, rel: &str) -> Option<(u64, String, Option<String>)> {
+    manifest(res, "full").into_iter().find(|m| m.rel == rel).and_then(|m| Some((m.size, m.url?, m.sha256)))
+}
+
+/// 開站時把程式附帶、已經裝進這份 ComfyUI 的東西換成這一版的（2026-10-31 使用者：「不管更新了什麼，能上的就直接上。
+/// 儘量讓別人用到的跟我是一樣的」）：AI 改寫節點（有裝才換）、工作流程、附帶 LoRA、MOSS 補丁（moss_support＝Patchable 才蓋）。
+/// 內容不一樣的舊檔（舊版，或使用者自己改過的）先搬到 ComfyUI 旁邊的 待刪除\繪匣更新備份_<時間>\。
+/// 回傳換了哪幾樣（給畫面提醒重開 ComfyUI）；都一樣＝空的。在 ComfyUI 開起來之前呼叫（main.rs start_main）
+pub fn sync_bundled(comfy_dir: &Path, res: &Path) -> Vec<String> {
+    let Some(layout) = comfy_layout(comfy_dir) else { return vec![] };
+    let code = comfy_code(comfy_dir);
+    let comfyui = layout.root.clone();
+    let extras = res.join("extras");
+    let backup = code.parent().unwrap_or(&code).join("待刪除").join(format!("繪匣更新備份_{}", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+    let not_cache = |f: &Path| !f.components().any(|c| c.as_os_str() == "__pycache__") && f.extension().is_none_or(|x| x != "pyc");
+    let node = comfyui.join("custom_nodes").join(NODE);
+    let mut jobs: Vec<(&str, PathBuf, PathBuf, PathBuf)> = vec![];
+    if node.join("__init__.py").is_file() || node.join("pe_core.py").is_file() {
+        jobs.push(("AI 改寫節點", extras.join(NODE), node, backup.join("custom_nodes").join(NODE)));
+    }
+    // 繪匣自己的 MOSS 小節點（4B 文字編碼器）：不管有沒有勾過什麼都放，沒用到也不佔資源
+    jobs.push(("MOSS 小節點", extras.join(MOSS_NODES), comfyui.join("custom_nodes").join(MOSS_NODES), backup.join("custom_nodes").join(MOSS_NODES)));
+    jobs.push(("工作流程", extras.join("workflows"), comfyui.join("user").join("default").join("workflows"), backup.join("user").join("default").join("workflows")));
+    jobs.push(("附帶 LoRA", extras.join("loras"), comfyui.join("models").join("loras"), backup.join("models").join("loras")));
+    let mut done = vec![];
+    for (label, src, dst, bak) in jobs {
+        match overlay(&src, &dst, &bak, true, not_cache) {
+            Ok((0, _)) => {}
+            Ok((n, _)) => {
+                eprintln!("[更新元件] {label}：換了 {n} 個檔");
+                done.push(label.to_string());
+            }
+            Err(e) => eprintln!("[更新元件] {label} 失敗：{e}"),
+        }
+    }
+    if !layout.desktop && moss_support(comfy_dir) == MossSupport::Patchable {
+        match moss_apply(&extras.join("comfy_moss"), &code, &backup, true) {
+            Ok((0, _)) => {}
+            Ok((n, _)) => {
+                eprintln!("[更新元件] MOSS-Image 支援：換了 {n} 個檔");
+                done.push("MOSS-Image 支援".to_string());
+            }
+            Err(e) => eprintln!("[更新元件] MOSS-Image 支援失敗：{e}"),
+        }
+    }
+    done
+}
+
+/// sync_bundled 換了東西、ComfyUI 卻早就開著（不是生圖站開的，或生圖站重開前就在跑）：要重開 ComfyUI 才生效，
+/// 生成頁顯示提醒（/api/state 的 models.comfy_updated）；重開 ComfyUI（/api/models/restart_comfy）後清掉
+static UPDATED: std::sync::Mutex<Vec<String>> = std::sync::Mutex::new(Vec::new());
+pub fn set_updated(v: Vec<String>) {
+    *UPDATED.lock().unwrap_or_else(|e| e.into_inner()) = v;
+}
+pub fn updated() -> Vec<String> {
+    UPDATED.lock().unwrap_or_else(|e| e.into_inner()).clone()
 }
 
 /// 讀圖用的 mmproj 從哪下載：完整版清單裡 LLM/ 底下、檔名有 mmproj 又有 fam（qwen3.5／qwen3.6，跟 pe.rs 找檔的規則一樣）的那一筆。
@@ -1132,17 +1545,21 @@ pub const PACKS: &[(&str, &str, &str, &str)] = &[
     ("moss", "MOSS-Image 文生圖繪圖", "用文字畫圖：海報、招牌、版面框、漫畫台的對白（中英文都能寫）", ""),
     ("face", "修臉／修手", "生成後自動找出臉和手再重畫（SAM3.1）", ""),
     ("bg", "一鍵去背", "BiRefNet 去背模型", ""),
-    ("pe", "AI 改寫、生圖助手", "通用語言模型 Qwen3.5-9B（含看圖檔）＋llama.cpp：AI 改寫提示詞、生圖助手、導演台分段", ""),
-    // 2026-10-27 模型精簡：AI 改寫預設改用上面的通用模型；PE 授權不能商用、會把露骨內容寫淡，降成選配，「完整版」也不勾
-    ("pe_official", "官方改寫模型（選配）", "Qwen-Image 2.1 PE Heretic 兩顆（約 12.7GB）。Qwen Research License 不可商用；不裝也能用 AI 改寫，要在設定頁選了才會用", "pe"),
+    ("pe", "AI 改寫、生圖助手", "通用語言模型 Qwen3.5-9B Defiant Fable（含看圖檔）＋挑段用的 Qwen3-Embedding-0.6B＋llama.cpp：AI 改寫提示詞、生圖助手、導演台分段", ""),
     // 2026-10-29 使用者：「把35b做成選配」。原本只能手動下載；17GB、要 32GB 記憶體，所以「完整版」也不勾
     ("pe_35b", "35B 大腦（選配）", "通用語言模型 Qwen3.6-35B-A3B Heretic（含看圖檔，約 17.9GB）：生圖助手、漫畫台、導演台寫得更準。要 32GB 記憶體以上；8GB 顯卡也能跑（一部分放 CPU）", "pe"),
-    ("studio", "影音工作台、剪輯台工具", "Node.js、ffmpeg（約 150MB）。影片模型要另外下載", ""),
+    ("studio", "影音工作台、剪輯台工具", "Node.js、ffmpeg（約 150MB）。影片模型在下面的「H3 影片」包", ""),
+    // 2026-10-30 LTX-2.3 退場：原本的「影片」包（10Eros v1.5、gemma、LTX 放大，約 43GB）拿掉，內建影片改用下面的 H3
+    // 2026-10-30 使用者選「安裝精靈加 w4a8 包」：3070 8GB 實測 512×768 5 秒約 200 秒（第一百八十五筆）
+    ("h3", "H3 影片（本機，選配）", "MiniMax H3＋10Eros-Max w4a8：在自己電腦做有聲影片（H3 影片台；生成頁「動起來」、導演台也用它）。主模型 14GB＋文字編碼器 15.7GB＋VAE 3.4GB，約 33GB；要 32GB 記憶體以上，8GB 顯卡能跑。8～12GB 顯卡建議另外裝 ComfyUI-KJNodes（低顯存切塊）", ""),
+    // 2026-10-31 使用者：「把那幾個 LoRa 就我們剛剛下載的那個組合包…加進去新的安裝包裡面 讓人們可以用」
+    ("moss_4b", "MOSS 省記憶體文字編碼器（選配）", "Qwen3.5-4B＋投影轉接器（約 4.8GB）：生成頁「MOSS 文字編碼器」切 4B，比 9B 省記憶體，畫面會有點不一樣", "moss"),
+    ("moss_loras", "MOSS LoRA 合集（選配）", "gordonz 整理的 MOSS-Image LoRA 合集（約 14GB）：畫風、照片風、臉模、滑桿、加速、去色帶、動漫轉寫實。每顆在 LoRA 選單都有中文備註", "moss"),
     ("anima_loras", "Anima 常用 LoRA", "畫風、細節、光影、身材滑桿…（有些來自 Civitai，要 API key）", "anima"),
     ("qwen_loras", "Qwen 2.1 常用 LoRA", "寫實風、加速、滑桿…（有些來自 Civitai，要 API key）", "qwen"),
 ];
 /// 「完整版」也不會自動勾的選配包（要自己勾）
-pub const OPTIONAL_PACKS: &[&str] = &["pe_official", "pe_35b"];
+pub const OPTIONAL_PACKS: &[&str] = &["pe_35b", "h3", "moss_4b", "moss_loras"];
 /// 基本版：三種畫風的生圖功能都能用（models_basic.json 要跟這個一致，測試會檢查）
 pub const BASIC_PACKS: &[&str] = &["anima", "qwen", "qwen_pose", "moss", "face", "bg"];
 
@@ -1151,13 +1568,22 @@ pub fn pack_of(rel: &str) -> &'static str {
     let r = rel.to_lowercase();
     let (kind, name) = r.split_once('/').unwrap_or(("", r.as_str()));
     match kind {
-        "llm" if name.starts_with("pe_") => "pe_official",
         "llm" if name.contains("35b") => "pe_35b",
         "llm" => "pe",
         "loras" if name.starts_with("qwen21/") => "qwen_loras",
         "loras" if name.starts_with("anima-turbo-lora") => "anima", // Anima 的官方加速 LoRA：Turbo 選單要用
+        "loras" if name.starts_with("moss/moss_speed_dmd") => "moss", // MOSS 快速（gen.js MOSS_FAST）要的加速 LoRA
+        "loras" if name.starts_with("moss/moss_edit_chinoll") => "moss", // MOSS 照指令改圖預設的編輯 LoRA
+        "loras" if name.starts_with("moss/moss-color-depth-control") => "moss", // MOSS 構圖控制（graphs.rs MOSS_CONTROL_LORA）
+        "loras" if name.starts_with("moss/excellent-loras/") => "moss_loras",
+        "moss_encoder_adapters" => "moss_4b",
+        "text_encoders" if name.starts_with("qwen3.5-4b") => "moss_4b",
         "loras" => "anima_loras",
         "checkpoints" if name.starts_with("sam3") => "face",
+        // H3 要排在 qwen3vl（Qwen 2.1）前面：它的文字編碼器也叫 qwen3vl_32b_minimax_h3…
+        "diffusion_models" if name.starts_with("10eros_max_h3") => "h3",
+        "text_encoders" if name.starts_with("qwen3vl_32b_minimax_h3") => "h3",
+        "vae" if name.starts_with("minimax_h3") => "h3",
         "background_removal" => "bg",
         "geometry_estimation" | "upscale_models" => "anima",
         "model_patches" if name.starts_with("qwen_image") => "qwen_pose",
@@ -1175,6 +1601,46 @@ pub fn pack_of(rel: &str) -> &'static str {
     }
 }
 
+/// 2026-10-30 LTX-2.3 退場：以前「影片」包下載的檔（分類, 檔名）。只認這幾個名字，使用者自己放的其他 LTX 檔不碰
+pub const LTX_LEFTOVERS: &[(&str, &str)] = &[
+    ("checkpoints", "10Eros_v1.5_DMD_INT8_checkpoint.safetensors"),
+    ("text_encoders", "gemma-3-12b-it-ablit-norms-biproj-fp8mixed.safetensors"),
+    ("latent_upscale_models", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
+];
+
+/// 找得到的舊 LTX 檔（路徑, 大小）：ComfyUI 的 models\<分類>＋同分類的外部模型資料夾（checkpoints 也看主模型資料夾）；
+/// junction 指到同一個檔只算一次
+fn ltx_leftovers(models: &Path, extra: &[crate::model_dirs::Dir]) -> Vec<(PathBuf, u64)> {
+    let mut out: Vec<(PathBuf, u64)> = vec![];
+    let mut seen: Vec<PathBuf> = vec![];
+    for (kind, name) in LTX_LEFTOVERS {
+        let dirs = std::iter::once(models.join(kind))
+            .chain(extra.iter().filter(|d| d.kind == *kind || (*kind == "checkpoints" && d.kind == "diffusion_models")).map(|d| d.path.clone()));
+        for d in dirs {
+            let f = d.join(name);
+            let Ok(meta) = std::fs::metadata(&f) else { continue };
+            let real = std::fs::canonicalize(&f).unwrap_or_else(|_| f.clone());
+            if meta.is_file() && !seen.contains(&real) {
+                seen.push(real);
+                out.push((f, meta.len()));
+            }
+        }
+    }
+    out
+}
+
+/// 刪掉舊 LTX 檔 → (空出幾 bytes, 刪不掉的說明)
+fn remove_ltx(files: &[(PathBuf, u64)]) -> (u64, Vec<String>) {
+    let (mut freed, mut fails) = (0, vec![]);
+    for (f, size) in files {
+        match std::fs::remove_file(f) {
+            Ok(()) => freed += size,
+            Err(e) => fails.push(format!("{}：{e}", f.display())),
+        }
+    }
+    (freed, fails)
+}
+
 /// 要裝哪幾包：{packs: [...]}，或舊的 {models: basic|full|none}。會自動補上「要先有」的那一包
 pub fn packs_from(body: &Value) -> Result<Vec<String>, String> {
     let mut v: Vec<String> = match (&body["packs"], body["models"].as_str()) {
@@ -1182,6 +1648,10 @@ pub fn packs_from(body: &Value) -> Result<Vec<String>, String> {
             let mut out = vec![];
             for x in a {
                 let id = x.as_str().unwrap_or("");
+                // 2026-10-30 拿掉的官方 PE 包、LTX 影片包：舊網頁、舊 MCP 還可能送來，安靜略過
+                if id == "pe_official" || id == "video" {
+                    continue;
+                }
                 if !PACKS.iter().any(|p| p.0 == id) {
                     return Err(format!("不認得的功能包：{id}"));
                 }
@@ -1230,7 +1700,7 @@ fn pack_view(res: &Path, p: &Plan, extra: &[crate::model_dirs::Dir], variant: &s
             // 工具（llama.cpp 約 1.3GB 解開後、Vulkan 版約 0.1GB；Node.js＋ffmpeg 約 0.6GB）也算進大小
             let (tool_ok, tool_bytes) = match *id {
                 "pe" => (llama_ok, if variant == "nvidia" { 1_300_000_000u64 } else { 130_000_000u64 }),
-                "pe_official" | "pe_35b" => (llama_ok, 0),
+                "pe_35b" => (llama_ok, 0),
                 "studio" => (tools_ok, 600_000_000u64),
                 _ => (true, 0),
             };
@@ -1238,7 +1708,7 @@ fn pack_view(res: &Path, p: &Plan, extra: &[crate::model_dirs::Dir], variant: &s
             s["bytes"] = json!(s["bytes"].as_u64().unwrap_or(0) + if tool_ok { 0 } else { tool_bytes });
             json!({"id": id, "label": label, "desc": desc, "requires": req, "files": mine.len(),
                    "total": mine.iter().map(|m| m.size).sum::<u64>() + tool_bytes,
-                   "tool": !matches!(*id, "pe" | "pe_official" | "pe_35b" | "studio") || tool_ok, "optional": OPTIONAL_PACKS.contains(id), "missing": s})
+                   "tool": !matches!(*id, "pe" | "pe_35b" | "studio") || tool_ok, "optional": OPTIONAL_PACKS.contains(id), "missing": s})
         })
         .collect()
 }
@@ -1276,6 +1746,7 @@ fn check(res: &Path, p: &Plan, g: &gpu::GpuPlan) -> Value {
     let data_info = reuse::data_info(&p.data_root);
     let data_ok = data_info["valid"] == true;
     let extra = crate::model_dirs::load(&p.data_root.join("data"));
+    let ltx_left = ltx_leftovers(&p.models(), &extra);
     let layout = comfy_layout_with(&p.comfy_dir, &p.opt);
     let comfy = layout.is_some();
     let wf_src = res.join("extras").join("workflows");
@@ -1333,6 +1804,10 @@ fn check(res: &Path, p: &Plan, g: &gpu::GpuPlan) -> Value {
                   "zluda_exe": layout.as_ref().and_then(gpu::zluda_exe).is_some(),
                   "rocm10_have": layout.as_ref().map(|l| gpu::rocm10_devices(&l.python)).unwrap_or_default(),
                   "inner": (!comfy).then(|| inner_install(&p.comfy_dir)).flatten().map(|d| d.to_string_lossy().to_string()),
+                  // 這份 ComfyUI 跑不了 MOSS 的原因（能跑、安裝時會補好、或會下載新的 0.38.0＝null）：精靈的 MOSS 卡照這個警告
+                  "moss_problem": comfy.then(|| moss_support(&p.comfy_dir).problem()).flatten().filter(|_| !comfy_upgradable(&p.comfy_dir)),
+                  // 官方免安裝版比 COMFY_VERSION 舊：安裝與修復會升級（精靈 ComfyUI 卡顯示）
+                  "upgrade_to": comfy_upgradable(&p.comfy_dir).then_some(COMFY_VERSION),
                   "exists": p.comfy_dir.exists(), "free": free_comfy, "download_size": comfy_package(variant, g.legacy).1},
         "variant": variant,
         "gpu": g.view(),
@@ -1348,6 +1823,8 @@ fn check(res: &Path, p: &Plan, g: &gpu::GpuPlan) -> Value {
         "models": {"basic": model_summary(&missing_models(res, &p.models(), "basic", &extra)),
                    "full": model_summary(&missing_models(res, &p.models(), "full", &extra))},
         "model_dirs": extra.len(),
+        // 以前影片包留下的 LTX-2.3 檔：精靈提醒、使用者按了才刪（/api/setup/ltx_remove）
+        "ltx_leftovers": {"files": ltx_left.iter().map(|f| f.0.to_string_lossy().to_string()).collect::<Vec<_>>(), "bytes": ltx_left.iter().map(|f| f.1).sum::<u64>()},
         "packs": pack_view(res, p, &extra, variant),
         "basic_packs": BASIC_PACKS,
     })
@@ -1356,10 +1833,15 @@ fn check(res: &Path, p: &Plan, g: &gpu::GpuPlan) -> Value {
 /// 把 src 底下的 .py 補丁蓋進 root。內容一樣的跳過；root 裡本來就有、不一樣的，backup_old＝true 就先搬到 backup（保留相對路徑）再蓋，
 /// 搬不動就整個停下來、不蓋。回傳（寫了幾個檔, 被搬走的檔的相對路徑）
 fn moss_apply(src: &Path, root: &Path, backup: &Path, backup_old: bool) -> Result<(usize, Vec<String>), String> {
+    overlay(src, root, backup, backup_old, |f| f.extension().is_some_and(|x| x == "py")) // 說明.txt 不放進去
+}
+
+/// moss_apply 的本體：src 底下 keep 認可的檔蓋進 root（規則同 moss_apply）
+fn overlay(src: &Path, root: &Path, backup: &Path, backup_old: bool, keep: impl Fn(&Path) -> bool) -> Result<(usize, Vec<String>), String> {
     let (mut written, mut backed) = (0, vec![]);
     for f in files_under(src) {
-        if f.extension().is_none_or(|x| x != "py") {
-            continue; // 說明.txt 不放進去
+        if !keep(&f) {
+            continue;
         }
         let Ok(rel) = f.strip_prefix(src) else {
             continue;
@@ -2030,15 +2512,20 @@ impl Setup {
         let need_comfy = !comfy_ok(&p.comfy_dir);
         if need_comfy && !g.own && variant != "unknown" {
             match variant {
-                "amd" => self.add_item("comfy.7z", "下載 ComfyUI 0.38.0（AMD 版，實驗性）", COMFY_AMD_SIZE),
-                "intel" => self.add_item("comfy.7z", "下載 ComfyUI 0.38.0（Intel 版，實驗性）", COMFY_INTEL_SIZE),
-                "nvidia" if g.legacy => self.add_item("comfy.7z", "下載 ComfyUI 0.38.0（NVIDIA 舊卡版）", COMFY_CU126_SIZE),
-                _ => self.add_item("comfy.7z", "下載 ComfyUI 0.38.0", COMFY_SIZE),
+                "amd" => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0（AMD 版，實驗性）", COMFY_AMD_SIZE),
+                "intel" => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0（Intel 版，實驗性）", COMFY_INTEL_SIZE),
+                "nvidia" if g.legacy => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0（NVIDIA 舊卡版）", COMFY_CU126_SIZE),
+                _ => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0", COMFY_SIZE),
             }
             self.add_item("comfy.unpack", "解壓縮 ComfyUI", 100);
             self.item("comfy.unpack", |it| {
                 it.insert("unit".into(), json!("%")); // 進度是百分比，不是位元組
             });
+        }
+        // 已經有的官方免安裝版比 COMFY_VERSION 舊：升級（git 換版本＋補 Python 套件），換掉的檔備份到 待刪除
+        let upgrade = !need_comfy && comfy_upgradable(&p.comfy_dir);
+        if upgrade {
+            self.add_item("comfy_upgrade", &format!("把 ComfyUI 升級到 {COMFY_VERSION}"), 0);
         }
         // 免安裝版沒有這張 A 卡的架構（RX 5000／6000、780M…）：裝完再換成 ROCm 10 PyTorch
         let rocm10 = match comfy_layout(&p.comfy_dir) {
@@ -2049,7 +2536,7 @@ impl Setup {
             self.add_item("rocm10", "下載支援這張 A 卡的 PyTorch（ROCm 10，實驗性）", gpu::rocm10_bytes(&g.rocm10));
             self.add_item("rocm10.install", "換上新的 PyTorch", 0);
         }
-        for (k, l) in [("node", "AI 改寫節點"), ("workflows", "ComfyUI 工作流程")] {
+        for (k, l) in [("node", "AI 改寫節點"), ("moss_nodes", "MOSS 小節點"), ("workflows", "ComfyUI 工作流程")] {
             self.add_item(k, l, 0);
         }
         // 程式附帶的畫風 LoRA：公開版沒附（資料夾是空的），就不要在進度頁列一個根本沒東西的項目
@@ -2137,6 +2624,15 @@ impl Setup {
             Err(e) => self.problem(format!("存設定檔 {} 失敗：{e}", self.config_path.display())),
         }
 
+        // 2a. 升級舊的免安裝版。失敗不擋其他項目：舊版照樣能開（只是新功能用不到），檔案有備份
+        if upgrade {
+            self.check_cancel()?;
+            if let Err(e) = self.upgrade_comfy(p).await {
+                self.check_cancel()?;
+                self.problem(format!("ComfyUI 升級：{e}"));
+            }
+        }
+
         // 2b. A 卡：換成支援這張卡的 PyTorch（ROCm 10）。失敗不擋其他項目，ComfyUI 照樣能開（只是用不到這張卡）
         if rocm10 {
             self.check_cancel()?;
@@ -2156,22 +2652,17 @@ impl Setup {
 
         // 3. 節點、工作流程、LoRA（從程式附帶的檔案複製，已經有的不覆蓋）
         self.phase("放入 AI 改寫節點與工作流程");
-        if p.node().join("__init__.py").is_file() {
-            self.set_status("node", "skip", None);
-        } else {
-            self.copy_missing("node", &self.res.join("extras").join(NODE), &p.node());
-            // 只補沒有的檔，不蓋掉使用者改過的
-        }
-        self.copy_missing(
+        // 2026-10-31 起已經有的也換成這一版的（不一樣的舊檔搬到 待刪除\繪匣更新備份_<時間>\），跟開站時的 sync_bundled 一樣
+        let bak = p.comfyui().join("待刪除").join(format!("繪匣更新備份_{}", chrono::Local::now().format("%Y%m%d_%H%M%S")));
+        self.sync_into("node", &self.res.join("extras").join(NODE), &p.node(), &bak.join("custom_nodes").join(NODE));
+        self.sync_into("moss_nodes", &self.res.join("extras").join(MOSS_NODES), &p.comfyui().join("custom_nodes").join(MOSS_NODES), &bak.join("custom_nodes").join(MOSS_NODES));
+        self.sync_into(
             "workflows",
             &self.res.join("extras").join("workflows"),
             &p.comfyui().join("user").join("default").join("workflows"),
+            &bak.join("user").join("default").join("workflows"),
         );
-        self.copy_missing(
-            "loras",
-            &self.res.join("extras").join("loras"),
-            &p.models().join("loras"),
-        );
+        self.sync_into("loras", &self.res.join("extras").join("loras"), &p.models().join("loras"), &bak.join("models").join("loras"));
         // 剛下載的 ComfyUI（need_comfy）核心檔是官方原版，不用備份
         self.patch_moss(p, need_comfy);
 
@@ -2245,7 +2736,23 @@ impl Setup {
         // 7. LoRA 說明（資料庫裡還沒有任何 LoRA 說明時，匯入程式附的 lora設定.json）
         self.import_lora_meta(p);
 
-        // 8. 生圖模型（同時下載 3 個）
+        // 8. 生圖模型（同時下載 3 個）。LoRA 在別的資料夾已經有同一顆（大小、SHA256 都對）就不下載
+        let miss: Vec<ModelFile> = {
+            let lora_miss = miss.iter().any(|m| m.rel.starts_with("loras/") && m.sha256.is_some());
+            let index = if lora_miss { crate::model_dirs::size_index(&p.models(), &crate::model_dirs::load(&p.data_root.join("data")), "loras") } else { vec![] };
+            let mut cache = Default::default();
+            let mut left = vec![];
+            for m in miss {
+                let found = if m.rel.starts_with("loras/") { same_lora_elsewhere(&index, &mut cache, &m) } else { None };
+                match found {
+                    Some(f) if remember_alias(&p.models(), &m.rel, &f).is_ok() => {
+                        self.set_status(&format!("model/{}", m.rel), "skip", Some(format!("已經有同一顆：{}", f.display())));
+                    }
+                    _ => left.push(m),
+                }
+            }
+            left
+        };
         if !miss.is_empty() {
             self.phase(&format!("下載生圖模型（{} 個檔）", miss.len()));
             let jobs: Vec<(ModelFile, String)> = miss
@@ -2465,6 +2972,32 @@ impl Setup {
             .unwrap_or_else(|e| Err(e.to_string()))
     }
 
+    /// 升級官方免安裝版到 COMFY_VERSION：先關掉生圖站開的 ComfyUI → resources\extras\comfy_upgrade.py（pygit2 換版本，
+    /// models、input、output、user、custom_nodes 不動；自己改過、會被蓋掉的檔先備份）→ pip 補新版要的套件 → 再開 ComfyUI
+    async fn upgrade_comfy(&self, p: &Plan) -> Result<(), String> {
+        let l = comfy_layout(&p.comfy_dir).ok_or("找不到 ComfyUI")?;
+        let code = comfy_code(&p.comfy_dir);
+        let backup = upgrade_backup(&code);
+        self.phase(&format!("把 ComfyUI 升級到 {COMFY_VERSION}（約 1～3 分鐘）"));
+        self.set_status("comfy_upgrade", "run", None);
+        // 這一步不能中途停：換到一半的 ComfyUI 開不起來（取消要等它做完才生效）
+        self.comfy_hook(false);
+        let (py, res, bak) = (l.python.clone(), self.res.clone(), backup.clone());
+        let r = tokio::task::spawn_blocking(move || upgrade_comfy_code(&py, &code, &res, &bak)).await.unwrap_or_else(|e| Err(e.to_string()));
+        self.comfy_hook(true);
+        match r {
+            Ok(()) => {
+                self.set_status("comfy_upgrade", "done", None);
+                self.say(format!("ComfyUI 升級到 {COMFY_VERSION} 了；換掉的舊檔（以前的 MOSS 補丁、自己改過的檔）在 {}", backup.display()));
+                Ok(())
+            }
+            Err(e) => {
+                self.set_status("comfy_upgrade", "error", Some(e.clone()));
+                Err(e)
+            }
+        }
+    }
+
     /// variant＝gpu::GpuPlan 的 variant："amd"、"intel" 下載各自的免安裝包（資料夾結構、啟動方式跟 NVIDIA 版一樣）
     async fn install_comfy(&self, p: &Plan, variant: &str, legacy: bool) -> Result<(), String> {
         if p.comfy_dir.exists()
@@ -2555,56 +3088,47 @@ impl Setup {
     }
 
     /// src 底下的每個檔案，dst 沒有的才複製（保留子資料夾）
-    fn copy_missing(&self, key: &str, src: &Path, dst: &Path) {
-        let mut n = 0;
-        for f in files_under(src) {
-            let Ok(rel) = f.strip_prefix(src) else {
-                continue;
-            };
-            let to = dst.join(rel);
-            if to.exists() {
-                continue;
+    /// 程式附帶的檔放進 dst：沒有的補上、不一樣的換新（舊檔先搬到 bak），__pycache__ 不放
+    fn sync_into(&self, key: &str, src: &Path, dst: &Path, bak: &Path) {
+        let keep = |f: &Path| !f.components().any(|c| c.as_os_str() == "__pycache__") && f.extension().is_none_or(|x| x != "pyc");
+        match overlay(src, dst, bak, true, keep) {
+            Ok((n, backed)) => {
+                self.set_status(key, if n > 0 { "done" } else { "skip" }, None);
+                if !backed.is_empty() {
+                    self.say(format!("換成新版的 {} 個檔，舊的搬到 {}", backed.len(), bak.display()));
+                }
             }
-            if let Err(e) = to
-                .parent()
-                .map(std::fs::create_dir_all)
-                .unwrap_or(Ok(()))
-                .and_then(|_| std::fs::copy(&f, &to))
-            {
-                self.set_status(key, "error", Some(e.to_string()));
-                self.problem(format!("複製 {} 失敗：{e}", f.display()));
-                return;
+            Err(e) => {
+                self.set_status(key, "error", Some(e.clone()));
+                self.problem(format!("放入 {} 失敗：{e}", dst.display()));
             }
-            n += 1;
         }
-        self.set_status(key, if n > 0 { "done" } else { "skip" }, None);
     }
 
     /// ComfyUI 0.38.0 還沒有 MOSS-Image：把程式附的官方 commit e087d8f 那 9 個檔蓋進 ComfyUI（extras\comfy_moss\說明.txt）。
-    /// 已經有 MOSS（nodes_moss_image.py 在）就不動；不是 0.38.0 也不動（那 6 個改過的檔是 0.38 的版本，蓋到別版會壞）。
+    /// 已經有 MOSS（nodes.py 認得 moss_image，見 moss_support）就不動；桌面版、不是 0.38.0 也不動（那 6 個改過的檔是 0.38 的版本，
+    /// 蓋到別版會壞），狀態標「要手動處理」並講解法（以前標 skip，進度頁顯示成「已經有了」，2026-10-30 有人因此一直以為裝好了）。
     /// 要蓋的檔跟補丁內容一樣就跳過；原本就有、而且不一樣的（官方原版，或使用者自己改過的）先搬到 ComfyUI 旁邊的
     /// 待刪除\ComfyUI核心檔備份_<時間>\ 再蓋，安裝結果裡會講。fresh＝這次剛下載的 ComfyUI（核心檔一定是官方原版），不備份
     fn patch_moss(&self, p: &Plan, fresh: bool) {
         let key = "comfy_moss";
         let src = self.res.join("extras").join("comfy_moss");
         let root = comfy_code(&p.comfy_dir);
-        if root.join("comfy_extras").join("nodes_moss_image.py").is_file() {
+        // ComfyUI 不見了（正常流程下載失敗會更早停下，走到這裡多半是資料夾被防毒搬走、網路磁碟斷線）：標失敗並列進要處理的事
+        if comfy_layout_with(&p.comfy_dir, &p.opt).is_none() {
+            let e = "找不到 ComfyUI，沒辦法放入 MOSS-Image 支援".to_string();
+            self.set_status(key, "error", Some(e.clone()));
+            self.problem(e);
+            return;
+        }
+        let support = moss_support(&p.comfy_dir);
+        if support == MossSupport::Ready {
             self.set_status(key, "skip", None);
             return;
         }
-        // 官方桌面版的程式在它自己的安裝資料夾，桌面版更新時會整個換掉：不去改它
-        if comfy_layout(&p.comfy_dir).is_some_and(|l| l.desktop) {
-            self.set_status(key, "skip", None);
-            self.say("ComfyUI 桌面版不自動補 MOSS-Image：要用 MOSS 請等桌面版更新到含 MOSS 的版本".to_string());
-            return;
-        }
-        let ver = comfy_version(&p.comfy_dir);
-        if ver.as_deref() != Some("0.38.0") {
-            self.set_status(key, "skip", None);
-            self.say(format!(
-                "ComfyUI 是 {}、還沒有 MOSS-Image：要用 MOSS 請換成含 MOSS 的 ComfyUI 版本",
-                ver.unwrap_or_else(|| "未知版本".into())
-            ));
+        if let Some(why) = support.problem() {
+            self.set_status(key, "warn", Some(why.clone()));
+            self.say(why);
             return;
         }
         let backup = root
@@ -2999,10 +3523,16 @@ fn plan_from(body: &Value) -> Result<Plan, String> {
     })
 }
 
+/// 同時只跑一次掃描：以前按「重試」會再開一次，前一次還在後台跑，兩三次一起搶同一批硬碟，越重試越慢
+static SCAN_LOCK: Mutex<()> = Mutex::new(());
+
 async fn api_scan(State(s): S) -> Response {
     let cur = s.config();
     reply(
-        tokio::task::spawn_blocking(move || scan(cur.as_ref()))
+        tokio::task::spawn_blocking(move || {
+            let _one = SCAN_LOCK.lock().unwrap_or_else(|e| e.into_inner());
+            scan(cur.as_ref())
+        })
             .await
             .unwrap_or(Value::Null),
     )
@@ -3029,6 +3559,21 @@ async fn api_check(State(s): S, Json(body): Json<Value>) -> Response {
         .await
         .unwrap_or(Value::Null),
     )
+}
+
+/// 刪掉以前影片包留下的 LTX-2.3 檔（精靈裡使用者按了「刪掉」）：{data_root, comfy_dir…}，伺服器自己重新找一次，不收網頁送來的路徑
+async fn api_ltx_remove(State(s): S, Json(body): Json<Value>) -> Response {
+    let p = match plan_from(&body) {
+        Ok(p) => p,
+        Err(e) => return bad(e),
+    };
+    if s.busy() {
+        return bad("正在安裝，等裝完再刪");
+    }
+    let extra = crate::model_dirs::load(&p.data_root.join("data"));
+    let files = ltx_leftovers(&p.models(), &extra);
+    let (freed, fails) = tokio::task::spawn_blocking(move || remove_ltx(&files)).await.unwrap_or_default();
+    reply(json!({"freed": freed, "fails": fails}))
 }
 
 /// 掃描這台電腦已經有的模型（model_dirs.rs）：開始
@@ -3378,6 +3923,7 @@ pub fn router(setup: Arc<Setup>, web: &Path) -> Router {
         .route("/api/setup/model_scan/status", post(api_model_scan_status))
         .route("/api/setup/model_scan/cancel", post(api_model_scan_cancel))
         .route("/api/setup/model_dirs", post(api_model_dirs))
+        .route("/api/setup/ltx_remove", post(api_ltx_remove))
         .route("/api/setup/pick_folder", post(api_pick_folder))
         .route("/api/setup/net", get(api_net).post(api_net_set))
         .route("/api/setup/net/test", post(api_net_test))
@@ -3515,6 +4061,317 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// 2026-10-31 使用者：「不管更新了什麼，能上的就直接上」。開站時把程式附帶、已經裝進 ComfyUI 的東西換成新版：
+    /// AI 改寫節點、工作流程、附帶 LoRA、MOSS 補丁；不一樣的舊檔先搬到 待刪除\繪匣更新備份_<時間>\，沒裝過的不主動裝
+    #[test]
+    fn sync_bundled_updates_installed_parts() {
+        let d = std::env::temp_dir().join(format!("anima_sync_bundled_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let write = |p: PathBuf, s: &str| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        let read = |p: PathBuf| std::fs::read_to_string(p).unwrap_or_default();
+        let port = d.join("ComfyUI_windows_portable");
+        let code = port.join("ComfyUI");
+        write(port.join("python_embeded").join("python.exe"), "");
+        write(code.join("main.py"), "");
+        write(code.join("comfyui_version.py"), "__version__ = \"0.38.0\"\n");
+        write(code.join("nodes.py"), r#""type": (["stable_diffusion", "moss_image"], ),"#);
+        write(code.join("comfy_extras").join("nodes_moss_image.py"), "# old patch\n");
+        let node = code.join("custom_nodes").join(NODE);
+        write(node.join("pe_core.py"), "# old node\n");
+        write(node.join("bin").join("llama-server.exe"), "exe");
+        let wf = code.join("user").join("default").join("workflows");
+        write(wf.join("a.json"), "{\"old\":1}");
+        let res = d.join("res").join("extras");
+        write(res.join(NODE).join("pe_core.py"), "# new node\n");
+        write(res.join(NODE).join("__init__.py"), "# init\n");
+        write(res.join(NODE).join("__pycache__").join("pe_core.cpython-313.pyc"), "x");
+        write(res.join("workflows").join("a.json"), "{\"new\":1}");
+        write(res.join("workflows").join("b.json"), "{\"b\":1}");
+        write(res.join("loras").join("l.safetensors"), "lora");
+        write(res.join(MOSS_NODES).join("__init__.py"), "# moss nodes
+");
+        write(res.join("comfy_moss").join("comfy_extras").join("nodes_moss_image.py"), "class TextEncodeMOSSImageEdit(io.ComfyNode):");
+        write(res.join("comfy_moss").join("說明.txt"), "readme");
+        let done = sync_bundled(&port, &d.join("res"));
+        assert_eq!(done.len(), 5, "{done:?}");
+        // MOSS 小節點：沒裝過也放（不像 AI 改寫節點要先裝過）
+        assert_eq!(read(code.join("custom_nodes").join(MOSS_NODES).join("__init__.py")), "# moss nodes
+");
+        assert_eq!(read(node.join("pe_core.py")), "# new node\n");
+        assert_eq!(read(node.join("__init__.py")), "# init\n");
+        assert_eq!(read(node.join("bin").join("llama-server.exe")), "exe");
+        assert!(!node.join("__pycache__").exists());
+        assert_eq!(read(wf.join("a.json")), "{\"new\":1}");
+        assert_eq!(read(wf.join("b.json")), "{\"b\":1}");
+        assert_eq!(read(code.join("models").join("loras").join("l.safetensors")), "lora");
+        assert!(read(code.join("comfy_extras").join("nodes_moss_image.py")).contains("TextEncodeMOSSImageEdit"));
+        assert!(!code.join("說明.txt").exists());
+        assert_eq!(moss_support(&port), MossSupport::Ready);
+        // 舊檔有備份
+        let bak: Vec<PathBuf> = files_under(&port.join("待刪除"));
+        let has = |s: &str| bak.iter().any(|p| p.to_string_lossy().replace('\\', "/").ends_with(s));
+        assert!(has("custom_nodes/anima_prompt_enhancer/pe_core.py") && has("user/default/workflows/a.json") && has("comfy_extras/nodes_moss_image.py"), "{bak:?}");
+        // 再開一次站：都一樣了，什麼都不做
+        assert!(sync_bundled(&port, &d.join("res")).is_empty());
+        // 沒裝過 AI 改寫節點：不主動裝
+        std::fs::remove_dir_all(&node).unwrap();
+        assert!(sync_bundled(&port, &d.join("res")).is_empty());
+        assert!(!node.exists());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 2026-10-31 升級到 0.43：只有官方免安裝版（python_embeded＋git）、版本比 COMFY_VERSION 舊的才由精靈升級
+    #[test]
+    fn comfy_upgradable_only_old_portable_git() {
+        let d = std::env::temp_dir().join(format!("anima_comfy_upgradable_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let write = |p: PathBuf, s: &str| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        let port = d.join("ComfyUI_windows_portable");
+        let code = port.join("ComfyUI");
+        write(port.join("python_embeded").join("python.exe"), "");
+        write(code.join("main.py"), "");
+        write(code.join("comfyui_version.py"), "__version__ = \"0.38.0\"\n");
+        assert!(!comfy_upgradable(&port), "沒有 .git 不能升級");
+        std::fs::create_dir_all(code.join(".git")).unwrap();
+        assert!(comfy_upgradable(&port));
+        write(code.join("comfyui_version.py"), &format!("__version__ = \"{COMFY_VERSION}\"\n"));
+        assert!(!comfy_upgradable(&port));
+        write(code.join("comfyui_version.py"), "__version__ = \"0.44.1\"\n");
+        assert!(!comfy_upgradable(&port), "比較新的不降版");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 2026-10-31 使用者：「如果檢測到同樣的個別lora則不重覆安裝那個各別的lora」。清單裡的 LoRA 在別的資料夾、別的檔名已經有
+    /// 一模一樣的（大小＋SHA256 都對）就不下載，記在模型資料夾的 anima_model_aliases.json，之後檢查也算有
+    #[test]
+    fn same_lora_elsewhere_counts_as_installed() {
+        let d = std::env::temp_dir().join(format!("anima_lora_alias_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let models = d.join("ComfyUI").join("models");
+        let write = |p: PathBuf, s: &str| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        write(models.join("loras").join("civitai").join("my_style.safetensors"), "lora-a");
+        write(models.join("loras").join("decoy.safetensors"), "lora-b"); // 一樣大、內容不同
+        let sha = sha256_file(&models.join("loras").join("civitai").join("my_style.safetensors")).unwrap();
+        let rel = "loras/moss/Excellent-Loras/风格/style.safetensors";
+        let res = d.join("res");
+        write(res.join("share").join("models_full.json"), &json!([{"path": rel, "size": 6, "sha256": sha, "url": "https://example.invalid/x"}]).to_string());
+        assert_eq!(missing_models(&res, &models, "full", &[]).len(), 1);
+        let index = crate::model_dirs::size_index(&models, &[], "loras");
+        let mut cache = Default::default();
+        let m = manifest(&res, "full").remove(0);
+        let found = same_lora_elsewhere(&index, &mut cache, &m).expect("要找到改過名字的同一顆");
+        assert!(found.ends_with("my_style.safetensors"), "{found:?}");
+        remember_alias(&models, rel, &found).unwrap();
+        assert!(missing_models(&res, &models, "full", &[]).is_empty());
+        // 那顆被刪掉：又算缺
+        std::fs::remove_file(&found).unwrap();
+        assert_eq!(missing_models(&res, &models, "full", &[]).len(), 1);
+        // 沒有 SHA256 的不猜
+        let mut m2 = m.clone();
+        m2.sha256 = None;
+        assert!(same_lora_elsewhere(&index, &mut cache, &m2).is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 2026-10-31 使用者：「要確保他們升級後都能很直接地簡單的，能享受到跟我一樣」。開站自動把 0.38 升到 COMFY_VERSION：
+    /// 先裝新版套件、成功才換程式。要真的 ComfyUI 程式複本（git）和它的 python，平常略過：
+    /// ANIMA_UPG_CODE=<0.38 的 ComfyUI 程式複本> ANIMA_UPG_PY=<python_embeded\python.exe> cargo test upgrade_comfy_code_real -- --ignored
+    #[test]
+    #[ignore]
+    fn upgrade_comfy_code_real() {
+        let code = PathBuf::from(std::env::var("ANIMA_UPG_CODE").expect("ANIMA_UPG_CODE"));
+        let py = PathBuf::from(std::env::var("ANIMA_UPG_PY").expect("ANIMA_UPG_PY"));
+        let ver = |c: &Path| std::fs::read_to_string(c.join("comfyui_version.py")).unwrap_or_default();
+        assert!(ver(&code).contains("0.38"), "要拿 0.38 的複本測");
+        let backup = code.parent().unwrap().join("upg_backup");
+        upgrade_comfy_code(&py, &code, &crate::paths::default_res(), &backup).unwrap();
+        assert!(ver(&code).contains(COMFY_VERSION), "{}", ver(&code));
+        assert!(std::fs::read_to_string(code.join("comfy_extras").join("nodes_moss_image.py")).unwrap().contains("MOSSImageControl"));
+    }
+
+    /// 生成頁缺 LoRA 一鍵下載（fetch_listed）也一樣：別的資料夾有同一顆就不下載，回那顆的位置，記成別名
+    #[test]
+    fn lora_elsewhere_for_fetch_listed() {
+        let d = std::env::temp_dir().join(format!("anima_lora_elsewhere_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let models = d.join("models");
+        let f = models.join("loras").join("my").join("deband_copy.safetensors");
+        std::fs::create_dir_all(f.parent().unwrap()).unwrap();
+        std::fs::write(&f, "deband").unwrap();
+        let sha = sha256_file(&f).unwrap();
+        let res = d.join("res");
+        std::fs::create_dir_all(res.join("share")).unwrap();
+        let rel = "loras/moss/Excellent-Loras/SFT伪影修复/fix.safetensors";
+        std::fs::write(res.join("share").join("models_full.json"), json!([{"path": rel, "size": 6, "sha256": sha, "url": "https://example.invalid/x"},
+            {"path": "text_encoders/t.safetensors", "size": 6, "sha256": sha, "url": "https://example.invalid/y"}]).to_string()).unwrap();
+        assert_eq!(lora_elsewhere(&res, &models, &[], rel), Some(f.clone()));
+        assert_eq!(aliases(&models).get(rel), Some(&f));
+        // 只管 LoRA；清單沒有的不管
+        assert!(lora_elsewhere(&res, &models, &[], "text_encoders/t.safetensors").is_none());
+        assert!(lora_elsewhere(&res, &models, &[], "loras/none.safetensors").is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 2026-10-31 使用者：「把每個LoRa都分別寫個備註…讓助手和各別的user一看就知道那個lora是幹啥用的」。
+    /// 開站時把程式附的 LoRA 備註併進資料庫：沒有的補上（使用者改過的不蓋）；同一顆放在別的資料夾，照檔名對上實際的名稱也補一份
+    #[test]
+    fn merge_lora_notes_fills_missing_only() {
+        let d = std::env::temp_dir().join(format!("anima_lora_notes_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let write = |p: PathBuf, s: &str| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        let res = d.join("res");
+        write(res.join("share").join("lora設定.json"), &json!({"lora_meta": {
+            "moss\\Excellent-Loras\\风格\\ink.safetensors": {"note": "【畫風】水墨", "triggers": ["ink"]},
+            "mine.safetensors": {"note": "內建的說明"},
+        }}).to_string());
+        let loras = d.join("loras");
+        write(loras.join("Excellent-Loras-for-MossImage").join("风格").join("ink.safetensors"), "x"); // 照 README 放在別的資料夾
+        let db = Db::open(&d.join("anima.db")).unwrap();
+        db.set_lora_meta("mine.safetensors", &json!({"note": "我自己改的"})).unwrap();
+        let n = merge_lora_notes(&db, &res, std::slice::from_ref(&loras));
+        let meta = db.lora_meta().unwrap();
+        assert_eq!(n, 2, "{meta:?}");
+        assert_eq!(meta["mine.safetensors"]["note"], "我自己改的");
+        assert_eq!(meta["moss\\Excellent-Loras\\风格\\ink.safetensors"]["note"], "【畫風】水墨");
+        assert_eq!(meta["Excellent-Loras-for-MossImage\\风格\\ink.safetensors"]["triggers"][0], "ink");
+        assert_eq!(merge_lora_notes(&db, &res, std::slice::from_ref(&loras)), 0);
+        // 程式附的備註改版了：使用者沒動過的跟著更新（AI 認識過加的欄位留著），使用者改過的不蓋
+        let ink = "moss\\Excellent-Loras\\风格\\ink.safetensors";
+        let mut m = db.lora_meta().unwrap()[ink].clone();
+        m["agent"] = json!({"desc": "AI 寫的"});
+        db.set_lora_meta(ink, &m).unwrap();
+        write(res.join("share").join("lora設定.json"), &json!({"lora_meta": {
+            ink: {"note": "【畫風】水墨（實測過）", "triggers": ["ink"]},
+            "mine.safetensors": {"note": "內建的說明 v2"},
+        }}).to_string());
+        assert_eq!(merge_lora_notes(&db, &res, std::slice::from_ref(&loras)), 2, "ink 兩個名字都更新");
+        let meta = db.lora_meta().unwrap();
+        assert_eq!(meta[ink]["note"], "【畫風】水墨（實測過）");
+        assert_eq!(meta[ink]["agent"]["desc"], "AI 寫的");
+        assert_eq!(meta["Excellent-Loras-for-MossImage\\风格\\ink.safetensors"]["note"], "【畫風】水墨（實測過）");
+        assert_eq!(meta["mine.safetensors"]["note"], "我自己改的");
+        let mut m = meta[ink].clone();
+        m["note"] = json!("使用者改的");
+        db.set_lora_meta(ink, &m).unwrap();
+        write(res.join("share").join("lora設定.json"), &json!({"lora_meta": {ink: {"note": "v3"}}}).to_string());
+        merge_lora_notes(&db, &res, std::slice::from_ref(&loras));
+        assert_eq!(db.lora_meta().unwrap()[ink]["note"], "使用者改的");
+        // 26.1031.2 補進去的還沒有 bundle_sig：備註還是當時附的原文（LEGACY_NOTES）就當沒改過，照樣更新
+        let old = "moss\\Excellent-Loras\\EDIT\\x.safetensors";
+        db.set_lora_meta(old, &json!({"note": LEGACY_NOTES[0], "title": "舊"})).unwrap();
+        write(res.join("share").join("lora設定.json"), &json!({"lora_meta": {old: {"note": "實測過的新備註", "title": "新"}}}).to_string());
+        assert_eq!(merge_lora_notes(&db, &res, &[]), 1);
+        assert_eq!(db.lora_meta().unwrap()[old]["note"], "實測過的新備註");
+        drop(db);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 生成頁缺 MOSS 加速／編輯 LoRA 時一鍵下載：只認安裝清單裡的檔（不收網頁給的網址）
+    #[test]
+    fn listed_file_only_knows_the_manifest() {
+        let res = crate::paths::default_res();
+        let (size, url, sha) = listed_file(&res, "loras/moss/moss_speed_dmd_lodestones.safetensors").unwrap();
+        assert_eq!(size, 1189176800);
+        assert!(url.starts_with("https://huggingface.co/") && sha.is_some());
+        assert!(listed_file(&res, "loras/moss/moss_edit_chinoll.safetensors").is_some());
+        assert!(listed_file(&res, "../evil.safetensors").is_none());
+        assert!(listed_file(&res, "loras/nope.safetensors").is_none());
+    }
+
+    /// 2026-10-30 有人回報 MOSS 報「'moss_image' not in (list of length 29)」，精靈卻說已經有了：補丁蓋過之後 ComfyUI 更新
+    /// 把 nodes.py 換回官方版，沒被追蹤的 nodes_moss_image.py 還留著，以前看到它就當成有 MOSS。要看 nodes.py 的 CLIPLoader 有沒有 moss_image
+    #[test]
+    fn moss_support_reads_nodes_py() {
+        let d = std::env::temp_dir().join(format!("anima_moss_support_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let write = |p: PathBuf, s: &str| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, s).unwrap();
+        };
+        let port = d.join("ComfyUI_windows_portable");
+        let code = port.join("ComfyUI");
+        write(port.join("python_embeded").join("python.exe"), "");
+        write(code.join("main.py"), "");
+        write(code.join("comfyui_version.py"), "__version__ = \"0.38.0\"\n");
+        let official = r#""type": (["stable_diffusion", "flux2", "yue2"], ),"#;
+        write(code.join("nodes.py"), official);
+        write(code.join("comfy_extras").join("nodes_moss_image.py"), "");
+        assert_eq!(moss_support(&port), MossSupport::Patchable);
+        write(code.join("nodes.py"), r#""type": (["stable_diffusion", "yue2", "flux3", "moss_image"], ),"#);
+        // 2026-10-30 補丁加了 MOSS 編輯（TextEncodeMOSSImageEdit）：0.38 上舊版補丁要再蓋一次
+        assert_eq!(moss_support(&port), MossSupport::Patchable);
+        write(code.join("comfy_extras").join("nodes_moss_image.py"), "class TextEncodeMOSSImageEdit(io.ComfyNode):");
+        assert_eq!(moss_support(&port), MossSupport::Ready);
+        // 新版 ComfyUI 自己就有 MOSS（0.42 起）：不蓋補丁
+        write(code.join("comfy_extras").join("nodes_moss_image.py"), "");
+        write(code.join("comfyui_version.py"), "__version__ = \"0.42.1\"\n");
+        assert_eq!(moss_support(&port), MossSupport::Ready);
+        write(code.join("comfyui_version.py"), "__version__ = \"0.38.0\"\n");
+        // 官方正式版到 0.40.0 都沒有 MOSS；補丁是 0.38.0 的，別版不能蓋
+        write(code.join("nodes.py"), official);
+        write(code.join("comfyui_version.py"), "__version__ = \"0.40.0\"\n");
+        assert_eq!(moss_support(&port), MossSupport::Unsupported(Some("0.40.0".into())));
+        let msg = moss_support(&port).problem().unwrap();
+        assert!(msg.contains("0.40.0") && msg.contains("0.43.0") && msg.contains("安裝與修復"), "{msg}");
+        assert!(MossSupport::Ready.problem().is_none() && MossSupport::Patchable.problem().is_none());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 2026-10-30 有人回報精靈第一步一直「超過 240 秒沒有回應」：找舊安裝要有時間上限，時間到就回傳找到的，沒掃完的硬碟另外列
+    #[test]
+    fn find_installs_has_a_time_limit() {
+        let d = std::env::temp_dir().join(format!("anima_find_test_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |p: PathBuf| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b"").unwrap();
+        };
+        let (a, b) = (d.join("A"), d.join("B"));
+        let port = a.join("AI").join("ComfyUI_windows_portable");
+        touch(port.join("python_embeded").join("python.exe"));
+        touch(port.join("ComfyUI").join("main.py"));
+        touch(port.join("ComfyUI").join("nodes.py"));
+        touch(b.join("x").join("anima_data").join("data").join("anima.db"));
+        let roots = vec![a.clone(), b.clone()];
+        let f = find_installs_in(&roots, Duration::from_secs(30));
+        assert_eq!(f.comfy, vec![port]);
+        assert_eq!(f.data, vec![b.join("x").join("anima_data")]);
+        assert!(f.unfinished.is_empty());
+        let t = Instant::now();
+        let f = find_installs_in(&roots, Duration::ZERO);
+        assert!(t.elapsed() < Duration::from_secs(5));
+        assert_eq!(f.unfinished, roots);
+        // 上一次放棄、執行緒還卡在那顆硬碟上：不再開新的執行緒，直接算沒掃完
+        WALKING.lock().unwrap().push(b.clone());
+        let f = find_installs_in(&roots, Duration::from_secs(30));
+        WALKING.lock().unwrap().retain(|x| x != &b);
+        assert_eq!(f.unfinished, vec![b.clone()]);
+        assert!(f.data.is_empty() && f.comfy.len() == 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 時間到還沒回來的項目是 None，其他照順序回來
+    #[test]
+    fn each_until_drops_late_items() {
+        let r = each_until(&[0u64, 3000], |ms| {
+            std::thread::sleep(Duration::from_millis(ms));
+            ms
+        }, Instant::now() + Duration::from_millis(300));
+        assert_eq!(r, vec![Some(0), None]);
+    }
+
     /// 各家整合包、啟動器的擺法（照 2026-10-21 查到的資料夾結構做假的）：
     /// （名字, 要建的檔, 使用者選的資料夾, main.py 那層, Python, 工作資料夾, 免安裝版?, 掃硬碟時算一份安裝?）
     #[test]
@@ -3578,6 +4435,41 @@ mod tests {
         let _ = std::fs::remove_dir_all(&d);
     }
 
+    /// 2026-10-30 LTX 退場：精靈找出以前「影片」包下載的三個 LTX 檔（ComfyUI 的 models＋外部模型資料夾），使用者按了才刪；
+    /// 名字不一樣的（使用者自己放的其他 LTX 檔）不碰
+    #[test]
+    fn ltx_leftovers_found_and_removed() {
+        let root = std::env::temp_dir().join(format!("anima_ltx_left_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        let models = root.join("models");
+        let ext = root.join("ext_ckpt");
+        for (dir, name) in [(models.join("text_encoders"), "gemma-3-12b-it-ablit-norms-biproj-fp8mixed.safetensors"),
+                            (models.join("latent_upscale_models"), "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"),
+                            (ext.clone(), "10Eros_v1.5_DMD_INT8_checkpoint.safetensors"),
+                            (models.join("checkpoints"), "ltx-2.3-my-own.safetensors")] {
+            std::fs::create_dir_all(&dir).unwrap();
+            std::fs::write(dir.join(name), b"1234").unwrap();
+        }
+        let extra = vec![crate::model_dirs::Dir { kind: "checkpoints".into(), path: ext.clone(), source: "manual".into(), added: String::new() }];
+        let mut found: Vec<String> = ltx_leftovers(&models, &extra).into_iter().map(|f| f.0.file_name().unwrap().to_string_lossy().to_string()).collect();
+        found.sort();
+        assert_eq!(found, ["10Eros_v1.5_DMD_INT8_checkpoint.safetensors", "gemma-3-12b-it-ablit-norms-biproj-fp8mixed.safetensors", "ltx-2.3-spatial-upscaler-x2-1.1.safetensors"]);
+        let (freed, fails) = remove_ltx(&ltx_leftovers(&models, &extra));
+        assert_eq!((freed, fails.len()), (12, 0));
+        assert!(ltx_leftovers(&models, &extra).is_empty());
+        assert!(models.join("checkpoints").join("ltx-2.3-my-own.safetensors").is_file(), "使用者自己的檔不能刪");
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 升級換新 9B 要下載的：AI 改寫包裡的語言模型檔（9B、它的看圖檔、挑段模型），不含選配的 35B、官方 PE
+    #[test]
+    fn llm_pack_files_are_the_9b_set() {
+        let names: Vec<String> = llm_pack_files(&crate::paths::default_res()).into_iter().map(|f| f.0).collect();
+        assert!(names.iter().any(|n| n.contains("Defiant-Fable") && !n.contains("mmproj")), "{names:?}");
+        assert!(names.iter().any(|n| n.contains("Defiant-Fable-mmproj")), "{names:?}");
+        assert!(!names.iter().any(|n| n.contains("35B") || n.to_lowercase().starts_with("pe_") || n.contains('/')), "{names:?}");
+    }
+
     /// 功能包：完整版每個檔都有歸包；models_basic.json 跟 BASIC_PACKS 一致；舊的 models 參數照樣能用
     #[test]
     fn packs_cover_manifests() {
@@ -3594,10 +4486,61 @@ mod tests {
         assert_eq!(packs_from(&json!({"models": "basic"})).unwrap(), BASIC_PACKS);
         assert!(packs_from(&json!({"models": "none"})).unwrap().is_empty());
         let full_packs = packs_from(&json!({"models": "full"})).unwrap();
-        assert!(full_packs.len() == PACKS.len() - OPTIONAL_PACKS.len() + 1 && !full_packs.iter().any(|p| p == "pe_official" || p == "pe_35b"));
-        // 官方 PE 是選配；9B 跟它的看圖檔在 AI 改寫包
-        assert_eq!(pack_of("LLM/pe_t2i_heretic-Q4_K_M.gguf"), "pe_official");
+        assert!(full_packs.len() == PACKS.len() - OPTIONAL_PACKS.len() + 1 && !full_packs.iter().any(|p| OPTIONAL_PACKS.contains(&p.as_str())));
+        // 2026-10-30 有人回報「點 moss 快速提示找不到 MOSS 加速 LoRA」：MOSS 包（基本版也有）要帶 gen.js MOSS_FAST 找的那顆
+        let speed = "loras/moss/moss_speed_dmd_lodestones.safetensors";
+        let m = full.iter().find(|m| m.rel == speed).expect("清單沒有 MOSS 加速 LoRA");
+        assert_eq!(pack_of(speed), "moss");
+        assert!(m.sha256.is_some() && m.url.as_deref().is_some_and(|u| u.contains("/resolve/f95df83b")), "{:?}", m.url);
+        assert!(manifest(&res, "basic").iter().any(|m| m.rel == speed));
+        // MOSS 照指令改圖（2026-10-30）：預設的編輯 LoRA（chinoll/Moss-Image-Edit）也在 MOSS 包
+        let edit = "loras/moss/moss_edit_chinoll.safetensors";
+        let m = full.iter().find(|m| m.rel == edit).expect("清單沒有 MOSS 編輯 LoRA");
+        assert_eq!(pack_of(edit), "moss");
+        assert!(m.sha256.is_some() && m.url.as_deref().is_some_and(|u| u.contains("/resolve/3be9c400")), "{:?}", m.url);
+        // 2026-10-31 MOSS 色彩／深度控制：生成頁構圖控制直接用，放 MOSS 包（基本版也有），路徑跟 graphs.rs MOSS_CONTROL_LORA 一致
+        let ctrl = format!("loras/{}", crate::graphs::MOSS_CONTROL_LORA.replace('\\', "/"));
+        assert_eq!(pack_of(&ctrl), "moss");
+        assert!(manifest(&res, "basic").iter().any(|m| m.rel == ctrl), "基本版沒有 {ctrl}");
+        // 4B 文字編碼器＋轉接器：選配包 moss_4b，檔名跟 graphs.rs 一致；9B 照舊在 MOSS 包
+        for rel in [format!("text_encoders/{}", crate::graphs::MOSS_TE_4B), format!("moss_encoder_adapters/{}", crate::graphs::MOSS_4B_ADAPTER)] {
+            let m = full.iter().find(|m| m.rel == rel).unwrap_or_else(|| panic!("清單沒有 {rel}"));
+            assert_eq!(pack_of(&rel), "moss_4b");
+            assert!(m.sha256.is_some(), "{rel}");
+        }
+        assert_eq!(pack_of("text_encoders/qwen3.5_9b_w4a8_gptq.safetensors"), "moss");
+        // MOSS LoRA 合集（gordonz/Excellent-Loras-for-MossImage）：選配包；不收真人肖像；清單裡不能有兩個一模一樣的檔
+        let bundle: Vec<&ModelFile> = full.iter().filter(|m| m.rel.starts_with("loras/moss/Excellent-Loras/")).collect();
+        assert!(bundle.len() >= 75 && bundle.iter().all(|m| pack_of(&m.rel) == "moss_loras" && m.sha256.is_some() && m.url.as_deref().is_some_and(|u| u.contains("modelscope.cn"))));
+        assert!(!full.iter().any(|m| m.rel.contains("Gracie_Phoenix")));
+        let mut shas: Vec<&str> = full.iter().filter_map(|m| m.sha256.as_deref()).collect();
+        let n = shas.len();
+        shas.sort();
+        shas.dedup();
+        assert_eq!(shas.len(), n, "清單裡有 SHA256 一樣的檔");
+        // 去色帶在合集包，生成頁 gen.js MOSS_DEBAND 用的就是這個路徑
+        assert!(bundle.iter().any(|m| m.rel == "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors"));
+        // 2026-10-30 LTX 退場：影片包（10Eros v1.5、gemma、LTX 放大）整個拿掉，舊網頁送來的 video 安靜略過
+        assert_eq!(OPTIONAL_PACKS, ["pe_35b", "h3", "moss_4b", "moss_loras"]);
+        assert!(!PACKS.iter().any(|p| p.0 == "video"));
+        assert_eq!(packs_from(&json!({"packs": ["video", "anima"]})).unwrap(), vec!["anima"]);
+        for gone in ["10eros_v1.5", "gemma-3-12b", "ltx-2.3"] {
+            assert!(!full.iter().any(|m| m.rel.to_lowercase().contains(gone)), "清單還有 {gone}");
+        }
+        // 本機 H3 包（2026-10-30）：h3.rs 寫死的四個檔都在「h3」包，網址鎖 commit、有 SHA256；Qwen 2.1 的 qwen3vl 不能被搶走
+        for name in [crate::h3::MODEL_W4A8, crate::h3::TE, crate::h3::VAE, crate::h3::AVAE] {
+            let m = full.iter().find(|m| m.rel.ends_with(&format!("/{name}"))).unwrap_or_else(|| panic!("清單沒有 {name}"));
+            assert_eq!(pack_of(&m.rel), "h3", "{name}");
+            assert!(m.sha256.is_some() && m.url.as_deref().is_some_and(|u| u.contains("/resolve/") && u.ends_with(name)), "{name}");
+        }
+        assert_eq!(pack_of("text_encoders/qwen3vl_8b_w4a8.safetensors"), "qwen");
+        // 2026-10-30 官方 PE 整個拿掉：清單裡不能再有，舊網頁／舊 MCP 送來的 pe_official 安靜略過；9B 跟它的看圖檔在 AI 改寫包
+        assert!(!full.iter().any(|m| m.rel.to_lowercase().contains("/pe_")), "清單還有官方 PE");
+        assert!(!PACKS.iter().any(|p| p.0 == "pe_official"));
+        assert_eq!(packs_from(&json!({"packs": ["pe_official", "anima"]})).unwrap(), vec!["anima"]);
         assert_eq!(pack_of("LLM/Huihui-Qwen3.5-9B-abliterated.Q4_K_M.gguf"), "pe");
+        assert_eq!(pack_of("LLM/Qwen3.5-9B-The-Defiant-Fable-Uncnr-Heretic-NEO-MAX-Q4_K_M.gguf"), "pe");
+        assert_eq!(pack_of("LLM/Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf"), "pe");
         // 35B 是選配，要先有 AI 改寫包（llama.cpp）
         assert_eq!(pack_of("LLM/Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-APEX-I-Compact.gguf"), "pe_35b");
         assert_eq!(pack_of("LLM/mmproj-Qwen3.6-35B-A3B-uncensored-heretic-Native-MTP-Preserved-APEX-F16.gguf"), "pe_35b");
@@ -3629,8 +4572,9 @@ mod tests {
             }
         }
         let (name, size, url, sha) = mmproj_source(&res, "qwen3.5").expect("9B 的 mmproj");
-        assert_eq!(name, "Huihui-Qwen3.5-9B-abliterated.mmproj-f16.gguf");
-        assert!(size > 500_000_000 && url.contains("/resolve/") && url.ends_with(&name) && sha.is_some());
+        // 2026-10-29 起預設 9B 換成 Defiant Fable；它的看圖檔在 HF 上叫 mmproj-F16.gguf，存檔時用清單裡的名字
+        assert_eq!(name, "Qwen3.5-9B-Defiant-Fable-mmproj-F16.gguf");
+        assert!(size > 500_000_000 && url.contains("/resolve/") && url.ends_with("/mmproj-F16.gguf") && sha.is_some());
         assert_eq!(pack_of(&format!("LLM/{name}")), "pe");
         // 2026-10-29 起 35B 是選配包，它的看圖檔也在清單裡：有 35B 主檔、缺 mmproj 時可以自動補
         let (name, _, url, sha) = mmproj_source(&res, "qwen3.6").expect("35B 的 mmproj");

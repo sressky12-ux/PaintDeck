@@ -17,6 +17,7 @@ export const ICONS = {
   tape: '<rect x="2" y="5" width="20" height="14" rx="2"/><circle class="a" cx="8" cy="10" r="2.5"/><circle class="a" cx="16" cy="10" r="2.5"/><path d="M8 12.5h8M6 19l1.5-3h9l1.5 3"/>',
   bubble: '<path d="M4 4h16a1 1 0 0 1 1 1v10a1 1 0 0 1-1 1h-9l-5 4v-4H4a1 1 0 0 1-1-1V5a1 1 0 0 1 1-1z"/><rect class="af" x="7" y="8" width="3" height="3"/><rect class="af" x="14" y="8" width="3" height="3"/>',
   comic: '<rect x="4" y="2.5" width="16" height="19" rx="1"/><path d="M4 11h16M11 11v10.5"/><path class="af" d="M8 5h8a1 1 0 0 1 1 1v2a1 1 0 0 1-1 1h-5l-2 1.5V9H8a1 1 0 0 1-1-1V6a1 1 0 0 1 1-1z"/>',
+  palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.9-.8 1.9-1.8 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-1 .8-1.8 1.8-1.8H17a4 4 0 0 0 4-4c0-4.4-4-8-9-8z"/><circle class="af" cx="7.5" cy="11.5" r="1.6"/><circle class="f" cx="10" cy="7.2" r="1.5"/><circle class="f" cx="15" cy="7.6" r="1.5"/>',
   clap: '<path d="M3 10h18v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><path d="M3 10l-.6-3.4L18.8 3.6l.7 3.4z"/><path class="a" d="M7.5 5.8l2.6 3.4M12.5 4.9l2.6 3.4"/><rect class="af" x="6" y="13" width="5" height="2"/>',
   faders: '<path d="M5 3v18M12 3v18M19 3v18"/><rect class="f" x="2" y="13" width="6" height="4" rx="1"/><rect class="af" x="9" y="6" width="6" height="4" rx="1"/><rect class="f" x="16" y="10" width="6" height="4" rx="1"/>',
   t2i: '<rect x="3" y="3" width="18" height="18" rx="3"/><path d="M7.5 8h9M12 8v9"/>',

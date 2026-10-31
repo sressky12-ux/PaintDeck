@@ -80,10 +80,6 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
                 }
             }
             m.insert("family".into(), json!(lfam[n.as_str()]));
-            // 影片（LTX）LoRA：家族是 other，「動起來」的 LoRA 下拉只列這種
-            if lfam[n.as_str()] == families::OTHER && families::is_ltx_of(&lora_roots, n) {
-                m.insert("ltx".into(), json!(true));
-            }
             Value::Object(m)
         })
         .collect();
@@ -110,6 +106,7 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
             list.push(json!({"kind": d.kind, "label": crate::model_dirs::kind_label(&d.kind), "path": d.path.to_string_lossy()}));
         }
         models.insert("dirs_pending".into(), json!({"list": list, "can_restart": app.restart_comfy.get().is_some()}));
+        models.insert("comfy_updated".into(), json!({"list": crate::setup::updated(), "can_restart": app.restart_comfy.get().is_some()}));
     }
     models.insert("unet_family".into(), Value::Object(unet_family));
     models.insert(
@@ -268,17 +265,19 @@ pub async fn set_settings(State(app): State<Shared>, Body(body): Body) -> ApiRes
         s.insert("pe_mode".into(), m.clone());
     }
     if let Some(m) = body.get("pe_general") {
-        if !matches!(m.as_str(), Some("auto" | "35b" | "9b")) {
-            return Err(bad("通用模型只能是 auto／35b／9b"));
+        // auto／35b／9b，或直接指定 LLM 資料夾裡的某個 .gguf（只收檔名，不收路徑）
+        let ok = match m.as_str() {
+            Some("auto" | "35b" | "9b") => true,
+            Some(f) => f.len() <= 255 && f.to_lowercase().ends_with(".gguf") && !f.contains(['/', '\\', ':']) && !f.contains(".."),
+            None => false,
+        };
+        if !ok {
+            return Err(bad("通用模型只能是 auto／35b／9b，或 LLM 資料夾裡某個 .gguf 的檔名"));
         }
         s.insert("pe_general".into(), m.clone());
     }
-    if let Some(m) = body.get("pe_engine") {
-        if !matches!(m.as_str(), Some("general" | "official")) {
-            return Err(bad("改寫模型只能是 general／official"));
-        }
-        s.insert("pe_engine".into(), m.clone());
-    }
+    // pe_engine（以前選官方 PE）2026-10-30 拿掉了：舊網頁送來就不理，存檔裡留著的舊值也清掉
+    s.remove("pe_engine");
     if let Some(v) = body.get("pe_partial_layers") {
         s.insert(
             "pe_partial_layers".into(),
@@ -410,16 +409,12 @@ struct Prepared {
 
 /// 決定用哪個流程、家族，並照家族篩 LoRA。不碰 ComfyUI（匯出內建工作流也用它）
 /// 影片要用哪個模型：請求指定的（重跑、放大成正式版）→ 設定裡選的
-fn video_engine(paths: &crate::paths::Paths, p: &Map<String, Value>) -> String {
-    match p.get("video_engine").and_then(Value::as_str).filter(|e| !e.is_empty()) {
+pub(crate) fn video_engine(paths: &crate::paths::Paths, p: &Map<String, Value>) -> String {
+    let e = match p.get("video_engine").and_then(Value::as_str).filter(|e| !e.is_empty()) {
         Some(e) => e.to_string(),
         None => settings::load(&paths.settings).get("video_engine").and_then(Value::as_str).unwrap_or(video_wf::BUILTIN).to_string(),
-    }
-}
-
-/// 影片模型選了 H3：生成頁、導演台的影片不走這裡（字串要寫在 bad(…) 裡，英文字典才抽得到）
-fn h3_here() -> super::ApiError {
-    bad("影片模型選的是 MiniMax H3：到「導演 → H3 影片」分頁做（或到「設定 → 影片模型」換回 LTX）")
+    };
+    video_wf::normalize_engine(&e).to_string()
 }
 
 fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::ApiError> {
@@ -433,12 +428,11 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
     // 影片模型：請求指定的（重跑、放大成正式版）→ 設定裡選的。記進 params，重跑時用同一個
     if video {
         let engine = video_engine(paths, &p);
-        if engine == video_wf::H3 {
-            return Err(h3_here());
+        // 內建 H3 在 submit_jobs 就轉去 api_h3，不經過這裡（匯出內建工作流這類呼叫也不支援 H3）
+        if engine == video_wf::BUILTIN {
+            return Err(bad("內建影片（MiniMax H3）不經過生圖流程：從「動起來」或導演台送出"));
         }
-        if engine != video_wf::BUILTIN {
-            flow = Some(Flow::Video(video_wf::load(&video_wf::dir(&paths.data), &engine).map_err(bad)?));
-        }
+        flow = Some(Flow::Video(video_wf::load(&video_wf::dir(&paths.data), &engine).map_err(bad)?));
         p.insert("video_engine".into(), json!(engine));
     }
     let model = p.get("model").and_then(Value::as_str).unwrap_or("").to_string();
@@ -467,6 +461,11 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
         flow = Some(Flow::Image { set, mode: mode.clone() });
         fam = "custom".to_string();
     } else {
+        if !video {
+            if let Some(e) = families::missing_model(&paths.unet_roots(), &model) {
+                return Err(bad(e));
+            }
+        }
         fam = families::family_of(&paths.unet_roots(), &model).to_string();
         lora_fam = Some(fam.clone());
         // 內建功能被使用者的工作流取代了（「取代內建功能」）：這個家族的這個模式有指定工作流組、而且組裡有這個模式
@@ -520,31 +519,9 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
         }
     }
     p.insert("loras".into(), json!(kept));
-    // 影片 LoRA：只有內建 LTX 用得到，而且只留 LTX 的（其他家族掛上去 ComfyUI 會整串報錯）
-    if let Some(vl) = p.shift_remove("video_loras") {
-        if video && flow.is_none() {
-            let (keep, skip) = split_video_loras(&lora_roots, &vl);
-            skipped.extend(skip);
-            if !keep.is_empty() {
-                p.insert("video_loras".into(), json!(keep));
-            }
-        }
-    }
+    // 以前內建 LTX 的影片 LoRA 欄位（舊網頁、重跑舊任務會帶來）：LTX 退場，丟掉
+    p.shift_remove("video_loras");
     Ok(Prepared { p, video, flow, fam, skipped })
-}
-
-/// 影片 LoRA 清單分成（LTX 能用的、要略過的檔名）
-fn split_video_loras(roots: &[std::path::PathBuf], list: &Value) -> (Vec<Value>, Vec<String>) {
-    let (mut keep, mut skip) = (vec![], vec![]);
-    for l in list.as_array().into_iter().flatten() {
-        let Some(name) = l.get("name").and_then(Value::as_str) else { continue };
-        if families::is_ltx_of(roots, name) {
-            keep.push(l.clone());
-        } else {
-            skip.push(name.to_string());
-        }
-    }
-    (keep, skip)
 }
 
 /// 同 submit，回傳 [{"job": 任務編號, "seed": 種子}]（導演台自己等任務跑完）。
@@ -554,16 +531,18 @@ pub async fn submit_jobs(
     p: Map<String, Value>,
     count: i64,
 ) -> Result<Vec<Value>, super::ApiError> {
-    // 「動起來」明確選了 H3 本機（請求帶 video_engine "h3"）：換成 H3 參數排進本機 ComfyUI
-    if p.get("mode").and_then(Value::as_str) == Some("video") && p.get("video_engine").and_then(Value::as_str) == Some(video_wf::H3) {
+    // 影片用內建的 H3（請求指定、或設定選的；舊的 ltx23 也算）：換成 H3 參數排進本機 ComfyUI。匯入的影片工作流照舊走 prepare
+    if p.get("mode").and_then(Value::as_str) == Some("video") && video_engine(&app.paths, &p) == video_wf::BUILTIN {
         return super::api_h3::submit_from_gen(app, &p, count).await;
-    }
-    // 只有設定選了 H3（導演台的分鏡也走這裡）：導演台還不能用 H3，設定的問題先講，比「沒有連線」有用
-    if p.get("mode").and_then(Value::as_str) == Some("video") && video_engine(&app.paths, &p) == video_wf::H3 {
-        return Err(h3_here());
     }
     if !app.comfy.live().online {
         return Err(bad("ComfyUI 沒有連線。解法：重新開啟「繪匣 PaintDeck」。"));
+    }
+    // 站剛開、還沒問過 ComfyUI 模型放哪些資料夾（每分鐘問一次）就找不到模型檔：先問一次再判斷家族（第一百九十一筆）
+    let model = p.get("model").and_then(Value::as_str).unwrap_or("").to_string();
+    if !model.starts_with(image_wf::PREFIX) && families::missing_model(&app.paths.unet_roots(), &model).is_some() {
+        let u = app.comfy.url().to_string();
+        let _ = blocking(move || crate::model_dirs::refresh_live(&u)).await;
     }
     let Prepared { p, video, flow, fam, skipped } = prepare(app, p)?;
     // AI 改寫的 llama-server 在 GPU 上會占掉 5～6GB，ComfyUI 會爆顯存：先關掉（正在改寫就等它寫完）

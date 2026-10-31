@@ -53,7 +53,7 @@ test('寫法清單跟後端一樣', () => {
   const rs = fs.readFileSync(path.join(__dirname, '../src-tauri/src/agent.rs'), 'utf8');
   const block = rs.slice(rs.indexOf('pub const GUIDES'), rs.indexOf('];', rs.indexOf('pub const GUIDES')));
   const names = [...block.matchAll(/\(\s*"([a-z0-9_]+)",\s*"agent_/g)].map((m) => m[1]);
-  assert.ok(names.length >= 8, '找得到 GUIDES');
+  assert.ok(names.length >= 7, '找得到 GUIDES');
   const js = fs.readFileSync(path.join(__dirname, '../ui/js/agent.js'), 'utf8');
   const zh = js.match(/const GUIDE_ZH = \{([\s\S]*?)\};/)[1];
   assert.deepEqual([...zh.matchAll(/([a-z0-9_]+):/g)].map((m) => m[1]), names);

@@ -766,6 +766,113 @@ impl Analysis {
     }
 }
 
+// ---------------------------------------------------------------- 從節點圖讀回參數（imgmeta：ComfyUI 生成的圖）
+/// 某個節點自己加上全部上游，近的在前（同一層照輸入欄位的順序）
+fn upstream(m: &Nodes, start: &str) -> Vec<String> {
+    let mut out = vec![start.to_string()];
+    let mut i = 0;
+    while i < out.len() {
+        let id = out[i].clone();
+        i += 1;
+        let Some(inp) = m.get(&id).and_then(|n| n["inputs"].as_object()) else { continue };
+        for from in inp.values().filter(|v| is_link(v)).filter_map(|v| v[0].as_str()) {
+            if m.contains_key(from) && !out.iter().any(|o| o == from) {
+                out.push(from.to_string());
+            }
+        }
+    }
+    out
+}
+
+/// ComfyUI 存在圖裡的節點圖（API 格式）→ 生成頁的參數：提示詞、負面、種子、步數、CFG、取樣器、排程、尺寸、主模型、LoRA。
+/// 跟匯入工作流同一套找法：從「最前面的主要取樣器」往上游找（hires 第二段、refiner 在它後面，不算），
+/// 所以 SamplerCustomAdvanced＋CFGGuider＋BasicScheduler、Qwen／Flux 的文字編碼節點、Primitive 文字都讀得到。
+/// 找不到取樣節點是 None；找不到提示詞時 prompt 是空字串。size＝圖本身的尺寸（工作流裡找不到 Empty Latent 時用）
+pub fn graph_params(graph: &Value, size: (u32, u32)) -> Option<Value> {
+    let m = nodes(graph).ok()?;
+    let ids = sorted_ids(m);
+    let mut tiers: [Vec<String>; 3] = Default::default();
+    for id in &ids {
+        if let Some(t) = output_tier(m, id).filter(|_| input(m, id, "images").is_some_and(is_link)) {
+            tiers[t].push(id.clone());
+        }
+    }
+    let outputs = tiers.into_iter().find(|t| !t.is_empty()).unwrap_or_default();
+    let mut samplers = main_samplers(m, &ids, &outputs);
+    if samplers.is_empty() {
+        samplers = ids.iter().filter(|id| is_sampler_node(m, id)).cloned().collect();
+    }
+    let first = samplers
+        .iter()
+        .find(|s| {
+            let up = ancestors(m, s);
+            !samplers.iter().any(|o| o != *s && up.contains(o))
+        })
+        .or(samplers.first())?
+        .clone();
+    let up = upstream(m, &first);
+    // 數字：直接填的，或接在 Primitive／Int 這類節點上的
+    let at = |id: &str, k: &str| -> Option<Value> {
+        let v = input(m, id, k)?;
+        if v.is_number() {
+            return Some(v.clone());
+        }
+        let (n, f) = num_source(m, v)?;
+        input(m, &n, &f).cloned()
+    };
+    let num = |keys: &[&str]| up.iter().find_map(|id| keys.iter().find_map(|k| at(id, k)));
+    let word = |k: &str| up.iter().find_map(|id| txt(m, id, k).map(str::to_string));
+    let pos = sampler_text(m, &first, false).unwrap_or_default();
+    // 負面接的是 ConditioningZeroOut（Qwen、Flux 常見）時會一路走回正面的文字框：那種不算負面
+    let neg: Slots = sampler_text(m, &first, true).unwrap_or_default().into_iter().filter(|s| !pos.contains(s)).collect();
+    let text = |slots: &Slots| slots.iter().find_map(|(id, k)| txt(m, id, k).filter(|t| !t.trim().is_empty())).unwrap_or("").to_string();
+    let (w, h) = up
+        .iter()
+        .find_map(|id| {
+            input(m, id, "batch_size")?;
+            Some((at(id, "width")?.as_u64()?, at(id, "height")?.as_u64()?))
+        })
+        .unwrap_or((size.0 as u64, size.1 as u64));
+    // LoRA：主要取樣器上游的 LoRA 節點（照節點編號排）；rgthree 的 Power Lora Loader 每格是 {"on", "lora", "strength"}
+    let in_up: HashSet<&String> = up.iter().collect();
+    let mut loras: Vec<Value> = vec![];
+    for id in ids.iter().filter(|id| in_up.contains(id)) {
+        if let Some(name) = txt(m, id, "lora_name").filter(|n| *n != "None") {
+            let s = ["strength_model", "strength", "lora_strength"].iter().find_map(|k| input(m, id, k).and_then(Value::as_f64));
+            loras.push(json!({"name": name, "strength": s.unwrap_or(1.0)}));
+        }
+        for v in m[id]["inputs"].as_object().into_iter().flatten().map(|(_, v)| v) {
+            if let Some(name) = v.get("lora").and_then(Value::as_str).filter(|n| *n != "None" && v["on"] != json!(false)) {
+                loras.push(json!({"name": name, "strength": v["strength"].as_f64().unwrap_or(1.0)}));
+            }
+        }
+    }
+    let turbo = |l: &Value| l["name"].as_str().is_some_and(graphs::is_turbo_lora);
+    let mut p = json!({
+        "mode": "txt2img", "prompt": text(&pos), "negative": text(&neg), "width": w, "height": h,
+        "loras": loras.iter().filter(|l| !turbo(l)).cloned().collect::<Vec<_>>(),
+        "turbo_lora": loras.iter().find(|l| turbo(l)).map(|l| l["name"].clone()).unwrap_or(json!(false)),
+    });
+    if let Some(v) = num(&["seed", "noise_seed"]).filter(|v| v.is_i64() || v.is_u64()) {
+        p["seed"] = v;
+    }
+    for (k, keys) in [("steps", ["steps"]), ("cfg", ["cfg"])] {
+        if let Some(v) = num(&keys) {
+            p[k] = v;
+        }
+    }
+    for (k, field) in [("sampler", "sampler_name"), ("scheduler", "scheduler")] {
+        if let Some(v) = word(field) {
+            p[k] = json!(v);
+        }
+    }
+    let model = trace_loader(m, &first).or_else(|| find_model(m, &ids).ok().flatten().map(|s| (s.node, s.key)));
+    if let Some(name) = model.and_then(|(id, k)| txt(m, &id, &k).map(str::to_string)).filter(|n| !n.is_empty()) {
+        p["model"] = json!(name);
+    }
+    Some(p)
+}
+
 // ---------------------------------------------------------------- 組成節點圖
 fn int_of(v: Option<&Value>) -> Option<i64> {
     v.filter(|v| !v.is_null()).and_then(py::int)

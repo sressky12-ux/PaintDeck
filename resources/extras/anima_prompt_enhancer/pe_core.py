@@ -1,4 +1,4 @@
-"""Qwen-Image 2.1 提示詞改寫（社群無審查版 PE Heretic GGUF）：llama-server 管理、請求組裝、輸出解析、快取。
+"""Qwen-Image 2.1 提示詞改寫（通用模型 Qwen3.5 9B／Qwen3.6 35B；官方 PE Heretic 2026-10-30 起拿掉）：llama-server 管理、請求組裝、輸出解析、快取。
 
 只用標準函式庫，ComfyUI 節點（__init__.py）和 Anima 生圖站（anima_ui/app/pe.py）共用這一份：
   - 同一個 port（127.0.0.1:8199），同一時間只會有一個 llama-server。
@@ -31,7 +31,6 @@ MODELS_DIR = os.environ.get("ANIMA_PE_MODELS") or os.path.normpath(os.path.join(
 HOST, PORT = "127.0.0.1", 8199
 URL = f"http://{HOST}:{PORT}"
 CTX = 16384
-QUANTS = ("Q4_K_M", "Q6_K", "Q8_0")  # 找模型檔時的優先順序（8GB 顯卡用 Q4_K_M 才放得下）
 
 # 任務 → (系統提示詞檔, 用哪個模型)。改寫、微調、中文摘要都可以用目前已載入的模型，只有讀圖一定要 i2i
 TASKS = {
@@ -51,17 +50,57 @@ class PEError(Exception):
 
 
 # ---------------------------------------------------------------- 模型檔
+def _words(name):
+    """檔名拆成小寫的字（配看圖檔用，跟生圖站 pe.rs 的 name_words 一樣）"""
+    return {w for w in re.split(r"[^a-z0-9]+", name.lower()) if w and w not in ("gguf", "mmproj")}
+
+
+def _big(name):
+    """30B 以上（35B 那類，跟生圖站 pe.rs 的 is_big_brain 一樣看檔名裡的 xxB）"""
+    return any(w[:-1].isdigit() and int(w[:-1]) >= 30 for w in _words(name) if w.endswith("b"))
+
+
+def _llm_files():
+    """MODELS_DIR 底下（含子資料夾，最多 4 層）的 gguf，照路徑排序"""
+    out = []
+    for root, dirs, files in os.walk(MODELS_DIR):
+        if os.path.relpath(root, MODELS_DIR).count(os.sep) >= 4:
+            dirs[:] = []
+        out += [os.path.join(root, f) for f in files if f.lower().endswith(".gguf")]
+    return sorted(out)
+
+
 def model_files(kind, quant=None):
-    """回傳 (模型路徑, mmproj 路徑或 None)。找不到就丟 PEError。"""
-    order = [quant] if quant else list(QUANTS)
-    for q in order:
-        p = os.path.join(MODELS_DIR, f"pe_{kind}_heretic-{q}.gguf")
-        if os.path.exists(p):
-            mm = os.path.join(MODELS_DIR, "pe_i2i_heretic.mmproj-bf16.gguf") if kind == "i2i" else None
-            if mm and not os.path.exists(mm):
-                raise PEError(f"找不到讀圖用的 {os.path.basename(mm)}（放在 {MODELS_DIR}）")
-            return p, mm
-    raise PEError(f"找不到 pe_{kind}_heretic-*.gguf（放在 {MODELS_DIR}）")
+    """回傳 (模型路徑, mmproj 路徑或 None)。找不到就丟 PEError。
+    2026-10-30 起官方 PE（pe_*_heretic）拿掉了，照生圖站 pe.rs 自動挑的順序用通用模型：
+    有 Qwen3.6 35B 先用它，沒有就 Qwen3.5 9B（Defiant Fable 優先，再來 abliterated、任何一顆 Qwen3.5）。
+    kind＝i2i 要讀圖，配同系列的看圖檔（mmproj）。quant 是以前挑 PE 量化版用的，留著相容、沒作用"""
+    chat, mmprojs = [], []
+    for p in _llm_files():
+        n = os.path.basename(p).lower()
+        if "mmproj" in n:
+            mmprojs.append(p)
+        elif "embedding" not in n and not n.startswith("pe_"):
+            chat.append((p, n))
+
+    def pick(want):
+        return next((p for p, n in chat if want(n)), None)
+    model = (pick(lambda n: "qwen3.6" in n and _big(n))
+             or pick(lambda n: "qwen3.5" in n and "defiant-fable" in n)
+             or pick(lambda n: "qwen3.5" in n and "abliterated" in n)
+             or pick(lambda n: "qwen3.5" in n and not _big(n)))
+    if not model:
+        raise PEError(f"找不到 AI 改寫用的通用模型（Qwen3.5-9B-The-Defiant-Fable*.gguf 或 Qwen3.6-35B-A3B*.gguf，放在 {MODELS_DIR}）。"
+                      "到繪匣的「安裝與修復」勾「AI 改寫、生圖助手」會下載 9B；以前的官方 PE 改寫模型已經不再支援")
+    if kind != "i2i":
+        return model, None
+    name = os.path.basename(model)
+    fam = "qwen3.6" if "qwen3.6" in name.lower() else "qwen3.5"
+    mm = sorted((p for p in mmprojs if fam in os.path.basename(p).lower()),
+                key=lambda p: (-len(_words(os.path.basename(p)) & _words(name)), p))
+    if not mm:
+        raise PEError(f"找不到 {name} 讀圖用的 mmproj 檔（放在 {MODELS_DIR}，檔名要同時有「mmproj」和「{fam}」）")
+    return model, mm[0]
 
 
 def available():
@@ -264,7 +303,8 @@ def ensure(kind, ngl=99, before_start=None, timeout=180, quant=None):
     已經在跑就直接用；不對就重開。before_start()：真的要啟動前呼叫（生圖站用來叫 ComfyUI 釋放顯存）。
     回傳 dict：{"started": 是否新啟動, "load_seconds": 載入秒數}"""
     model, mmproj = model_files(kind, quant)
-    want = {"kind": kind, "ngl": int(ngl), "model": os.path.basename(model)}
+    # 狀態檔的 kind 寫成生圖站 pe.rs 用的名字（adult＝純文字、adult_vision＝加看圖檔），兩邊才能共用已經載好的模型
+    want = {"kind": "adult_vision" if mmproj else "adult", "ngl": int(ngl), "model": os.path.basename(model)}
     with _FileLock(LOCK):
         s = read_state()
         if s and all(s.get(k) == v for k, v in want.items()) and health():
@@ -628,8 +668,8 @@ def rewrite(task, idea="", images=(), prev="", instruction="", temperature=1.0, 
             return {**hit, "cached": True, "seconds": 0.0, "load_seconds": 0.0}
     kind = "i2i" if (task == "i2i" or images) else TASKS[task][1]
     st = read_state()
-    if task in ("zh", "refine") and st.get("kind") in ("t2i", "i2i") and int(st.get("ngl", -1)) == int(ngl):
-        kind = st["kind"]  # 純文字工作用目前已載入的模型，不為了它重開
+    if task in ("zh", "refine") and st.get("kind") in ("adult", "adult_vision") and int(st.get("ngl", -1)) == int(ngl):
+        kind = "i2i" if st["kind"] == "adult_vision" else "t2i"  # 純文字工作用目前已載入的模型，不為了它重開
     t0 = time.time()
     info = ensure(kind, ngl, before_start=before_start)
     msgs = build_messages(task, idea, images, prev, instruction, noct_anime, ratio)

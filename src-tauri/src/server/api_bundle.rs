@@ -889,7 +889,7 @@ mod tests {
             ],
             "video_workflows": [
                 {"id": "壞影片", "workflow": {"name": "x", "graph": {"nodes": [], "links": []}}},
-                {"id": "ltx23", "workflow": video_wan()},
+                {"id": "h3", "workflow": video_wan()},
                 {"id": "沒graph", "workflow": {"name": "x"}},
             ],
             "pe_prompts": [
@@ -917,7 +917,7 @@ mod tests {
         // 沒有東西跑出資料夾
         assert!(!data.join("evil.json").exists() && !data.join("image_workflows").join("evil.json").exists() && !r.join("evil.json").exists());
         let w = rep.warnings.join("\n");
-        for needle in ["壞的", "放大", "../evil", "a/b", "沒內容", "空組", "重複", "CON", "壞影片", "ltx23", "沒graph", "nope", "{model_guide}", "內容是空的", "{act}"] {
+        for needle in ["壞的", "放大", "../evil", "a/b", "沒內容", "空組", "重複", "CON", "壞影片", "「h3」", "沒graph", "nope", "{model_guide}", "內容是空的", "{act}"] {
             assert!(w.contains(needle), "少了 {needle}：\n{w}");
         }
         assert_eq!(rep.backed_up, 0);

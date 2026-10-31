@@ -362,10 +362,10 @@ pub async fn project_new(State(app): State<Shared>, Body(b): Body) -> ApiResult 
     ok(p)
 }
 
-/// 拍攝單套用為 LTX／自訂工作流專案；不改使用者的全域影片模型設定。
+/// 拍攝單套用為導演台專案（內建 H3 或自訂工作流）；不改使用者的全域影片模型設定。
 pub async fn from_sheet(State(app): State<Shared>, Body(b): Body) -> ApiResult {
-    let engine = tx(&b["engine"]);
-    if engine.is_empty() || engine == crate::video_wf::H3 { return Err(bad("請選 LTX 或已匯入的影片工作流")); }
+    let engine = crate::video_wf::normalize_engine(&tx(&b["engine"])).to_string();
+    if engine.is_empty() { return Err(bad("請選內建 H3 或已匯入的影片工作流")); }
     let needs_frame = engine_needs_frame(&app, &engine).map_err(bad)?;
     let prompts: Vec<String> = b["prompts"].as_array().ok_or_else(|| bad("缺少分鏡提示詞"))?.iter().map(|v| {
         v.as_str().map(str::to_string).or_else(|| v["prompt"].as_str().map(str::to_string)).unwrap_or_default()
@@ -813,14 +813,29 @@ fn applied_video_slots(workflow: &Value, mapping: &crate::video_wf::Mapping, slo
     }).collect())
 }
 
+/// 這段用哪個影片模型：段落自己的 → 專案的 → 全域設定；舊作品記的 ltx23 一律當內建 H3
+fn engine_of(p: &Value, seg: &Value, global: &str) -> String {
+    let e = seg["engine"].as_str().filter(|e| !e.is_empty()).or_else(|| p["settings"]["video_engine"].as_str().filter(|e| !e.is_empty())).unwrap_or(global);
+    crate::video_wf::normalize_engine(e).to_string()
+}
+
 fn shot_engine(app: &Shared, p: &Value, seg: &Value) -> String {
-    seg["engine"].as_str().filter(|e| !e.is_empty()).or_else(|| p["settings"]["video_engine"].as_str().filter(|e| !e.is_empty())).map(str::to_string)
-        .unwrap_or_else(|| crate::settings::load(&app.paths.settings).get("video_engine").and_then(Value::as_str).unwrap_or(crate::video_wf::BUILTIN).to_string())
+    let global = crate::settings::load(&app.paths.settings).get("video_engine").and_then(Value::as_str).unwrap_or(crate::video_wf::BUILTIN).to_string();
+    engine_of(p, seg, &global)
+}
+
+/// 內建 H3 走雲端（專案設定 h3_where，預設本機）
+fn h3_cloud(p: &Value) -> bool {
+    p["settings"]["h3_where"] == "cloud"
+}
+
+/// 內建影片一定要首幀（圖生影片）；自訂工作流回 None，要讀工作流才知道
+fn builtin_needs_frame(engine: &str) -> Option<bool> {
+    (crate::video_wf::normalize_engine(engine) == crate::video_wf::BUILTIN).then_some(true)
 }
 
 fn engine_needs_frame(app: &Shared, engine: &str) -> Result<bool, String> {
-    if engine == crate::video_wf::BUILTIN { return Ok(true); }
-    if engine == crate::video_wf::H3 { return Err("H3 請使用拍攝單的 H3 短片／長片拍攝流程".into()); }
+    if let Some(b) = builtin_needs_frame(engine) { return Ok(b); }
     let wf = crate::video_wf::load(&crate::video_wf::dir(&app.paths.data), engine)?;
     let mapping = crate::video_wf::Mapping::from_value(&wf["map"]);
     let analysis = crate::video_wf::analyze_with(&wf["graph"], &mapping)?;
@@ -891,7 +906,6 @@ async fn make_video(app: &Shared, id: &str, i: usize, p: &Value, frame: &str, ta
     let seg = &p["segments"][i];
     let s = &p["settings"];
     let engine = shot_engine(app, p, seg);
-    if engine == crate::video_wf::H3 { return Err("H3 請使用拍攝單的 H3 短片／長片拍攝流程".into()); }
     let workflow = if engine == crate::video_wf::BUILTIN { Value::Null } else {
         crate::video_wf::load(&crate::video_wf::dir(&app.paths.data), &engine)?
     };
@@ -911,15 +925,26 @@ async fn make_video(app: &Shared, id: &str, i: usize, p: &Value, frame: &str, ta
     }
     let mapping = crate::video_wf::Mapping::from_value(&workflow["map"]);
     if frame.is_empty() || (engine != crate::video_wf::BUILTIN && crate::video_wf::analyze_with(&workflow["graph"], &mapping)?.image.is_none()) { q.remove("init_image"); }
+    // H3 照首幀的長寬挑比例（直的首幀拍直的片）
+    if engine == crate::video_wf::BUILTIN && !frame.is_empty() {
+        if let Ok((w, h)) = image::image_dimensions(app.paths.input.join(frame)) { q.insert("width".into(), json!(w)); q.insert("height".into(), json!(h)); }
+    }
     let slots = bind_video_slots(p, seg, &mapping, frame);
     let applied_slots = applied_video_slots(&workflow, &mapping, &slots);
     // 即使本鏡明確清空槽位，也要覆蓋 video_params 裡另一版留下的舊值。
     q.insert("media_slots".into(), json!(slots));
     let requested = json!(q.clone());
     let source_take = if i > 0 && truthy(seg.get("continue")) { p["segments"][i - 1]["selected_take"].as_str().map(str::to_string) } else { None };
-    emit(app, id, Some(i), "video", format!("第 {} 段：生影片…（720p 5 秒約 4～5 分鐘）", i + 1));
-    let jobs = submit_jobs(app, q, 1).await.map_err(|e| e.1)?;
-    let pid = tx(&jobs[0]["job"]);
+    let cloud = engine == crate::video_wf::BUILTIN && h3_cloud(p);
+    emit(app, id, Some(i), "video", format!("第 {} 段：生影片…（{}）", i + 1, if cloud { "雲端 H3，10 秒約 4～8 分鐘" } else { "本機 H3，8GB 顯卡 5 秒約 4 分鐘" }));
+    let pid = if cloud {
+        let (a, sid) = (app.clone(), id.to_string());
+        let status = move |m: String| emit(&a, &sid, Some(i), "video", format!("第 {} 段：{m}", i + 1));
+        super::api_h3::cloud_one(app, &q, token, &status).await?.0
+    } else {
+        let jobs = submit_jobs(app, q, 1).await.map_err(|e| e.1)?;
+        tx(&jobs[0]["job"])
+    };
     let actual = app.db.job(&pid).map_err(|e| e.to_string())?.map(|j| j["params"].clone()).unwrap_or_else(|| requested.clone());
     let frame_recipe = seg["frame_job"].as_str().and_then(|j| app.db.job(j).ok().flatten()).map(|j| j["params"].clone()).unwrap_or(Value::Null);
     let references = json!({"first_frame":frame,"frame_refs":frame_recipe["refs"],"video_slots":applied_slots});
@@ -931,9 +956,9 @@ async fn make_video(app: &Shared, id: &str, i: usize, p: &Value, frame: &str, ta
     })
     .await
     .map_err(|e| e.1)?;
-    wait_job(app, &pid, token).await?;
+    if !cloud { wait_job(app, &pid, token).await?; }
     let row = job_video(app, &pid)?;
-    // 最後一格：graphs::build_video 存在 _poster\<poster>-last_00001_.png
+    // 最後一格：h3::build 存在 _poster\<poster>-last_00001_.png（雲端的跟成品一起下載回這裡）
     let poster = app.db.job(&pid).ok().flatten().map(|j| tx(&j["params"]["poster"])).unwrap_or_default();
     let dir = app.paths.output.join("AnimaWeb").join("_poster");
     let last = std::fs::read_dir(&dir)
@@ -1192,6 +1217,21 @@ pub async fn concat_api(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 #[cfg(test)]
 mod take_integration_tests {
     use super::*;
+
+    /// 內建影片（H3，舊專案記的 ltx23 也算）一定要首幀；舊版本記的 ltx23 讀出來是 h3；專案選雲端才走雲端
+    #[test]
+    fn builtin_engine_is_h3() {
+        assert_eq!(builtin_needs_frame("h3"), Some(true));
+        assert_eq!(builtin_needs_frame("ltx23"), Some(true));
+        assert_eq!(builtin_needs_frame("my-wf"), None);
+        let p = json!({"settings":{"video_engine":"ltx23"}});
+        assert_eq!(engine_of(&p, &json!({}), "x"), "h3");
+        assert_eq!(engine_of(&json!({}), &json!({"engine":"ltx23"}), "x"), "h3");
+        assert_eq!(engine_of(&json!({}), &json!({}), "ltx23"), "h3");
+        assert_eq!(engine_of(&p, &json!({"engine":"my-wf"}), "h3"), "my-wf");
+        assert!(!h3_cloud(&json!({"settings":{}})));
+        assert!(h3_cloud(&json!({"settings":{"h3_where":"cloud"}})));
+    }
 
     fn mapping() -> crate::video_wf::Mapping {
         crate::video_wf::Mapping::from_value(&json!({"media_slots":[

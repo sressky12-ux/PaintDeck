@@ -28,15 +28,17 @@ async fn shared_sheet_changes_protocol_without_changing_global_engine() {
     assert_eq!(status, 200, "{composed}");
     let prompts: Vec<Value> = composed["segments"].as_array().unwrap().iter().map(|s| s["prompt"].clone()).collect();
     assert!(prompts[1].as_str().unwrap().contains("right hand holds cup"));
-    assert!(!prompts[0].as_str().unwrap().contains("integrated_multimodal_description"));
+    // 2026-10-30 LTX 退場：舊拍攝單記的 ltx23 當 H3，寫 H3 的格式、套進導演台也記成 h3
+    assert!(prompts[0].as_str().unwrap().contains("integrated_multimodal_description"));
     let (status, project) = post(&r, "/api/director/from_sheet", json!({"sheet":sheet,"engine":"ltx23","prompts":prompts})).await;
     assert_eq!(status, 200, "{project}");
-    assert_eq!(project["settings"]["video_engine"], "ltx23");
+    assert_eq!(project["settings"]["video_engine"], "h3");
     assert_eq!(project["segments"][0]["seconds"].as_f64(), Some(7.0));
     assert_eq!(project["segments"][1]["seconds"].as_f64(), Some(9.0));
     let response = r.clone().oneshot(Request::builder().uri("/api/video/workflows").header("host","127.0.0.1:12345").body(Body::empty()).unwrap()).await.unwrap();
     let v:Value=serde_json::from_slice(&to_bytes(response.into_body(),1024*1024).await.unwrap()).unwrap();
-    assert_eq!(v["engine"], "ltx23");
+    // 全域影片模型沒被拍攝單改掉：還是預設（2026-10-30 LTX 退場後預設是 H3）
+    assert_eq!(v["engine"], "h3");
     let (status, _) = post(&r, "/api/director/from_sheet", json!({"sheet":sheet,"engine":"missing-workflow","prompts":["x","y"]})).await;
     assert_eq!(status,400);
 }

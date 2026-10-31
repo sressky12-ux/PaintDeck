@@ -29,6 +29,10 @@ pub const SDPOSE_CKPT: &str = "sdpose_wholebody_fp16.safetensors";
 /// 官方建議：Euler、sgm_uniform、50 步、CFG 3、shift 5，負面那一路跳過第 22 層（SkipLayerGuidanceDiTSimple）。
 /// ComfyUI 0.38 原本沒有 MOSS：D 槽與安裝精靈都補了官方 commit e087d8f 的 9 個檔（resources\extras\comfy_moss）
 pub const MOSS_TE: &str = "qwen3.5_9b_w4a8_gptq.safetensors";
+/// MOSS 省記憶體的 4B 文字編碼器（beycanai/Qwen-LM，Apache-2.0）＋把 4B 特徵換到 9B 空間的投影轉接器（models\moss_encoder_adapters\），
+/// 由繪匣附帶的 ComfyUI 節點 AnimaMOSS4BCLIPLoader 載入（resources\extrasnima_moss_nodes）。設定 moss_te＝"4b" 才用
+pub const MOSS_TE_4B: &str = "Qwen3.5-4B_int8_convrot.safetensors";
+pub const MOSS_4B_ADAPTER: &str = "moss_qwen35_4b_to_9b_1600_train.safetensors";
 pub const MOSS_VAE: &str = "flux2-vae.safetensors";
 const MOSS_SHIFT: f64 = 5.0;
 const MOSS_SKIP_LAYERS: &str = "22";
@@ -136,6 +140,25 @@ fn s<'a>(v: Option<&'a Value>, default: &'a str) -> &'a str {
 fn raw(p: &Value, k: &str, default: Value) -> Value {
     p.get(k).cloned().unwrap_or(default)
 }
+/// MOSS 照指令改圖（2026-10-30）：編輯 LoRA 訓練時的參考圖版面，對應 comfy_moss 補丁 TextEncodeMOSSImageEdit 的 edit_format
+const MOSS_EDIT_FORMATS: [&str; 3] = ["ai-toolkit", "ai-toolkit (kv_cache off)", "Moss-Image-Edit"];
+
+/// p.moss_edit：沒開＝None；"auto"＝照掛的 LoRA 猜（chinoll 的 Moss-Image-Edit 用自己的版面，Civitai 上 ai-toolkit 訓練的用 ai-toolkit）
+fn moss_edit_format(p: &Value) -> R<Option<String>> {
+    let v = s(p.get("moss_edit"), "");
+    if v.is_empty() || v == "off" || p.get("moss_edit") == Some(&Value::Bool(false)) {
+        return Ok(None);
+    }
+    if v != "auto" {
+        return if MOSS_EDIT_FORMATS.contains(&v) { Ok(Some(v.to_string())) } else { err(format!("不認得的 MOSS 編輯版面：{v}")) };
+    }
+    let chinoll = p["loras"].as_array().into_iter().flatten().filter(|l| l["enabled"] != false).any(|l| {
+        let n = l["name"].as_str().unwrap_or("").to_lowercase();
+        n.contains("chinoll") || n.contains("moss-image-edit") || n.contains("moss_image_edit")
+    });
+    Ok(Some(if chinoll { "Moss-Image-Edit" } else { "ai-toolkit" }.to_string()))
+}
+
 /// Python: `p.get(k) or default`
 fn or_f(p: &Value, k: &str, default: f64) -> f64 {
     if truthy(p.get(k)) {
@@ -270,6 +293,8 @@ pub struct Graph {
     n: usize,
     clip: Option<Ref>,
     vae: Option<Ref>,
+    /// MOSS 用 4B 文字編碼器（params.moss_te＝"4b"）
+    moss_4b: bool,
 }
 
 impl Graph {
@@ -280,6 +305,7 @@ impl Graph {
             n: 0,
             clip: None,
             vae: None,
+            moss_4b: false,
         }
     }
     fn q(&self) -> bool {
@@ -316,6 +342,8 @@ impl Graph {
                     "CLIPLoader",
                     json!({"clip_name": QWEN21_TE, "type": "qwen_image", "device": "default"}),
                 )
+            } else if self.moss() && self.moss_4b {
+                self.add("AnimaMOSS4BCLIPLoader", json!({"clip_name": MOSS_TE_4B, "adapter_name": MOSS_4B_ADAPTER}))
             } else if self.moss() {
                 self.add(
                     "CLIPLoader",
@@ -436,6 +464,11 @@ fn model_chain(g: &mut Graph, p: &Value, lll: Vec<Lllite>) -> Ref {
             }
         }
     }
+    if g.moss() {
+        if let Some(a) = moss_control_adapter(p) {
+            m = g.add("LoraLoaderModelOnly", json!({"model": m, "lora_name": a, "strength_model": 1.0}));
+        }
+    }
     // 姿勢參考圖（Qwen 2.1）：3D 人偶的深度圖＋骨架，各接一個 Fun ControlNet。
     // 2026-10-10 實測：強度各 0.55、只管前 80% 步數，第一人稱和身體貼合明顯變好（報告\Qwen-Image-2.1-Turbo資料_20261010.md）
     if g.family == "qwen21" {
@@ -481,6 +514,8 @@ fn model_chain(g: &mut Graph, p: &Value, lll: Vec<Lllite>) -> Ref {
 // 「一鍵脫衣」用這套引擎，改圖指令和精修 tag 是外部內容補丁（feature_strip），這裡只有中性的 graph 機制。
 pub const STRIP_QWEN: &str = "qwen_image_2.1_turbo_int8_convrot.safetensors";
 pub const STRIP_REFINE: &str = "anima-turbo-v1.1.safetensors";
+/// 輸出最多幾像素（原圖比這小就照原尺寸）
+const STRIP_MAX_OUT: i64 = 2048 * 2048;
 
 /// 一鍵脫衣、四視圖編輯的 Qwen 那段：生成頁選的是 Qwen 就照它（模型、步數、CFG、LoRA），不然用官方 Turbo、不掛 LoRA
 fn edit_qwen_params(p: &Value, fam: &str) -> Value {
@@ -562,6 +597,61 @@ pub fn bbox_of(img: &image::GrayImage) -> Option<(u32, u32, u32, u32)> {
 /// Qwen 2.1 Fun ControlNet（姿勢參考圖用）與參考圖在 ComfyUI input 底下的資料夾（MOSS 也用同一個資料夾的深度圖）
 pub const POSE_CONTROLNET: &str = "qwen_image_2.1_fun_controlnet_union_int8_convrot.safetensors";
 pub const POSE_INPUT: &str = "anima_pose";
+/// MOSS 色彩／深度控制的轉接器（darask0/MOSS-Image-color-depth-control，Apache-2.0）：一般 LoRA 載入器掛在模型上，
+/// 圖由 ComfyUI 0.43 內建的 MOSSImageControl 送進條件。精靈清單放在 loras\moss\
+pub const MOSS_CONTROL_LORA: &str = "moss\\moss-color-depth-control.safetensors";
+
+/// MOSS 色彩／深度控制要掛的轉接器（moss_control 開著，或姿勢參考圖帶了 adapter）：沒有＝None
+fn moss_control_adapter(p: &Value) -> Option<String> {
+    let mc = p.get("moss_control").filter(|c| truthy(Some(c)) && truthy(c.get("enabled")) && truthy(c.get("image")));
+    let pose = p.get("pose_control").and_then(|pc| pc.get("adapter")).and_then(Value::as_str).filter(|a| !a.is_empty());
+    match (mc, pose) {
+        (Some(c), _) => Some(c.get("adapter").and_then(Value::as_str).filter(|a| !a.is_empty()).unwrap_or(MOSS_CONTROL_LORA).to_string()),
+        (None, Some(a)) => Some(a.to_string()),
+        _ => None,
+    }
+}
+
+/// MOSS 色彩／深度控制：參考圖 → 深度圖（DA3，近＝白，跟 Anima 深度控制同一套）＋色塊圖（模糊後減成幾種顏色：顏色只當區塊編號）→
+/// MOSSImageControl 包住正負條件。官方建議：真實照片的圖 end 1.0；3D 人偶這類合成圖 0.5（前一半步數定構圖，後面讓模型畫表面）
+fn moss_control(g: &mut Graph, p: &Value, pos: Ref, neg: Ref, w: i64, h: i64) -> (Ref, Ref) {
+    let empty = json!({});
+    let pose_depth = p.get("pose_control").filter(|pc| pc.get("adapter").and_then(Value::as_str).is_some_and(|a| !a.is_empty()))
+        .and_then(|pc| pc.get("depth")).and_then(Value::as_str).filter(|x| !x.is_empty());
+    let mc = p.get("moss_control").filter(|c| truthy(Some(c)) && truthy(c.get("enabled")) && truthy(c.get("image")));
+    let (mut kw, depth_img, color_img) = match (mc, pose_depth) {
+        (Some(c), _) => {
+            let want = |k: &str| c.get(k).map(|v| truthy(Some(v))).unwrap_or(true);
+            let depth = want("depth").then(|| control_image(g, &json!({"image": c["image"], "preprocess": "depth"}), w, h));
+            let color = want("color").then(|| {
+                let li = g.add("LoadImage", json!({"image": c["image"]}));
+                let src = g.scale(&li, w, h, "center", "lanczos");
+                let bl = g.add("ImageBlur", json!({"image": src, "blur_radius": 15, "sigma": 6.0}));
+                g.add("ImageQuantize", json!({"image": bl, "colors": i(c.get("colors"), 8).clamp(2, 32), "dither": "none"}))
+            });
+            (json!({"strength": f(c.get("strength"), 1.0), "start_percent": 0.0, "end_percent": f(c.get("end"), 1.0)}), depth, color)
+        }
+        (None, Some(file)) => {
+            let li = g.add("LoadImage", json!({"image": format!("{POSE_INPUT}/{file}")}));
+            let pc = p.get("pose_control").unwrap_or(&empty);
+            let depth = Some(g.scale(&li, w, h, "center", "lanczos"));
+            (json!({"strength": f(pc.get("strength"), 1.0), "start_percent": 0.0, "end_percent": f(pc.get("end"), 0.5)}), depth, None)
+        }
+        (None, None) => return (pos, neg),
+    };
+    let vae = g.vae();
+    kw["positive"] = pos;
+    kw["negative"] = neg;
+    kw["vae"] = vae;
+    if let Some(d) = depth_img {
+        kw["depth_map"] = d;
+    }
+    if let Some(c) = color_img {
+        kw["color_map"] = c;
+    }
+    let ctl = g.add("MOSSImageControl", kw);
+    (Graph::slot(&ctl, 0), Graph::slot(&ctl, 1))
+}
 
 #[allow(clippy::too_many_arguments)]
 fn sample(
@@ -766,203 +856,11 @@ fn mask_bbox(path: &Path) -> R<Option<(i64, i64, i64, i64)>> {
     })
 }
 
-// ---------------------------------------------------------------- 影片（LTX-2.3：10Eros v1.5 DMD INT8）
-// 2026-10-11 在 3070 8GB＋32GB 實測選出來的（報告\LTX實測、tools\ltx_test.py）：比 LTX-2.5 Uncensored 動作量約 2 倍、體位較對、快約 25 秒。
-pub const VIDEO_CKPT: &str = "10Eros_v1.5_DMD_INT8_checkpoint.safetensors";
-pub const VIDEO_TE: &str = "gemma-3-12b-it-ablit-norms-biproj-fp8mixed.safetensors";
-pub const VIDEO_UPSCALER: &str = "ltx-2.3-spatial-upscaler-x2-1.1.safetensors";
-/// LTX-2.3 官方兩段式蒸餾的 sigma 和取樣器：第一段（半解析度）8 步、第二段（放大後）3 步。
-/// 2026-10-25 動作戲實測（HANDOFF 第一百一十二筆）比原本 10Eros 作者 V5 的 euler_ancestral 組劍、踢腿穩，慢約 15%
-const VIDEO_SIGMAS_1: &str = "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0";
-const VIDEO_SIGMAS_2: &str = "0.85, 0.7250, 0.4219, 0.0";
-const VIDEO_SAMPLER_1: &str = "euler_cfg_pp";
-const VIDEO_SAMPLER_2: &str = "euler_ancestral_cfg_pp";
-pub const VIDEO_FPS: i64 = 24;
-
-/// 影片的節點圖：有 init_image＝圖生影片，沒有＝文生影片。兩段式：半解析度 8 步 → 潛空間放大 2 倍 → 3 步，
-/// VAE 分塊 512（8GB 顯卡最快；不分塊或更大塊會爆顯存）。另外存一張封面（第一格）到 AnimaWeb/_poster/<poster>，給縮圖用。
-fn build_video(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Value>, Value)> {
-    let seed = i(p.get("seed"), 0) + seed_offset;
-    let prompt = s(p.get("prompt"), "").trim().to_string();
-    if prompt.is_empty() {
-        return err("影片要寫提示詞：描述畫面裡的動作和聲音（英文效果最好）");
-    }
-    let secs = f(p.get("video_seconds"), 5.0).clamp(1.0, 10.0);
-    let frames = (secs * VIDEO_FPS as f64) as i64 / 8 * 8 + 1; // LTX 要 8n+1 格
-    let pixels = match s(p.get("video_res"), "720p") {
-        "480p" => 848.0 * 480.0,
-        _ => 1280.0 * 720.0,
-    };
-    let init = p.get("init_image").filter(|v| truthy(Some(v))).cloned();
-    let preview = truthy(p.get("video_preview"));
-    // 兩段都要是 32 的倍數 → 最終尺寸取 64 的倍數
-    let (w, h) = match &init {
-        Some(name) => {
-            let (ow, oh) = image_size(&input_dir.join(name.as_str().unwrap_or("")))?;
-            fit_pixels(ow, oh, pixels, 64)
-        }
-        None => fit_pixels(
-            i(p.get("width"), 1280).max(64),
-            i(p.get("height"), 720).max(64),
-            pixels,
-            64,
-        ),
-    };
-    let mut g = Graph::new("ltx23");
-    let ck = g.add("CheckpointLoaderSimple", json!({"ckpt_name": VIDEO_CKPT}));
-    // 影片 LoRA（動作、鏡頭…）：接在 checkpoint 後面，兩段取樣共用同一個 guider 都吃得到
-    let loras: Vec<Value> = p
-        .get("video_loras")
-        .and_then(Value::as_array)
-        .into_iter()
-        .flatten()
-        .filter(|l| l.get("name").and_then(Value::as_str).is_some_and(|n| !n.is_empty()))
-        .map(|l| json!({"name": l["name"], "strength": f(l.get("strength"), 1.0)}))
-        .collect();
-    let mut model = ck.clone();
-    for l in &loras {
-        model = g.add(
-            "LoraLoaderModelOnly",
-            json!({"model": model, "lora_name": l["name"], "strength_model": l["strength"]}),
-        );
-    }
-    let vae = Graph::slot(&ck, 2);
-    let clip = g.add(
-        "LTXAVTextEncoderLoader",
-        json!({"text_encoder": VIDEO_TE, "ckpt_name": VIDEO_CKPT, "device": "default"}),
-    );
-    let avae = g.add("LTXVAudioVAELoader", json!({"ckpt_name": VIDEO_CKPT}));
-    let pos = g.add("CLIPTextEncode", json!({"clip": clip, "text": prompt}));
-    // CFG 1 用不到負面：直接把正面歸零，省一次讀文字
-    let neg = g.add("ConditioningZeroOut", json!({"conditioning": pos}));
-    let cond = g.add(
-        "LTXVConditioning",
-        json!({"positive": pos, "negative": neg, "frame_rate": VIDEO_FPS as f64}),
-    );
-    let vlat = g.add(
-        "EmptyLTXVLatentVideo",
-        json!({"width": w / 2, "height": h / 2, "length": frames, "batch_size": 1}),
-    );
-    let alat = g.add(
-        "LTXVEmptyLatentAudio",
-        json!({"frames_number": frames, "frame_rate": VIDEO_FPS, "batch_size": 1, "audio_vae": avae}),
-    );
-    let guider = g.add(
-        "LTXVDualCFGGuider",
-        json!({"model": model, "positive": cond, "negative": Graph::slot(&cond, 1), "video_cfg": 1.0, "audio_cfg": 1.0}),
-    );
-    let sampler = g.add("KSamplerSelect", json!({"sampler_name": VIDEO_SAMPLER_1}));
-    let mut v1 = vlat.clone();
-    let mut pre = None;
-    if let Some(name) = &init {
-        let li = g.add("LoadImage", json!({"image": name}));
-        let rs = g.add(
-            "ResizeImageMaskNode",
-            json!({"input": li, "resize_type": "scale longer dimension", "resize_type.longer_size": 1536, "scale_method": "lanczos"}),
-        );
-        let pp = g.add(
-            "LTXVPreprocess",
-            json!({"image": rs, "img_compression": 18}),
-        );
-        v1 = g.add(
-            "LTXVImgToVideoInplace",
-            json!({"vae": vae, "image": pp, "latent": vlat, "strength": 0.75, "bypass": false}),
-        );
-        pre = Some(pp);
-    }
-    let av1 = g.add(
-        "LTXVConcatAVLatent",
-        json!({"video_latent": v1, "audio_latent": alat}),
-    );
-    let sig1 = g.add("ManualSigmas", json!({"sigmas": VIDEO_SIGMAS_1}));
-    let n1 = g.add("RandomNoise", json!({"noise_seed": seed}));
-    let run1 = g.add(
-        "SamplerCustomAdvanced",
-        json!({"noise": n1, "guider": guider, "sampler": sampler, "sigmas": sig1, "latent_image": av1}),
-    );
-    let sep1 = g.add("LTXVSeparateAVLatent", json!({"av_latent": run1}));
-    // 預覽（挑種子）：只跑第一段就解碼，半解析度；正式版用同一個種子重跑，第一段結果一樣，再接第二段放大
-    let last = if preview {
-        sep1.clone()
-    } else {
-        let upm = g.add(
-            "LatentUpscaleModelLoader",
-            json!({"model_name": VIDEO_UPSCALER}),
-        );
-        let up = g.add(
-            "LTXVLatentUpsampler",
-            json!({"samples": sep1, "upscale_model": upm, "vae": vae}),
-        );
-        let v2 = match &pre {
-            Some(pp) => g.add(
-                "LTXVImgToVideoInplace",
-                json!({"vae": vae, "image": pp, "latent": up, "strength": 1.0, "bypass": false}),
-            ),
-            None => up,
-        };
-        let av2 = g.add(
-            "LTXVConcatAVLatent",
-            json!({"video_latent": v2, "audio_latent": Graph::slot(&sep1, 1)}),
-        );
-        let sig2 = g.add("ManualSigmas", json!({"sigmas": VIDEO_SIGMAS_2}));
-        let n2 = g.add("RandomNoise", json!({"noise_seed": seed.wrapping_add(1)}));
-        let sampler2 = g.add("KSamplerSelect", json!({"sampler_name": VIDEO_SAMPLER_2}));
-        let run2 = g.add(
-        "SamplerCustomAdvanced",
-        json!({"noise": n2, "guider": guider, "sampler": sampler2, "sigmas": sig2, "latent_image": av2}),
-    );
-        g.add("LTXVSeparateAVLatent", json!({"av_latent": run2}))
-    };
-    let frames_img = g.add(
-        "VAEDecodeTiled",
-        json!({"samples": last, "vae": vae, "tile_size": 512, "overlap": 64, "temporal_size": 64, "temporal_overlap": 16}),
-    );
-    let audio = g.add(
-        "LTXVAudioVAEDecode",
-        json!({"samples": Graph::slot(&last, 1), "audio_vae": avae}),
-    );
-    let video = g.add(
-        "CreateVideo",
-        json!({"images": frames_img, "fps": VIDEO_FPS as f64, "audio": audio}),
-    );
-    g.add(
-        "SaveVideo",
-        json!({"video": video, "filename_prefix": if preview { "AnimaWeb/video_preview" } else { "AnimaWeb/video" }, "format": "auto", "format.codec": "auto"}),
-    );
-    if let Some(poster) = p.get("poster").and_then(Value::as_str) {
-        let first = g.add(
-            "ImageFromBatch",
-            json!({"image": frames_img, "batch_index": 0, "length": 1}),
-        );
-        g.add(
-            "SaveImage",
-            json!({"images": first, "filename_prefix": format!("AnimaWeb/_poster/{poster}")}),
-        );
-        // 導演台：最後一格也存下來，當下一段的第一格（_poster 不進圖庫；用 - 不用 _，免得被當成封面）
-        if truthy(p.get("save_last")) {
-            let last = g.add(
-                "ImageFromBatch",
-                json!({"image": frames_img, "batch_index": frames - 1, "length": 1}),
-            );
-            g.add(
-                "SaveImage",
-                json!({"images": last, "filename_prefix": format!("AnimaWeb/_poster/{poster}-last")}),
-            );
-        }
-    }
-    let (ow, oh) = if preview { (w / 2, h / 2) } else { (w, h) };
-    let mut info = json!({"prompt": prompt, "negative": "", "seed": seed, "width": ow, "height": oh, "mode": "video", "family": "ltx23",
-                      "frames": frames, "fps": VIDEO_FPS, "preview": preview});
-    if !loras.is_empty() {
-        info["video_loras"] = json!(loras);
-    }
-    Ok((g.nodes, info))
-}
-
 /// 回傳 (nodes, info)。info 是實際使用的提示詞、種子、尺寸，存進圖庫。
 pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Value>, Value)> {
+    // 內建影片 2026-10-30 起是 MiniMax H3（h3::build，經 server\api_h3.rs），LTX 的節點圖拿掉了
     if s(p.get("mode"), "") == "video" {
-        return build_video(p, input_dir, seed_offset);
+        return err("內建影片改用 MiniMax H3，請從「動起來」或導演台送出");
     }
     let seed = i(p.get("seed"), 0) + seed_offset;
     let mut rng = PyRandom::new(seed);
@@ -978,6 +876,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
     let q = fam == "qwen21";
     let step = if q { 32 } else { 16 };
     let mut g = Graph::new(&fam);
+    g.moss_4b = s(p.get("moss_te"), "") == "4b";
     let inp = |name: &Value| input_dir.join(name.as_str().unwrap_or(""));
     let empty = json!({});
 
@@ -998,13 +897,16 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 let t = lay.as_ref().map_or_else(|| prompt.clone(), |l| l.prompt(w0, h0));
                 (g.text(&t), g.text(&negative))
             };
+            let (pos, neg) = if g.moss() { moss_control(&mut g, p, pos, neg, w0, h0) } else { (pos, neg) };
             // 姿勢參考圖（MOSS）：MOSS 沒有 ControlNet，改成從 3D 人偶的深度圖出發、重繪 0.95（Qwen 2.1 走 model_chain 裡的 Fun ControlNet）。
             // 2026-10-17 實測（E:\AI\moss_test\exp_replace.py p1／p2）：0.95 是寫實照片、姿勢和鏡頭跟著深度圖；0.85 會留下深度圖的平塗和黑底
             let pose_depth = p
                 .get("pose_control")
                 .and_then(|pc| pc.get("depth"))
                 .and_then(Value::as_str)
-                .filter(|x| g.moss() && !x.is_empty());
+                .filter(|x| g.moss() && !x.is_empty())
+                // 有色彩／深度控制轉接器：深度圖走 MOSSImageControl（上面），從空白畫
+                .filter(|_| !p["pose_control"].get("adapter").and_then(Value::as_str).is_some_and(|a| !a.is_empty()));
             let (lat, denoise) = match pose_depth {
                 Some(file) => {
                     let li = g.add("LoadImage", json!({"image": format!("{POSE_INPUT}/{file}")}));
@@ -1031,13 +933,12 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
         "img2img" => {
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
             let (ow, oh) = image_size(&inp(&init))?;
+            let edit = if g.moss() { moss_edit_format(p)? } else { None };
             let (w0, h0) = if s(p.get("size_mode"), "auto") == "auto" {
-                fit_pixels(
-                    ow,
-                    oh,
-                    or_f(p, "pixels", if q { QWEN21_PIXELS } else { 1024.0 * 1536.0 }),
-                    step,
-                )
+                // MOSS 照指令改圖：參考圖約 0.5MP（edit_pixels 可改）。參考圖的鍵值每層都存、正負各一份，
+                // 1MP 時約 4GB，8GB 顯卡會開始搬記憶體、一步一分鐘多（2026-10-30 實測 768×1344）；0.5MP 一步約 4 秒
+                let px = if edit.is_some() { or_f(p, "edit_pixels", 512.0 * 1024.0) } else { or_f(p, "pixels", if q { QWEN21_PIXELS } else { 1024.0 * 1536.0 }) };
+                fit_pixels(ow, oh, px, step)
             } else {
                 (
                     snap(f(p.get("width"), 0.0), step, 256),
@@ -1048,10 +949,16 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             let src = g.scale(&li, w0, h0, "center", "lanczos");
             let cl = control_list(&mut g, p, w0, h0);
             let model = model_chain(&mut g, p, cl);
-            let denoise = f(p.get("denoise"), if q { 1.0 } else { 0.6 });
-            let lay = if g.moss() { Layout::from_params(p, &prompt, &mut rng) } else { None };
+            // 照指令改圖從空白畫，參考圖只走條件：重繪固定 1
+            let denoise = if edit.is_some() { 1.0 } else { f(p.get("denoise"), if q { 1.0 } else { 0.6 }) };
+            let lay = if g.moss() && edit.is_none() { Layout::from_params(p, &prompt, &mut rng) } else { None };
             let (pos, neg, lat);
-            if q {
+            if let Some(fmt) = &edit {
+                let (clip, vae) = (g.clip(), g.vae());
+                pos = g.add("TextEncodeMOSSImageEdit", json!({"clip": clip, "prompt": prompt, "vae": vae, "edit_format": fmt, "images.image_0": src, "image_strength": 1.0}));
+                neg = g.add("TextEncodeMOSSImageEdit", json!({"clip": clip, "prompt": negative, "vae": vae, "edit_format": fmt, "images.image_0": src, "image_strength": 1.0}));
+                lat = g.empty_latent(w0, h0);
+            } else if q {
                 let (a, b, e) = g.qtext(&prompt, &negative, std::slice::from_ref(&src));
                 pos = a;
                 neg = b;
@@ -1274,15 +1181,16 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             g.switch_family("qwen21");
             let (w0, h0) = fit_pixels(ow, oh, QWEN21_PIXELS, 32);
             let li = g.add("LoadImage", json!({"image": init}));
-            let src = g.scale(&li, w0, h0, "center", "lanczos");
+            // 拉伸、不裁切：最後再拉回原尺寸，構圖一點都不少
+            let src = g.scale(&li, w0, h0, "disabled", "lanczos");
             let qprompt = s(st.get("qwen_prompt"), "").to_string();
             let qmodel = model_chain(&mut g, &qp, vec![]);
             let (qpos, qneg, qlat) = g.qtext(&qprompt, "", std::slice::from_ref(&src));
             let qs = sample(&mut g, &qmodel, &qpos, &qneg, &qlat, &qp, seed, 1.0, None, (w0, h0));
             let qimg = g.decode(&qs, w0, h0);
             let refine = st.get("refine").map(|v| truthy(Some(v))).unwrap_or(true);
-            if !refine {
-                (img, w, h) = (qimg, w0, h0);
+            let (out, ow2, oh2) = if !refine {
+                (qimg, w0, h0)
             } else {
                 // 精修：Anima Turbo 8 步、CFG 1；生成頁是 Anima 時，它掛的 LoRA（畫風）一起用
                 let rmodel = s(st.get("refine_model"), STRIP_REFINE).to_string();
@@ -1304,7 +1212,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 let den = f(st.get("refine_denoise"), 0.35).clamp(0.1, 0.8);
                 let asmp = sample(&mut g, &amodel, &apos, &aneg, &alat, &ap, seed, den, None, (aw, ah));
                 let rimg = g.decode(&asmp, aw, ah);
-                if st.get("merge").map(|v| truthy(Some(v))).unwrap_or(true) {
+                let merged = if st.get("merge").map(|v| truthy(Some(v))).unwrap_or(true) {
                     // 改到的地方＝原圖和 Qwen 結果任一色版差超過門檻；先縮一點去掉線條錯位的雜點，再撐大、縮回補洞，最後柔化邊緣
                     let diff = g.add("ImageBlend", json!({"image1": src, "image2": qimg, "blend_factor": 1.0, "blend_mode": "difference"}));
                     let th = f(st.get("threshold"), 0.15);
@@ -1323,12 +1231,16 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                     }
                     let m = g.mask_blur(&m, 6);
                     let m = g.mask_scale(&m, aw, ah);
-                    img = g.add("ImageCompositeMasked", json!({"destination": qup, "source": rimg, "x": 0, "y": 0, "resize_source": false, "mask": m}));
+                    g.add("ImageCompositeMasked", json!({"destination": qup, "source": rimg, "x": 0, "y": 0, "resize_source": false, "mask": m}))
                 } else {
-                    img = rimg;
-                }
-                (w, h) = (aw, ah);
-            }
+                    rimg
+                };
+                (merged, aw, ah)
+            };
+            // 輸出回到原圖尺寸（2026-10-29 實測 832×1216 的原圖出來變 1024×1536，長寬比差 2.5%）；太大的原圖照比例縮到 STRIP_MAX_OUT
+            let (tw, th) = if ow * oh <= STRIP_MAX_OUT { (ow, oh) } else { fit_pixels(ow, oh, STRIP_MAX_OUT as f64, 8) };
+            img = if (ow2, oh2) != (tw, th) { g.scale(&out, tw, th, "disabled", "lanczos") } else { out };
+            (w, h) = (tw, th);
             prompt = qprompt;
             fam = "qwen21".into();
         }
@@ -1605,6 +1517,37 @@ mod tests {
     }
 
     #[test]
+    fn moss_edit_uses_reference_conditioning() {
+        // 2026-10-30 MOSS 照指令改圖（編輯 LoRA，ComfyUI PR #17296／#17320 移植進 comfy_moss 補丁）：參考圖進 TextEncodeMOSSImageEdit、從空白畫、重繪 1
+        let dir = std::env::temp_dir();
+        let img = dir.join("aw_test_moss_edit.png");
+        image::RgbImage::new(768, 1344).save(&img).unwrap();
+        let mut p = json!({"mode": "img2img", "family": "moss", "model": "moss_image_sft_int8_convrot.safetensors", "prompt": "make the blazer red", "negative": "",
+                       "seed": 1, "steps": 20, "cfg": 3, "sampler": "euler", "scheduler": "sgm_uniform", "init_image": "aw_test_moss_edit.png",
+                       "size_mode": "auto", "denoise": 0.6, "moss_edit": "auto",
+                       "loras": [{"name": "moss/moss_edit_chinoll.safetensors", "strength": 1.0, "enabled": true}]});
+        let (n, info) = build(&p, &dir, 0).unwrap();
+        let enc: Vec<&Value> = n.values().filter(|v| v["class_type"] == "TextEncodeMOSSImageEdit").collect();
+        assert_eq!(enc.len(), 2, "正、負各一個");
+        assert!(enc.iter().all(|e| e["inputs"]["edit_format"] == "Moss-Image-Edit" && e["inputs"]["images.image_0"].is_array() && e["inputs"]["vae"].is_array()));
+        assert!(!n.values().any(|v| v["class_type"] == "CLIPTextEncode" || v["class_type"] == "VAEEncode"));
+        assert!(n.values().any(|v| v["class_type"] == "EmptyFlux2LatentImage"));
+        assert_eq!(n.values().find(|v| v["class_type"] == "KSampler").unwrap()["inputs"]["denoise"], 1.0);
+        let (w, h) = (info["width"].as_i64().unwrap(), info["height"].as_i64().unwrap());
+        assert!(w % 16 == 0 && h % 16 == 0 && w * h <= 512 * 1024 + 16 * 1024 && h > w, "8GB 顯卡：參考圖約 0.5MP，{w}x{h}");
+        // 別的編輯 LoRA（Civitai 的 ai-toolkit 訓練）用 ai-toolkit 版面；也可以直接指定
+        p["loras"] = json!([{"name": "moss/anime2real_edit.safetensors", "strength": 1.0, "enabled": true}]);
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        assert!(n.values().any(|v| v["class_type"] == "TextEncodeMOSSImageEdit" && v["inputs"]["edit_format"] == "ai-toolkit"));
+        p["moss_edit"] = json!("Moss-Image-Edit");
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        assert!(n.values().any(|v| v["class_type"] == "TextEncodeMOSSImageEdit" && v["inputs"]["edit_format"] == "Moss-Image-Edit"));
+        p["moss_edit"] = json!("nope");
+        assert!(build(&p, &dir, 0).is_err());
+        let _ = std::fs::remove_file(img);
+    }
+
+    #[test]
     fn moss_img2img_and_no_multiref() {
         let dir = std::env::temp_dir();
         let img = dir.join("aw_test_moss_i2i.png");
@@ -1671,7 +1614,14 @@ mod tests {
         let (n2, info2) = build(&p2, &dir, 0).unwrap();
         assert!(!n2.values().any(|v| v["class_type"] == "KSampler" || v["class_type"] == "ImageBlend"));
         assert!(n2.values().any(|v| v["class_type"] == "TextEncodeQwenImage21" && v["inputs"]["prompt"] == "只改這段"));
-        assert_eq!(info2["width"].as_i64().unwrap() % 32, 0);
+        assert_eq!((info2["width"].as_i64().unwrap(), info2["height"].as_i64().unwrap()), (1024, 1536));
+        // 832×1216 的原圖：中間拉伸不裁切，最後拉回原尺寸（以前出來是 1024×1536）
+        image::RgbImage::new(832, 1216).save(&img).unwrap();
+        let (n4, info4) = build(&p, &dir, 0).unwrap();
+        assert_eq!((info4["width"].as_i64().unwrap(), info4["height"].as_i64().unwrap()), (832, 1216));
+        let scales: Vec<_> = n4.values().filter(|v| v["class_type"] == "ImageScale").map(|v| (v["inputs"]["width"].clone(), v["inputs"]["crop"].clone())).collect();
+        assert!(scales.contains(&(json!(832), json!("disabled"))), "{scales:?}");
+        assert!(scales.iter().all(|(_, c)| c == "disabled"), "{scales:?}");
         // 精修但不貼回
         let mut p3 = p.clone();
         p3["strip"] = json!({"merge": false, "refine_denoise": 0.4, "qwen_prompt": "x", "refine_tags": "y"});
@@ -1715,107 +1665,6 @@ mod tests {
         assert!(build(&p3, &dir, 0).unwrap_err().0.contains("修改要求"));
         let _ = std::fs::remove_file(sheet);
         let _ = std::fs::remove_file(cloth);
-    }
-
-    #[test]
-    fn video_graph_text_and_image() {
-        let dir = std::env::temp_dir();
-        // 文生影片：5 秒 → 121 格（8n+1），兩段都要 32 的倍數，有封面
-        let (n, info) = build(&json!({"mode": "video", "prompt": "a cat blinks", "seed": 7, "video_seconds": 5, "poster": "abc"}), &dir, 0).unwrap();
-        let cls: Vec<&str> = n
-            .values()
-            .map(|v| v["class_type"].as_str().unwrap())
-            .collect();
-        for c in [
-            "CheckpointLoaderSimple",
-            "LTXAVTextEncoderLoader",
-            "SaveVideo",
-            "ImageFromBatch",
-            "LTXVLatentUpsampler",
-        ] {
-            assert!(cls.contains(&c), "少了 {c}");
-        }
-        assert!(!cls.contains(&"LoadImage"));
-        assert_eq!(info["frames"], 121);
-        let (w, h) = (
-            info["width"].as_i64().unwrap(),
-            info["height"].as_i64().unwrap(),
-        );
-        assert!(w % 64 == 0 && h % 64 == 0 && w > h, "{w}x{h}");
-        let save = n.values().find(|v| v["class_type"] == "SaveImage").unwrap();
-        assert_eq!(save["inputs"]["filename_prefix"], "AnimaWeb/_poster/abc");
-        // 沒寫提示詞要擋
-        assert!(build(&json!({"mode": "video", "prompt": " "}), &dir, 0).is_err());
-        // 圖生影片：直式圖 → 直式影片，兩次 LTXVImgToVideoInplace
-        let img = dir.join("aw_test_video_src.png");
-        image::RgbImage::new(768, 1344).save(&img).unwrap();
-        let (n, info) = build(&json!({"mode": "video", "prompt": "she smiles", "init_image": "aw_test_video_src.png", "video_res": "480p"}), &dir, 0).unwrap();
-        let k = n
-            .values()
-            .filter(|v| v["class_type"] == "LTXVImgToVideoInplace")
-            .count();
-        assert_eq!(k, 2);
-        assert!(info["height"].as_i64().unwrap() > info["width"].as_i64().unwrap());
-        // 預覽：沒有第二段（放大器、第二個取樣器），尺寸是一半
-        let (n, info2) = build(&json!({"mode": "video", "prompt": "she smiles", "init_image": "aw_test_video_src.png", "video_res": "480p", "video_preview": true}), &dir, 0).unwrap();
-        assert_eq!(
-            n.values()
-                .filter(|v| v["class_type"] == "SamplerCustomAdvanced")
-                .count(),
-            1
-        );
-        assert!(!n.values().any(|v| v["class_type"] == "LTXVLatentUpsampler"));
-        assert_eq!(
-            info2["width"].as_i64().unwrap() * 2,
-            info["width"].as_i64().unwrap()
-        );
-        let _ = std::fs::remove_file(img);
-    }
-
-    #[test]
-    fn video_graph_loras() {
-        let dir = std::env::temp_dir();
-        // 影片 LoRA 接在 checkpoint 後面串起來，兩段取樣用同一個 guider（都吃到 LoRA）；強度沒給是 1
-        let (n, info) = build(&json!({"mode": "video", "prompt": "a cat blinks", "seed": 7,
-            "video_loras": [{"name": "ltx\\camera_dolly.safetensors", "strength": 0.8}, {"name": "motion.safetensors"}]}), &dir, 0).unwrap();
-        let ls: Vec<&Value> = n.values().filter(|v| v["class_type"] == "LoraLoaderModelOnly").collect();
-        assert_eq!(ls.len(), 2);
-        let ck = n.iter().find(|(_, v)| v["class_type"] == "CheckpointLoaderSimple").map(|(k, _)| k.clone()).unwrap();
-        let first = ls.iter().find(|v| v["inputs"]["lora_name"] == "ltx\\camera_dolly.safetensors").unwrap();
-        assert_eq!(first["inputs"]["model"], json!([ck, 0]));
-        assert_eq!(first["inputs"]["strength_model"], 0.8);
-        let second = ls.iter().find(|v| v["inputs"]["lora_name"] == "motion.safetensors").unwrap();
-        assert_eq!(second["inputs"]["strength_model"], 1.0);
-        let second_id = n.iter().find(|(_, v)| v["inputs"]["lora_name"] == "motion.safetensors").map(|(k, _)| k.clone()).unwrap();
-        let guider = n.values().find(|v| v["class_type"] == "LTXVDualCFGGuider").unwrap();
-        assert_eq!(guider["inputs"]["model"], json!([second_id, 0]));
-        assert_eq!(info["video_loras"].as_array().unwrap().len(), 2);
-        // 沒有 LoRA：guider 直接接 checkpoint，也沒有 LoraLoader
-        let (n, info) = build(&json!({"mode": "video", "prompt": "a cat blinks"}), &dir, 0).unwrap();
-        assert!(!n.values().any(|v| v["class_type"] == "LoraLoaderModelOnly"));
-        let guider = n.values().find(|v| v["class_type"] == "LTXVDualCFGGuider").unwrap();
-        assert_eq!(n[guider["inputs"]["model"][0].as_str().unwrap()]["class_type"], "CheckpointLoaderSimple");
-        assert!(info.get("video_loras").is_none());
-    }
-
-    #[test]
-    fn video_graph_official_sampling() {
-        // 2026-10-25 起照 LTX-2.3 官方兩段式：第一段 euler_cfg_pp＋8 步，第二段 euler_ancestral_cfg_pp 從 0.85 起
-        let (n, _) = build(&json!({"mode": "video", "prompt": "a cat blinks", "seed": 7}), &std::env::temp_dir(), 0).unwrap();
-        let runs: Vec<&Value> = n.values().filter(|v| v["class_type"] == "SamplerCustomAdvanced").collect();
-        assert_eq!(runs.len(), 2);
-        let mut got: Vec<(String, String)> = runs
-            .iter()
-            .map(|r| {
-                let at = |slot: &str| &n[r["inputs"][slot][0].as_str().unwrap()]["inputs"];
-                (at("sampler")["sampler_name"].as_str().unwrap().to_string(), at("sigmas")["sigmas"].as_str().unwrap().to_string())
-            })
-            .collect();
-        got.sort();
-        assert_eq!(got, vec![
-            ("euler_ancestral_cfg_pp".to_string(), "0.85, 0.7250, 0.4219, 0.0".to_string()),
-            ("euler_cfg_pp".to_string(), "1.0, 0.99375, 0.9875, 0.98125, 0.975, 0.909375, 0.725, 0.421875, 0.0".to_string()),
-        ]);
     }
 
     /// 測試用的輸入資料夾：一張 w×h 的圖＋（可選）幾張遮罩（白色矩形）
@@ -1892,6 +1741,71 @@ mod tests {
         m["model"] = json!("moss_image_sft_int8_convrot.safetensors");
         let (n, _) = build(&m, &dir, 0).unwrap();
         assert!(by_class(&n, "SDPoseKeypointExtractor").is_empty() && by_class(&n, "AnimaLLLiteApply").is_empty());
+    }
+
+    /// MOSS 色彩／深度控制（2026-10-31，ComfyUI 0.43 內建 MOSSImageControl＋darask0 的轉接器 LoRA）：
+    /// 一張參考圖 → DA3 深度圖＋模糊後減色的色塊圖 → 條件；轉接器用一般 LoRA 載入器掛在模型上
+    #[test]
+    fn moss_control_maps_and_adapter() {
+        let dir = std::env::temp_dir();
+        let p = json!({"mode": "txt2img", "family": "moss", "model": "moss_image_sft_int8_convrot.safetensors", "prompt": "a girl", "negative": "",
+                       "seed": 1, "width": 768, "height": 1024, "steps": 20, "cfg": 3, "sampler": "euler", "scheduler": "sgm_uniform",
+                       "moss_control": {"enabled": true, "image": "ref.png", "strength": 0.8, "end": 0.6}});
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        let ctl = &by_class(&n, "MOSSImageControl")[0]["inputs"];
+        assert_eq!((ctl["strength"].as_f64(), ctl["end_percent"].as_f64()), (Some(0.8), Some(0.6)));
+        assert!(ctl.get("depth_map").is_some() && ctl.get("color_map").is_some());
+        assert!(!by_class(&n, "DA3Inference").is_empty() && !by_class(&n, "ImageQuantize").is_empty());
+        assert!(by_class(&n, "LoraLoaderModelOnly").iter().any(|v| v["inputs"]["lora_name"] == MOSS_CONTROL_LORA));
+        // 取樣器吃的是控制後的條件
+        let ks = &by_class(&n, "KSampler")[0]["inputs"];
+        assert_eq!(n[ks["positive"][0].as_str().unwrap()]["class_type"], "MOSSImageControl");
+        // 只要深度
+        let mut d = p.clone();
+        d["moss_control"]["color"] = json!(false);
+        let (n, _) = build(&d, &dir, 0).unwrap();
+        let ctl = &by_class(&n, "MOSSImageControl")[0]["inputs"];
+        assert!(ctl.get("color_map").is_none() && ctl.get("depth_map").is_some());
+        // 姿勢參考圖＋有轉接器：深度圖直接當控制、前一半步數，從空白畫（不再用重繪 0.95 的老辦法）
+        let mut pc = p.clone();
+        pc["moss_control"] = Value::Null;
+        pc["pose_control"] = json!({"depth": "cowgirl_depth.png", "pose": "cowgirl_pose.png", "adapter": MOSS_CONTROL_LORA});
+        let (n, _) = build(&pc, &dir, 0).unwrap();
+        let ctl = &by_class(&n, "MOSSImageControl")[0]["inputs"];
+        assert_eq!(ctl["end_percent"].as_f64(), Some(0.5));
+        assert!(ctl.get("color_map").is_none());
+        assert_eq!(by_class(&n, "KSampler")[0]["inputs"]["denoise"], 1.0);
+        assert!(!by_class(&n, "EmptyFlux2LatentImage").is_empty());
+        // 沒轉接器：照舊從深度圖重繪 0.95
+        pc["pose_control"]["adapter"] = Value::Null;
+        let (n, _) = build(&pc, &dir, 0).unwrap();
+        assert!(by_class(&n, "MOSSImageControl").is_empty());
+        assert_eq!(by_class(&n, "KSampler")[0]["inputs"]["denoise"], 0.95);
+        // 別的家族不吃
+        let mut a = p.clone();
+        a["family"] = json!("anima");
+        let (n, _) = build(&a, &dir, 0).unwrap();
+        assert!(by_class(&n, "MOSSImageControl").is_empty());
+    }
+
+    /// MOSS 4B 文字編碼器（2026-10-31）：設定選 4B → 繪匣附帶的 AnimaMOSS4BCLIPLoader（4B＋投影轉接器）取代 9B 的 CLIPLoader
+    #[test]
+    fn moss_4b_encoder_uses_projection_loader() {
+        let dir = std::env::temp_dir();
+        let mut p = json!({"mode": "txt2img", "family": "moss", "model": "moss_image_sft_int8_convrot.safetensors", "prompt": "a cat", "negative": "",
+                           "seed": 1, "width": 768, "height": 1024, "steps": 20, "cfg": 3, "sampler": "euler", "scheduler": "sgm_uniform", "moss_te": "4b"});
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        let ld = &by_class(&n, "AnimaMOSS4BCLIPLoader")[0]["inputs"];
+        assert_eq!((ld["clip_name"].as_str(), ld["adapter_name"].as_str()), (Some(MOSS_TE_4B), Some(MOSS_4B_ADAPTER)));
+        assert!(by_class(&n, "CLIPLoader").is_empty());
+        // 預設 9B 照舊；別的家族不理這個設定
+        p["moss_te"] = json!("9b");
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        assert!(by_class(&n, "AnimaMOSS4BCLIPLoader").is_empty());
+        p["moss_te"] = json!("4b");
+        p["family"] = json!("anima");
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        assert!(by_class(&n, "AnimaMOSS4BCLIPLoader").is_empty());
     }
 
     #[test]

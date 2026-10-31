@@ -51,7 +51,7 @@ function fill(x) {
   x = x && typeof x === "object" ? x : {};
   const segs = Array.isArray(x.segments) && x.segments.length ? x.segments.slice(0, LIM.max_segs) : [{}];
   return {
-    ...b, engine: x.engine === "ltx" ? "ltx23" : x.engine || "h3", title: x.title || "", lang: x.lang === "en" ? "en" : "zh", style: x.style || "", camera: x.camera || "", early: x.early !== false,
+    ...b, engine: ["ltx", "ltx23"].includes(x.engine) ? "h3" : x.engine || "h3", title: x.title || "", lang: x.lang === "en" ? "en" : "zh", style: x.style || "", camera: x.camera || "", early: x.early !== false,
     first: { ...b.first, ...(x.first || {}) },
     refs: { on: !!x.refs?.on, items: (x.refs?.items || []).slice(0, LIM.max_refs).map((r) => ({ file: r.file || null, asset_id: r.asset_id ?? null, who: r.who || "" })) },
     scene: { text: x.scene?.text || "", layout: { ...(x.scene?.layout || {}) } },
@@ -70,7 +70,7 @@ function fill(x) {
 export function current() { return S; }
 
 export function requiresFirstFrame(engine = S.engine) {
-  if (engine === "h3" || engine === "ltx23") return true;
+  if (engine === "h3") return true;
   const flow = workflows.find((w) => w.id === engine);
   if (!flow?.info || !("image" in flow.info)) return true;
   return !!flow.info.image || (flow.media_slots || flow.info.media_slots || []).some((s) => s.kind === "image" && s.role === "first");
@@ -309,7 +309,7 @@ function paintHeadEl() {
   count.onchange = () => setSegCount(count.value);
   const tpl = el("select", { class: "sm", "aria-label": "從範本開始", onchange: () => useTemplate(tpl) }, el("option", { value: "" }, "從範本開始…"));
   fillTemplates(tpl);
-  const engines = [["h3", "MiniMax H3"], ["ltx23", "LTX-2.3（內建）"], ...workflows.filter((w) => !["h3", "ltx23"].includes(w.id)).map((w) => [w.id, `自訂：${w.name || w.id}`])];
+  const engines = [["h3", "MiniMax H3"], ...workflows.filter((w) => w.id !== "h3").map((w) => [w.id, `自訂：${w.name || w.id}`])];
   if (!engines.some(([id]) => id === S.engine)) engines.push([S.engine, `自訂：${S.engine}（目前找不到）`]);
   return el("div", { class: "row wrap sh-head" },
     el("label", { class: "row" }, el("span", {}, "影片引擎"), select(S.engine, engines, setEngine, { "aria-label": "拍攝單影片引擎" })),

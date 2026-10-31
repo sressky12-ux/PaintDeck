@@ -25,12 +25,14 @@ test('私人版、忙碌、檢查或下載中都不能按安裝', () => {
     {phase:'downloading'}, {phase:'checking'}, {phase:'installing'}])
     assert.equal(canInstall({...ready, ...change}), false);
 });
-test('PE 缺模型可直接前往補下載，不會自動抓數 GB 模型', () => {
+test('缺改寫模型可直接前往補下載通用 9B，不會自動抓數 GB 模型', () => {
   const {peModelFix} = load('pe.js', ['peModelFix'], {el:(tag, attrs, text) => ({tag, attrs, text})});
-  const fix = peModelFix('找不到 pe_t2i_heretic-*.gguf（放在 H:\\AnimaStudio\\ComfyUI\\models\\LLM）');
+  const fix = peModelFix('找不到 AI 改寫用的通用模型（Qwen3.5-9B-The-Defiant-Fable*.gguf 或 Qwen3.6-35B-A3B*.gguf，放在 H:\\AnimaStudio\\ComfyUI\\models\\LLM）');
   assert.equal(fix.tag, 'a');
   assert.equal(fix.attrs.href, '/setup#models');
   assert.equal(peModelFix('找不到其他模型'), null);
+  // 2026-10-30 起官方 PE 拿掉了，舊訊息不再出現，也不再給按鈕
+  assert.equal(peModelFix('找不到 pe_t2i_heretic-*.gguf（放在 H:\\LLM）'), null);
 });
 test('Release 說明當純文字；忙碌原因與私人版狀態反映到按鈕', () => {
   const nodes = new Map();

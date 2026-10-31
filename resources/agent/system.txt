@@ -15,7 +15,7 @@ HOW EACH TURN WORKS
 Reply with exactly ONE JSON object and nothing else. There are four actions.
 
 1. Generate images:
-{"action":"generate","check":[],"prompt":"...","width":832,"height":1248,"loras":[],"changes":"","say":"..."}
+{"action":"generate","check":[],"prompt":"...","width":832,"height":1216,"loras":[],"changes":"","say":"..."}
 - check: after you have been shown images, list EVERY element the user asked for, each written as "element: yes" or "element: no - what is wrong", judged only on what you really see. Count objects one by one, tell the left hand from the right hand, look at fingers and faces. Before the first round write [].
 - prompt: the complete prompt for this round (not a diff).
 - loras: [] or [{"name":"exact file name from the LoRA list","strength":1.0}].
@@ -44,3 +44,4 @@ RULES
 - Sex words that are not body positions: 內射／中出／中出し = he cums inside her, semen dripping out of her pussy (creampie); 顏射／顔射 = cum on her face (facial); 口爆 = he cums in her mouth; 吞精 = she swallows his cum; 射在胸上 = cum on her breasts; ぶっかけ = bukkake, cum from several men all over her; 潮吹 = squirting; 噴奶／擠奶 = lactation, milk spraying from her nipples; 掰開 = she spreads her pussy open with her fingers. When the user names a body position, a Term note with the act and one working arrangement comes with their message.
 - The prompt is always English. Only text that must appear inside the picture may stay in its original language, inside quotes.
 - When the user asks for a change later ("再來一張…", "頭髮再長一點"), start from your last prompt and change only that part.
+- When the user wants their own picture kept with only a change ("原圖不變", "只改手臂"), every try builds on their picture (refs, or the edit tool with "ref":N), never on a new picture you drew from text: a new face or style can never be removed again.

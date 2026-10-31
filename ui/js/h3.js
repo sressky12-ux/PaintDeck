@@ -174,7 +174,16 @@ function paintTpl() {
 }
 
 function newItem(o) {
-  return { kind: "image", use: "ref", role: "", name: "", speaker: "", voice: "", keep: "", secs: 0, audio: false, lora: "", control_type: "pose", strength: 1, shots: "", note: "", hint: "", m: null, busy: false, ...o };
+  return { kind: "image", use: "ref", role: "", name: "", speaker: "", voice: "", keep: "", secs: 0, audio: false, lora: "", control_type: "pose", strength: 1, shots: "", note: "", hint: "", asset: null, view: "", m: null, busy: false, ...o };
+}
+/** 資產圖片用途 → 提示詞裡怎麼說這張圖提供什麼 */
+const VIEW_EN = { src: "overall look", portrait: "face", face: "facial expressions", sheet: "full-body views from every angle", sheet_nude: "body proportions", detail: "small details", pose: "pose", outfit: "outfit", other: "appearance" };
+/** 同名的角色圖是同一個人（官方：同一主體來自多個素材時寫在同一條）；沒名字的各算各的 */
+function sameChar(x) {
+  const isChar = (y) => y.kind === "image" && y.use === "ref" && y.role === "character";
+  const name = x.name?.trim();
+  if (!isChar(x) || !name) return [x];
+  return board.items.filter((y) => isChar(y) && y.m && y.name.trim() === name);
 }
 function newShot(start = 0) {
   return { start, camera: "", picture: "", lines: [], sound: "" };
@@ -381,7 +390,7 @@ function itemEl(x, i, label) {
   const opts = [];
   const role = x.use === "ref" ? x.role : x.use;
   if (x.kind === "image" && x.use === "ref") {
-    if (role === "character") opts.push(textEl(x.name, (v) => { x.name = v; compose(); }, { placeholder: "名字（例：小克）", "aria-label": "角色名字", class: "h3-name" }),
+    if (role === "character") opts.push(textEl(x.name, (v) => { for (const y of board.items) if (x.asset != null && y.asset === x.asset) y.name = v; x.name = v; compose(); }, { placeholder: "名字（例：小克）", "aria-label": "角色名字", class: "h3-name" }),
       selectEl([["", "不說話"], ...SPEAKERS.map((s) => [s, `說話的人 ${s}`])], x.speaker, (v) => { x.speaker = v; compose(); paintShots(); }, "說話的人"),
       textEl(x.voice, (v) => { x.voice = v; compose(); }, { placeholder: "聲音（例：少女聲，偏低，性感知性）", "aria-label": "聲音描述", class: "h3-note", title: "寫進提示詞：這個角色每句台詞前面都會註明用這種聲音。要每支片都同一把聲音，在聲音格按「聲音庫」做一段存起來" }));
     if (role === "storyboard") opts.push(textEl(x.shots, (v) => { x.shots = v; compose(); }, { placeholder: "對應第幾鏡（例：1-3）", "aria-label": "對應第幾鏡" }));
@@ -732,7 +741,7 @@ function assemble() {
   const defs = [], keep = [], types = new Set();
   let k = 0;
   const appears = (x, tag) => {
-    const hit = shots.map((s, i) => (s.picture.includes(tag) || (x.name && s.picture.includes(x.name)) ? `[Shot ${i + 1}]` : "")).filter(Boolean);
+    const hit = shots.map((s, i) => (s.picture.includes(tag) || sameChar(x).some((y) => s.picture.includes(L.get(y))) || (x.name && s.picture.includes(x.name)) ? `[Shot ${i + 1}]` : "")).filter(Boolean);
     return (hit.length ? hit : shots.map((_, i) => `[Shot ${i + 1}]`)).join(", ");
   };
   // AI 的描述常以名字開頭（「小克, a young woman…」）：名字前面已經寫了，去掉
@@ -750,10 +759,14 @@ function assemble() {
         keep.push(`${tag}: weak_reference - used only for shot planning; its drawing style is not copied.`);
         continue;
       }
+      const same = sameChar(x);
+      if (same.length && same[0] !== x) continue; // 同一個人的第二張以後：併進第一張那一條
       const S = `<Subject ${++k}>`;
       const lv = x.keep || (x.role === "character" ? "fully_preserved" : "partially_preserved");
+      const from = same.length > 1 ? `one single character shown in several references: ${same.map((y) => `${VIEW_EN[y.view] || "appearance"} in ${L.get(y)}`).join(", ")}` : `whose appearance comes from ${tag}`;
+      const tags = same.length > 1 ? same.map((y) => L.get(y)).join(" and ") : tag;
       const what = {
-        character: `${x.name.trim() || "the character"}${x.speaker ? ` (${x.speaker})` : ""}, whose appearance comes from ${tag}${note(x)}`,
+        character: `${x.name.trim() || "the character"}${x.speaker ? ` (${x.speaker})` : ""}, ${from}${note(x)}`,
         outfit: `the outfit shown in ${tag}${note(x)}`,
         scene: `the location shown in ${tag}${note(x)}`,
         prop: `the object shown in ${tag}${note(x)}`,
@@ -761,7 +774,7 @@ function assemble() {
       }[x.role] || `the content of ${tag}${note(x)}`;
       defs.push(`${S} is ${what}.`);
       const kept = { character: "the face, hair, outfit and body proportions", outfit: "the garments, colors and materials", scene: "the layout, lighting and key objects of the place", prop: "the shape, colors and details", style: "the rendering style, palette and line quality" }[x.role] || "its key features";
-      keep.push(`${S} (appears in ${appears(x, tag)}): ${lv} - ${kept} from ${tag} ${lv === "weak_reference" ? "loosely guide" : "are carried into"} the target video.`);
+      keep.push(`${S} (appears in ${appears(x, tag)}): ${lv} - ${kept} from ${tags} ${lv === "weak_reference" ? "loosely guide" : "are carried into"} the target video.`);
     } else if (isPinImg(x)) {
       types.add("keyframe completion");
       const at = +x.secs === -1 ? `the last frame of the final shot, at ${durText()} seconds` : +x.secs === 0 ? "the first frame of [Shot 1], at 0.00 seconds" : `the exact frame at ${(+x.secs).toFixed(2)} seconds`;
@@ -1018,7 +1031,9 @@ function paintLocal() {
   if (!l.online) out.push("這台電腦的 ComfyUI 沒有連線。");
   else if (!l.nodes) out.push("這台電腦的 ComfyUI 沒有 MiniMax H3 節點：要更新到新版 ComfyUI。");
   else out.push(l.models.length ? `找到 H3 模型：${l.models.join("、")}` : "ComfyUI 有 H3 節點，但 diffusion_models 裡沒有 H3 模型（10Eros 或官方 H3）。");
-  out.push("H3 很吃顯存：48GB 以上的顯卡才跑得順（8～24GB 的卡跑不動，請用雲端）。模型要自己下載，見說明。");
+  if (l.pick) out.push(`模型選「預設」時本機用：${l.pick}`);
+  if (l.online && l.nodes && !l.chunk) out.push("沒裝 ComfyUI-KJNodes：「低顯存」切塊用不了（8～12GB 顯卡建議裝）。");
+  out.push("8GB 顯卡用 10Eros w4a8（14GB）＋低顯存切塊跑得動：512×768 5 秒約 3～4 分鐘、640×960 約 6 分鐘；記憶體要 32GB。安裝精靈的「H3 影片（本機，選配）」包會下載它。");
   lines(F("h3Local"), out);
 }
 
@@ -1030,7 +1045,8 @@ function paintModels() {
   const names = [...new Set([d.model, d.official_ref2va, ...(pool || [])])];
   const sel = F("h3Model");
   const cur = sel.value;
-  sel.replaceChildren(el("option", { value: "" }, "預設：10Eros-Max（無審核、8 步）"),
+  const def = where === "local" && info.local?.pick ? `預設：${info.local.pick}（本機最省顯存的）` : "預設：10Eros-Max（無審核、8 步）";
+  sel.replaceChildren(el("option", { value: "" }, def),
     ...names.filter((n) => n !== d.model).map((n) => el("option", { value: n }, n === d.official_ref2va ? "官方 H3 ref2va（會自動加 8 步 Turbo LoRA）" : n)));
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";
   const sl = where === "local" ? info.local?.selflift : info.cloud_selflift;
@@ -1104,6 +1120,7 @@ function params() {
   const vid = board.items.find((x) => special(x) && x.m?.w);
   if (vid) p.src_wh = [vid.m.w, vid.m.h];
   if (F("h3Model").value) p.model = F("h3Model").value;
+  if (F("h3Chunks").value) p.ff_chunks = +F("h3Chunks").value;
   p.steps = +F("h3Steps").value || 8;
   p.sampler = F("h3Sampler").value.trim() || "res_multistep";
   p.scheduler = F("h3Scheduler").value.trim() || "simple";
@@ -1171,6 +1188,7 @@ function writerMedia() {
       role = x.role === "character" ? `character "${x.name || "unnamed"}"${x.speaker ? ` (speaker ${x.speaker}${x.voice.trim() ? `, voice: ${x.voice.trim()} (the site adds this to the prompt itself)` : ""})` : " (does not speak)"}, ${keepWord(x.keep || "fully_preserved")}`
         : x.role === "storyboard" ? `storyboard${x.shots ? ` for shots ${x.shots}` : ""}`
           : `${x.role} reference, ${keepWord(x.keep || "partially_preserved")}`;
+      if (sameChar(x).length > 1) role += `; one of several references of the same single person, showing the ${VIEW_EN[x.view] || "appearance"}`;
     } else if (isPinImg(x)) role = +x.secs === -1 ? "pinned as the last frame" : `pinned as the exact frame at ${(+x.secs).toFixed(2)} s`;
     else if (x.kind === "video" && x.use === "ref") role = { motion: "motion source (copy only the movement)", camera: "camera source (copy only camera movement and pacing)", character: `character "${x.name || "unnamed"}" from this video` }[x.role] + (x.audioLabel ? `; its soundtrack is ${x.audioLabel} and is reused` : "");
     else if (x.use === "continue") role = "this clip continues from the end of this previous clip";
@@ -1305,10 +1323,62 @@ async function continueFrom(rec) {
   setStatus(`接著拍：從 #${rec.id} 的結尾開始`);
 }
 
+/** 音檔有多長（秒）：讀不到回 0 */
+const audioSecs = (name) => new Promise((res) => {
+  const a = new Audio(`/input/${encodeURIComponent(name)}`);
+  a.onloadedmetadata = () => res(a.duration || 0);
+  a.onerror = () => res(0);
+});
+
+/** 資產抽屜點一個資產：圖、音檔放進素材板。角色的圖帶名字、聲音、用途，同名算同一個人（assemble 併成一條 <Subject>）；
+ *  先填空著的同類格子（起手式留的），放過的不重複 */
+async function placeAsset(it, p, toInput) {
+  if (!board) start(STARTS[0]);
+  const was = board;
+  const role = { char: "character", scene: "scene", outfit: "outfit", prop: "prop", fx: "style" }[it.kind];
+  const used = (name) => board.items.some((x) => x.m?.name === name);
+  const had = board.items.find((x) => x.asset === it.id && x.speaker);
+  const speaker = it.kind !== "char" ? "" : had ? had.speaker
+    : (p.voice || p.audio) ? SPEAKERS.find((s) => !board.items.some((x) => x.speaker === s)) || "" : "";
+  let put = 0;
+  for (const f of p.images || []) {
+    if (board.items.filter((x) => x.kind === "image" && x.m).length >= MAX.image) { toast(`圖最多 ${MAX.image} 張`, "err"); break; }
+    const r = await toInput(f);
+    if (board !== was) return;
+    if (used(r.name)) continue;
+    const pin = it.kind === "frame" && !board.items.some((x) => isPinImg(x) && +x.secs === 0);
+    const fields = { use: pin ? "anchor" : "ref", role: pin ? "" : role || "character", secs: 0, asset: it.id, view: p.views?.[f] || "", name: it.kind === "char" ? it.name : "",
+      note: it.kind === "char" ? p.spec?.en || it.data?.look_en || "" : "", speaker, voice: it.kind === "char" ? p.voice || "" : "",
+      m: { name: r.name, kind: "image", w: r.width || 0, h: r.height || 0, secs: 0, audio: false } };
+    const empty = board.items.find((x) => x.kind === "image" && !x.m && x.use === fields.use && (x.use !== "ref" || x.role === fields.role));
+    if (empty) Object.assign(empty, fields); else board.items.push(newItem({ kind: "image", ...fields }));
+    put++;
+  }
+  if (p.audio) {
+    const r = await toInput(p.audio);
+    if (board !== was) return;
+    if (!used(r.name)) {
+      const secs = await audioSecs(r.name);
+      if (board !== was) return;
+      const fields = { use: "ref", role: it.kind === "sound" ? "sfx" : "voice", speaker, asset: it.id, m: { name: r.name, kind: "audio", w: 0, h: 0, secs, audio: true } };
+      const empty = board.items.find((x) => x.kind === "audio" && !x.m && x.use === "ref" && x.role === fields.role);
+      if (empty) Object.assign(empty, fields);
+      else if (board.items.filter((x) => x.kind === "audio" && x.use === "ref" && x.m).length >= MAX.audio) toast(`參考聲音最多 ${MAX.audio} 段`, "err");
+      else board.items.push(newItem({ kind: "audio", ...fields }));
+      put++;
+    }
+  }
+  if (!put) return;
+  paintBoard();
+  compose();
+  paintSize();
+  toast(`「${it.name}」放進素材板了`, "ok");
+}
+
 // ================================================================ 初始化
 export function init() {
-  // H3 影片台：中文外觀接在點子後面（圖片等影片台合併後再接）
-  drawer.mount(F("h3Assets"), { family: () => "h3", insert: drawer.appendTo(F("h3Idea")) });
+  // H3 影片台：中文外觀接在點子後面，圖和音檔放進素材板
+  drawer.mount(F("h3Assets"), { family: () => "h3", insert: drawer.appendTo(F("h3Idea")), images: { place: placeAsset } });
   F("h3Quality").value = "std";  // 瀏覽器重新整理會還原上次的選擇：預設一律標準
   setSecs(5);
   start(STARTS[0]);

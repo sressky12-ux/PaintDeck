@@ -19,6 +19,9 @@ export function mountSkills(b) {
 async function load() {
   try { data = await api("/api/skills"); } catch (e) { q("skMsg").textContent = "讀不到：" + e.message; return; }
   q("skMsg").textContent = data.skills.length ? "" : `還沒有裝。資料夾在 ${data.dir}`;
+  q("skPick").textContent = data.pick?.semantic
+    ? `挑段方式：照意思挑（${data.pick.model}，用 CPU 算，不占顯卡）`
+    : "挑段方式：照關鍵字挑。在「安裝與修復」勾「AI 改寫、生圖助手」會補下載 Qwen3-Embedding，之後就能照意思挑（換句話說也挑得到）";
   renderList();
   renderBind();
 }

@@ -166,6 +166,8 @@ async function loadScan() {
   // 驅動太舊：ComfyUI 0.38 的 PyTorch 是 CUDA 13，要 R580 以上。驅動要自己裝（要重開機、要選版本），這裡只提醒
   const oldDrv = scan.gpus.find((g) => g.driver_old);
   if (oldDrv) warn.push({ html: `顯示卡驅動 ${esc(oldDrv.driver)} 太舊：ComfyUI 需要 ${scan.driver_min} 版以上，不然會用不了顯示卡。請到 <a href="https://www.nvidia.com/Download/index.aspx" target="_blank" rel="noopener">NVIDIA 官網</a>（或 NVIDIA App）更新驅動，更新完重開機再回來。` });
+  // 找舊安裝有時間上限（setup.rs FIND_BUDGET）：沒掃完的硬碟講一聲，不擋
+  if (scan.unscanned?.length) warn.push(`有幾顆硬碟太慢，沒在時間內找完舊的安裝（${scan.unscanned.join("、")}）：硬碟在休眠、檔案很多、或是掛載成磁碟的網盤都會這樣。可以直接繼續；舊的圖庫或 ComfyUI 要是放在那裡，下一頁用「自己指定舊資料」「自己指定 ComfyUI 資料夾」選它的位置。`);
   if (!scan.vcredist.ok) warn.push("這台電腦缺少（或太舊）Visual C++ 執行階段，ComfyUI 少了它會開不起來。安裝時精靈會從微軟官網下載（約 18MB）幫你裝，到時候會跳出系統確認視窗，請按「是」。");
   F("sysWarn").innerHTML = warn.map((w) => `<div class="warnbox">${w.html ?? esc(w)}</div>`).join("");
   presetPicks();
@@ -404,7 +406,10 @@ function torchNote(c) {
 }
 
 // 沿用的 ComfyUI 比生圖站測過的版本舊：內建功能可能缺節點
-const oldNote = (c) => c.comfy.old
+// 官方免安裝版比生圖站要的新版舊（setup.rs comfy_upgradable）：安裝時會自動升級
+const oldNote = (c) => c.comfy.upgrade_to
+  ? `<div class="muted sm">⬆ 開始安裝時會把這份 ComfyUI 從 ${esc(c.comfy.version)} 升級到 ${esc(c.comfy.upgrade_to)}（MOSS 編輯、色彩深度控制都要新版；模型、圖片、外掛不動，換掉的檔會備份）</div>`
+  : c.comfy.old
   ? `<div class="st-err sm">這份 ComfyUI 是 ${esc(c.comfy.version)} 版，比生圖站測過的 ${esc(c.comfy.min_version)} 舊，有些內建功能會缺節點：建議改選「自動下載」，或先把它更新到新版</div>` : "";
 
 // 還沒有 ComfyUI、要下載的那一列
@@ -452,7 +457,13 @@ const packDone = (p) => !p.missing.missing && p.tool;
 const wanted = (p) => packDone(p) || pick.packs.has(p.id);
 
 function packLine(p) {
-  if (packDone(p)) return `<span class="st-ok">✓ 已經有了</span>`;
+  // 模型檔齊了不代表能畫：ComfyUI 的程式沒有 MOSS 支援時（setup.rs moss_support），卡片上直接講（2026-10-30 有人因此一直重下模型）
+  const moss = p.id === "moss" && chk.comfy.moss_problem ? `<div class="st-err sm">⚠ ${esc(chk.comfy.moss_problem)}</div>` : "";
+  if (packDone(p)) return moss ? `<span class="st-ok">✓ 模型檔已經有了</span>${moss}` : `<span class="st-ok">✓ 已經有了</span>`;
+  return packMissing(p) + moss;
+}
+
+function packMissing(p) {
   const m = p.missing;
   let s = m.missing ? `還缺 ${m.missing} 個檔，約 ${gb(m.bytes)}` : `還缺約 ${gb(m.bytes)}`;
   // Civitai 那段另外包一層：英文介面一段一段查字典比較準
@@ -481,9 +492,10 @@ function renderModels() {
     <div><b>${esc(p.label)}</b>${p.requires ? ` <span class="muted sm">要先有：</span><span class="muted sm">${esc(label[p.requires])}</span>` : ""}
     <div class="muted sm">${esc(p.desc)}</div><div class="sm">${packLine(p)}</div></div></label>`;
   F("modelOpts").innerHTML = (cpu ? `<div class="warnbox">這台電腦沒有能用的顯示卡（ComfyUI 會用 CPU 跑）：生圖模型預設全不選，免得白下載好幾十 GB。想試試 CPU 畫圖可以自己勾，畫一張要好幾分鐘。</div>` : "") +
-    liteNote(packs, basic, cpu) +
+    liteNote(packs, basic, cpu) + ltxNote() +
     `<div class="lbl">基本版：三種畫風的生圖功能</div>` + packs.filter((p) => basic.includes(p.id)).map(row).join("") +
     `<div class="lbl" style="margin-top:6px">額外功能（完整版）</div>` + packs.filter((p) => !basic.includes(p.id)).map(row).join("");
+  if (F("ltxDel")) F("ltxDel").onclick = removeLtx;
   $$("#modelOpts input[data-pack]").forEach((c) => (c.onchange = () => {
     const id = c.dataset.pack;
     if (c.checked) {
@@ -519,8 +531,28 @@ function liteNote(packs, basic, cpu) {
   return h;
 }
 
+// 2026-10-30 LTX-2.3 退場：以前「影片」包下載的檔還在硬碟上就提醒，按了才刪（伺服器自己重新找，只認那三個檔名）
+function ltxNote() {
+  const l = chk?.ltx_leftovers;
+  if (!l?.files?.length) return "";
+  return `<div class="warnbox"><b>舊的 LTX-2.3 影片模型已經不用了</b>：內建影片改成 MiniMax H3（下面的「H3 影片」包）。這台電腦還留著以前下載的 ${l.files.length} 個 LTX 檔，約 ${gb(l.bytes)}：
+    <div class="sm muted" translate="no">${l.files.map(esc).join("<br>")}</div>
+    <button type="button" class="akey sm" id="ltxDel">刪掉這些舊檔（空出 ${gb(l.bytes)}）</button></div>`;
+}
+async function removeLtx() {
+  const b = F("ltxDel");
+  if (!confirm("確定刪掉舊的 LTX-2.3 影片模型？刪掉的檔不會進資源回收筒。")) return;
+  b.disabled = true;
+  try {
+    const r = await api("/api/setup/ltx_remove", { json: chosen() });
+    if (r.fails?.length) alert(`有幾個檔刪不掉（可能 ComfyUI 正開著它）：\n${r.fails.join("\n")}`);
+    chk = await api("/api/setup/check", { json: chosen() });
+    renderModels();
+  } catch (e) { b.disabled = false; alert(e.message); }
+}
+
 $$("#packQuick [data-set]").forEach((b) => (b.onclick = () => {
-  // 選配包（官方 PE）「完整版」也不勾，要自己勾
+  // 選配包（35B、影片）「完整版」也不勾，要自己勾
   const ids = chk.packs.filter((p) => !p.optional).map((p) => p.id);
   const s = b.dataset.set;
   pick.packs = new Set(s === "full" ? ids : s === "basic" ? chk.basic_packs : s === "anima" ? ["anima"] : []);
@@ -647,7 +679,7 @@ F("cancelBtn").onclick = async () => {
   await api("/api/setup/cancel", { method: "POST" }).catch(() => {});
 };
 
-const STATUS = { wait: "等待", run: "進行中", done: "完成", skip: "已經有了", error: "失敗", stop: "已停止" };
+const STATUS = { wait: "等待", run: "進行中", done: "完成", skip: "已經有了", error: "失敗", stop: "已停止", warn: "要手動處理" };
 
 // 剩下的時間：「不到 1 分鐘」「15 分鐘」「2 小時 5 分鐘」
 function fmtEta(s) {

@@ -51,7 +51,7 @@
       <button class="pkey" data-page="gallery" data-ic="slides" type="button"><span class="n">02</span><span class="led"></span>圖庫</button>
       <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫：角色、場景、道具…全站共用"><span class="n">03</span><span class="led"></span>資產庫</button>
       <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">04</span><span class="led"></span>LoRA</button>
-      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">05</span><span class="led"></span>下載</button>
+      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">05</span><span class="led"></span>下載中心</button>
       <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">06</span><span class="led"></span>導演</button>
       <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">07</span><span class="led"></span>漫畫</button>
       <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">08</span><span class="led"></span>助手</button>
@@ -82,13 +82,20 @@
       <div class="cart-slot"><div class="cart-well" id="modelWell"><span class="cart-reels" aria-hidden="true"><i></i><i></i></span><select id="model" aria-label="模型"></select></div></div>
       <div id="turboRow"><span class="sub">加速 LoRA（只有非 turbo 模型需要）</span><select id="turboLora"><option value="">不使用（30 步、品質優先）</option></select></div>
       <label class="check" id="mossFastRow" hidden><input type="checkbox" id="mossFast"> MOSS 快速：自動掛加速 LoRA 0.35、步數改 10（一張約 16 秒，原本約 40 秒）</label>
+      <label class="check" id="mossDebandRow" hidden title="MOSS-Image SFT 在天空、漸層、霧、大片單色的地方容易出現直條色帶；勾了自動掛去色帶修正（把第 37～41 層換回 Base 的權重，強度 1.0）"><input type="checkbox" id="mossDeband"> MOSS 去色帶：天空、漸層不出直條紋（SFT 模型用）</label>
+      <div id="mossTeRow" hidden title="MOSS 用來讀提示詞的語言模型。4B 是社群做的省記憶體版（Qwen3.5-4B＋轉接器），記憶體少的電腦用；同一個種子畫出來會跟 9B 有點不一樣"><span class="sub">MOSS 文字編碼器</span><select id="mossTe"><option value="9b">9B（原版，最準）</option><option value="4b">4B（省記憶體）</option></select></div>
+      <label class="check" id="mossEditRow" hidden title="提示詞寫要怎麼改（例如「把外套改成紅色，其他不變」）。要掛 MOSS 編輯 LoRA：預設的 chinoll Moss-Image-Edit 會自動掛上，Civitai 的編輯 LoRA 也能用"><input type="checkbox" id="mossEdit"> 照指令改圖：輸入圖當參考，照提示詞改（MOSS 編輯 LoRA，重繪固定 1）</label>
       <div class="muted sm" id="modelHint"></div>
-      <div class="row" id="exportRow"><button class="akey sm" id="exportGraph" data-ic="floppy" type="button" title="把目前這個功能（照生成頁現在的設定）存成 ComfyUI 工作流，拿到 ComfyUI 改好再匯回來，就能取代內建的">拿去 ComfyUI 改…</button></div>
+      <div class="row gap wrap" id="exportRow"><button class="akey sm" id="readMeta" data-ic="rewind" type="button" title="拖一張圖進來，讀出它的提示詞、步數、取樣器、種子、模型、LoRA，可以直接套用（ComfyUI、WebUI、C 站原圖都看得懂）">讀圖片參數…</button><button class="akey sm" id="exportGraph" data-ic="floppy" type="button" title="把目前這個功能（照生成頁現在的設定）存成 ComfyUI 工作流，拿到 ComfyUI 改好再匯回來，就能取代內建的">拿去 ComfyUI 改…</button></div>
       <div class="warnbox sm" id="noModels" hidden>還沒有可以用的生圖模型（可能是安裝時跳過了下載那一步）。<a class="akey sm go" href="/setup#models">去下載模型</a></div>
       <!-- 加了外部模型資料夾、開著的 ComfyUI 還沒讀到（沒重開）：模型選單會缺模型，提醒重開（gen.js paintDirsPending） -->
       <div class="warnbox sm" id="dirsPending" hidden>加進來的外部模型資料夾，ComfyUI 還沒讀到，所以這裡的模型選單會缺模型：<span id="dirsPendingList" translate="no"></span>
         <span id="dirsPendingManual" hidden>這個 ComfyUI 不是生圖站開的：請把它關掉再開一次。</span>
         <button class="akey sm go" id="dirsPendingGo" type="button">重開 ComfyUI</button> <button class="akey sm" id="dirsPendingHide" type="button">不要再提醒</button></div>
+      <!-- 開站時把附帶的元件換成新版（setup.rs sync_bundled），ComfyUI 卻早就開著：提醒重開（gen.js paintComfyUpdated） -->
+      <div class="warnbox sm" id="comfyUpdated" hidden>繪匣更新了 ComfyUI 裡的 <span id="comfyUpdatedList"></span>，要重開 ComfyUI 才會用到新版。
+        <span id="comfyUpdatedManual" hidden>這個 ComfyUI 不是生圖站開的：請把它關掉再開一次。</span>
+        <button class="akey sm go" id="comfyUpdatedGo" type="button">重開 ComfyUI</button></div>
       <!-- 只有 SDXL／Flux 這類內建畫不了的模型（老手）：告訴他用匯入工作流（gen.js fillModels） -->
       <div class="warnbox sm" id="otherModels" hidden><span id="otherModelsText"></span> <button class="akey sm go" id="otherModelsGo" type="button">去匯入工作流</button></div>
       <!-- 基本版的檔只裝了一半（安裝中途關掉）：提醒去補（gen.js checkBasic） -->
@@ -180,7 +187,7 @@
             <option value="t2i">文生圖版（Qwen 2.1／MOSS）</option>
             <option value="i2i">改圖版（Qwen 2.1，會看參考圖）</option>
             <option value="anima">Anima 版（tag＋英文句子）</option>
-            <option value="adult" title="成人內容改用通用版去審查模型（Huihui Qwen3.5-9B），體位照「姿勢大彙整」擺；Qwen／MOSS 寫成句子、Anima 寫成 tag＋句子">成人（體位）</option>
+            <option value="adult" title="成人內容改用通用版去審查模型（Qwen3.5-9B Defiant Fable），體位照「姿勢大彙整」擺；Qwen／MOSS 寫成句子、Anima 寫成 tag＋句子">成人（體位）</option>
           </select>
         </div>
         <div class="row gap wrap" id="peAdultRow" hidden>
@@ -211,7 +218,9 @@
           <div class="row"><input type="text" id="peInstr" placeholder="例如：改成雨天、她手上拿一把透明傘"><button class="akey sm" id="peRefine" type="button">調整</button></div>
           <div class="chips" id="peQuick"></div>
         </div>
-        <div class="muted sm">模型：Qwen-Image 2.1 PE Heretic（社群無審查版，Qwen Research License，<b>不可商用</b>）。改寫時會暫時占用顯存，按「生成」前會自動釋放。</div>
+        <div class="row gap"><span class="sub">用哪顆模型</span><select id="peGeneral" class="sm" aria-label="AI 改寫用哪顆通用模型" title="跟設定頁的「通用模型」是同一個設定：生圖助手、導演台分段也跟著換"><option value="auto">自動（有 35B 就用 35B）</option><option value="35b">35B（較聰明、吃記憶體）</option><option value="9b">9B（較快、省記憶體）</option></select></div>
+        <div class="muted sm"><span id="peModelNote">模型：通用模型 Qwen3.5-9B／Qwen3.6-35B（跟生圖助手同一顆）</span>。改寫時會暫時占用顯存，按「生成」前會自動釋放。</div>
+        <div class="warnbox sm" id="peRetire" hidden></div>
       </details>
       <details class="fold" id="negDetails"><summary>負面提示詞</summary>
         <div class="ac-wrap"><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
@@ -337,15 +346,19 @@
       <details class="fold sw" id="controlBox">
         <summary><label class="check inline toggle"><input type="checkbox" id="ctrlOn"><span>構圖控制<small>照另一張圖的線條或深度</small></span></label></summary>
         <div class="grid2">
-          <div><span class="sub">控制類型</span><select id="ctrlType">
+          <div id="ctrlTypeWrap"><span class="sub">控制類型</span><select id="ctrlType">
             <option value="any">邊緣／線條（通用）</option><option value="lineart">線稿</option>
             <option value="scribble">塗鴉草圖</option><option value="depth">深度（立體構圖）</option><option value="pose">姿勢骨架（OpenPose）</option></select></div>
-          <div><span class="sub">前處理</span><select id="ctrlPre">
+          <div id="ctrlPreWrap"><span class="sub">前處理</span><select id="ctrlPre">
             <option value="canny">自動抽邊緣</option><option value="depth">自動算深度</option><option value="pose">自動抽骨架</option><option value="none">直接使用這張圖</option></select></div>
           <div><span class="fader-row"><span class="name">強度</span><output id="ctrlStrOut" class="vfd"></output></span><input type="range" id="ctrlStr" min="0.2" max="1.5" step="0.05" aria-label="強度"></div>
           <div><span class="fader-row"><span class="name">結束點</span><output id="ctrlEndOut" class="vfd"></output></span><input type="range" id="ctrlEnd" min="0.2" max="1" step="0.05" aria-label="結束點"></div>
         </div>
-        <label class="check"><input type="checkbox" id="ctrlInvert"> 反轉黑白（自動抽邊緣時建議開）</label>
+        <label class="check" id="ctrlInvertRow"><input type="checkbox" id="ctrlInvert"> 反轉黑白（自動抽邊緣時建議開）</label>
+        <!-- MOSS（2026-10-31）：ComfyUI 0.43 內建的色彩／深度控制，同一張參考圖自動算深度圖、轉成色塊圖（gen.js collectParams → moss_control） -->
+        <div id="ctrlMossRow" hidden><label class="check inline"><input type="checkbox" id="ctrlMossDepth" checked> 照深度（姿勢、前後位置）</label>
+          <label class="check inline"><input type="checkbox" id="ctrlMossColor" checked> 照色塊（每個東西放哪裡）</label>
+          <div class="muted sm">MOSS 照參考圖的姿勢和構圖從頭畫，內容照提示詞。照片類參考圖結束點用 1；3D 人偶這種合成圖用 0.5 比較不會畫成人偶</div></div>
         <div class="drop small" id="ctrlDrop"><img id="ctrlImg" alt=""><div class="drop-hint">控制圖：拖曳或<button class="link" id="ctrlPick" type="button">選擇檔案</button>、<button class="link" id="ctrlSketch" type="button">自己畫草圖</button>（留空＝用輸入圖）</div></div>
       </details>
       <details class="fold sw" id="detailBox">
@@ -435,8 +448,7 @@
       <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
       <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
       <button class="akey" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
-      <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（LTX-2.3 10Eros）">動起來</button>
-      <button class="akey go" data-act="video_final" type="button" title="用這支預覽的種子重跑完整解析度（動作會一樣）" hidden>放大成正式版</button>
+      <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
       <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
       <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
       <button class="akey" data-act="tagger" data-ic="rewind" type="button">反推</button>
@@ -608,21 +620,35 @@
   </section>
 </main>
 
-<!-- ======================= 下載（Civitai） ======================= -->
+<!-- ======================= 下載中心（C 站／魔塔／RunningHub，hub.js） ======================= -->
 <main id="page-civitai" class="page">
   <section class="panel lib screws">
-  <div class="toolbar">
-    <input id="cvBase" list="cvBaseList" value="全部基底" title="LoRA 要給哪個基底模型用；留「全部基底」會列出所有基底，可輸入 Civitai 上其他模型名稱" aria-label="基底模型" autocomplete="off" spellcheck="false"><datalist id="cvBaseList"><option value="全部基底"></option><option value="Anima"></option><option value="Qwen 2.1"></option><option value="MOSS Image"></option><option value="Krea 2"></option><option value="Krea 2 Turbo"></option></datalist>
-    <div class="scr search-scr"><span data-ic="search" class="sic"></span><input type="search" id="cvQ" placeholder="搜尋 Civitai 上的 LoRA（英文關鍵字較準）" aria-label="搜尋 Civitai"></div>
-    <select id="cvSort"><option>Most Downloaded</option><option>Highest Rated</option><option>Newest</option></select>
-    <select id="cvPeriod"><option value="AllTime">全部時間</option><option value="Year">今年</option><option value="Month">本月</option><option value="Week">本週</option></select>
-    <label class="check inline"><input type="checkbox" id="cvNsfw" checked> 含成人內容</label>
-    <button class="akey go" id="cvGo" type="button" data-ic="search">搜尋</button>
+  <div class="hub-bar">
+    <div class="piano row" id="hubSrc" role="tablist" aria-label="來源">
+      <button data-src="civitai" type="button" role="tab" title="Civitai：LoRA、主模型、VAE、工作流都有，成人內容最多">C 站</button>
+      <button data-src="modelscope" type="button" role="tab" title="魔塔社區（ModelScope）：中國大陸不用梯子就能下載，Qwen、MOSS 的 LoRA 很多">魔塔</button>
+      <button data-src="runninghub" type="button" role="tab" title="RunningHub：只有工作流（模型在它們的雲端），可以匯進生圖站或直接送上去跑">RunningHub</button>
+    </div>
+    <div class="piano row" id="hubKind" role="tablist" aria-label="種類">
+      <button data-kind="lora" type="button" role="tab">LoRA</button>
+      <button data-kind="model" type="button" role="tab">主模型</button>
+      <button data-kind="vae" type="button" role="tab">VAE</button>
+      <button data-kind="workflow" type="button" role="tab">工作流</button>
+    </div>
   </div>
-  <div class="muted sm pad" id="cvNote">只列出有 Anima 版本的 LoRA。可輸入其他 Civitai 基底模型；下載後會依基底模型分開存放，觸發詞也會一起存好。</div>
+  <div class="toolbar">
+    <div class="scr search-scr"><span data-ic="search" class="sic"></span><input type="search" id="hubQ" placeholder="搜尋關鍵字" aria-label="搜尋關鍵字"></div>
+    <span id="hubFamBox" class="row gap"><select id="hubFam" aria-label="底模" title="要給哪個模型家族用（各網站叫法不一樣，生圖站幫你對好）"></select>
+      <label class="check inline" title="預設只列生圖站內建流程畫得了的底模，免得下載了才發現用不了"><input type="checkbox" id="hubAll"> 也顯示生圖站用不了的</label></span>
+    <select id="hubSort" aria-label="排序"></select>
+    <label class="check inline" id="hubNsfwBox"><input type="checkbox" id="hubNsfw" checked> 含成人內容</label>
+    <button class="akey go" id="hubGo" type="button" data-ic="search">搜尋</button>
+  </div>
+  <div class="chips pad" id="hubTags" role="group" aria-label="魔塔的分類" hidden></div>
+  <div class="muted sm pad" id="hubNote"></div>
   <div class="lib-scroll">
-    <div class="cards" id="cvGrid"></div>
-    <div class="center"><button class="akey" id="cvMore" type="button" hidden>載入更多</button></div>
+    <div class="cards" id="hubGrid"></div>
+    <div class="center"><button class="akey" id="hubMore" type="button" hidden>載入更多</button></div>
   </div>
   </section>
 </main>
@@ -669,8 +695,9 @@
         <label>節奏與分鏡</label>
         <div class="grid2">
           <div><span class="sub">鏡頭數（段數）</span><select id="dirSegN"><option value="0">AI 自動</option></select></div>
-          <div><span class="sub">每段長度</span><select id="dirSecs"><option value="3">3 秒</option><option value="5">5 秒</option><option value="8">8 秒（記憶體吃緊）</option></select></div>
-          <div><span class="sub">解析度</span><select id="dirRes"><option value="720p">720p（一段約 4～5 分鐘）</option><option value="480p">480p（較快）</option></select></div>
+          <div><span class="sub">每段長度</span><select id="dirSecs"><option value="3">3 秒</option><option value="5">5 秒</option><option value="8">8 秒</option><option value="10">10 秒</option></select></div>
+          <div><span class="sub">解析度</span><select id="dirRes"><option value="720p">高畫質（720p）</option><option value="480p">快速（480p）</option></select></div>
+          <div><span class="sub">在哪裡拍</span><select id="dirWhere" title="雲端要先在「導演 → H3 影片」開好雲端（勾 H3 影片包）"><option value="local">本機</option><option value="cloud">雲端</option></select></div>
           <div><span class="sub">畫風</span><select id="dirStyle"><option value="anime">動漫</option><option value="realistic">寫實</option><option value="3d">3D CG</option></select></div>
         </div>
         <div class="muted sm" id="dirEst"></div>
@@ -937,6 +964,7 @@
             <summary>進階</summary>
             <div class="grid2">
               <div><span class="sub">模型</span><select id="h3Model"></select></div>
+              <div><span class="sub">低顯存（切塊算）</span><select id="h3Chunks"><option value="">自動（w4a8、GGUF 才切）</option><option value="8">開：切 8 塊（8～12GB 顯卡）</option><option value="1">關</option></select></div>
               <div><span class="sub">步數</span><input type="number" id="h3Steps" min="1" max="60" value="8"></div>
               <div><span class="sub">取樣器</span><input type="text" id="h3Sampler" value="res_multistep" spellcheck="false"></div>
               <div><span class="sub">排程</span><input type="text" id="h3Scheduler" value="simple" spellcheck="false"></div>
@@ -1029,7 +1057,13 @@
 <!-- 選版型、每格寫景別／內容／台詞／狀聲詞 → 組提示詞 → MOSS-Image 一次畫完整頁和字（2026-10-20 起只剩這一條，Anima＋Qwen 填字和 Qwen 一次畫完拿掉了）。
      後端在 src-tauri\src\comic.rs、server\api_comic.rs；js 在 js/comic.js；實測與模板在 design\漫畫頁提示詞設計.md -->
 <main id="page-comic" class="page">
-  <section class="panel lib screws cm">
+  <div class="row gap dir-tabs">
+    <div class="piano row" id="cmTabs" role="tablist" aria-label="漫畫台分頁">
+      <button data-t="draw" class="on" data-ic="comic" type="button" role="tab" title="選版型、每格寫內容和台詞 → MOSS-Image 畫一整頁">畫漫畫</button>
+      <button data-t="color" data-ic="palette" type="button" role="tab" title="整本黑白漫畫丟進來，照作者彩頁的配色一頁一頁自動上色">整本上色</button>
+    </div>
+  </div>
+  <section class="panel lib screws cm" data-tab="draw">
   <div class="toolbar">
     <select id="cmProj" aria-label="作品" style="max-width:240px"></select>
     <button class="akey sm" id="cmNew" type="button">新作品</button>
@@ -1109,6 +1143,53 @@
     </div>
   </div>
   </section>
+  <!-- 整本上色：js/colorbook.js；後端 src-tauri\src\colorbook.rs、server\api_colorbook.rs；設計 design\整本上色_設計.md -->
+  <section class="panel lib screws cb" data-tab="color" hidden>
+  <div class="toolbar">
+    <select id="cbBook" aria-label="哪一本" style="max-width:280px"></select>
+    <button class="akey sm" id="cbNew" type="button">丟一本進來…</button>
+    <input type="file" id="cbFile" accept=".zip,.cbz,image/png,image/jpeg,image/webp" multiple hidden>
+    <button class="akey sm warn" id="cbDel" type="button" data-ic="eject">移到待刪除</button>
+    <span class="grow"></span>
+    <span class="vfd g dir-status" id="cbStatus" role="status" aria-live="polite">待機</span>
+  </div>
+  <div class="dir-cols cb-cols">
+    <div class="dir-left lib-scroll">
+      <div class="drop cb-drop" id="cbDrop"><div class="drop-hint">把整本的 zip（或全部的頁面圖，可以一次選很多張）拖到這裡<br>照檔名排頁序；彩頁會自動認出來，拿來當配色參考</div></div>
+      <section class="box">
+        <label>這一本</label>
+        <div class="muted sm" id="cbInfo">還沒有書。</div>
+      </section>
+      <section class="box">
+        <label>角色配色表</label>
+        <div class="muted sm">AI 看這本的彩頁（封面、彩色插圖），寫出每個角色在黑白頁認得出來的特徵和原本的髮色、眼睛、膚色（會忽略封面的特殊打光）。可以自己改；沒有彩頁就留空，用自然配色。開始上色時還是空的，會自動先寫。</div>
+        <textarea id="cbSheet" rows="8" spellcheck="false" translate="no" placeholder="例：長捲髮的媽媽＝暗赤褐色頭髮、褐色眼睛；短髮的女兒＝藍黑色頭髮、制服是白襯衫紅領結深藍裙"></textarea>
+        <div class="row gap wrap">
+          <button class="akey sm" id="cbSheetAi" type="button">AI 看彩頁寫</button>
+          <button class="akey sm" id="cbSheetSave" type="button">存配色表</button>
+        </div>
+      </section>
+      <section class="box">
+        <label>怎麼上色</label>
+        <div class="row gap"><label class="row gap" title="本機的通用模型看每一頁，照位置寫「最上面那格的女孩：藍黑髮…」，比較不會把角色的顏色弄錯；關掉就每頁用同一段通用指令"><input type="checkbox" id="cbAi" checked> AI 看每一頁寫上色指令</label>
+          <select id="cbBrain" class="sm" aria-label="用哪顆語言模型" title="配色表和每頁指令都用這顆。35B 比較準、要吃很多記憶體；9B 快、省記憶體"><option value="35b">35B（準）</option><option value="9b">9B（快、省記憶體）</option></select></div>
+        <label class="row gap" title="成品的線條、字、網點全部用原稿的（亮度用原稿、只拿 AI 的顏色），解析度也是原稿的"><input type="checkbox" id="cbKeep" checked> 線條和字保持原稿</label>
+        <label class="row gap"><input type="checkbox" id="cbRedo"> 全部重上（已經上好的也重來）</label>
+        <div class="muted sm">先讓 AI 把每一頁的指令寫完，再換 Qwen 2.1 一頁一頁上色（兩個不能同時佔顯存）。一頁上色約 15～30 秒，AI 寫指令一頁約 10～20 秒；第一次要載入模型。上色走一般的生圖任務，任務面板看得到；成品不進圖庫，在這裡看、下載整本。</div>
+      </section>
+    </div>
+    <div class="dir-right lib-scroll">
+      <div class="toolbar dir-run">
+        <button class="akey go" id="cbRun" type="button" data-ic="rec">開始上色</button>
+        <button class="akey sm warn" id="cbStop" type="button" hidden>停止</button>
+        <button class="akey sm" id="cbZip" type="button" data-ic="floppy">下載整本</button>
+        <span class="grow"></span>
+        <span class="muted sm" id="cbCount"></span>
+      </div>
+      <div class="cb-pages" id="cbPages"></div>
+    </div>
+  </div>
+  </section>
 </main>
 
 <!-- ======================= 生圖助手 ======================= -->
@@ -1121,7 +1202,7 @@
     <button class="akey sm" id="agNew" type="button">新對話</button>
     <button class="akey sm warn" id="agDel" type="button" data-ic="eject">移到待刪除</button>
     <div class="rocker ag-mode" role="radiogroup" aria-label="助手做什麼" id="agKind" title="動手做＝助手自己畫、看圖、修，也能放大、改圖、做影片；只寫詞＝只照官方寫法寫提示詞給你，不碰繪圖模型"><span class="cap"></span><button type="button" role="radio" data-k="tools" aria-checked="true">動手做</button><button type="button" role="radio" data-k="prompt" aria-checked="false">只寫詞</button></div>
-    <select id="agTarget" class="ag-target" hidden title="只寫詞要照哪一份寫法寫；自動＝看生成頁的模型、你附幾張圖、有沒有講影片"><option value="auto">自動挑寫法</option><option value="anima">Anima</option><option value="qwen">Qwen 2.1 文生圖</option><option value="qwen_edit">Qwen 2.1 改圖</option><option value="qwen_multiref">Qwen 2.1 多圖參考</option><option value="moss">MOSS-Image</option><option value="other">SDXL 系</option><option value="ltx_video">LTX-2.3 影片</option><option value="h3_video">H3 影片</option></select>
+    <select id="agTarget" class="ag-target" hidden title="只寫詞要照哪一份寫法寫；自動＝看生成頁的模型、你附幾張圖、有沒有講影片"><option value="auto">自動挑寫法</option><option value="anima">Anima</option><option value="qwen">Qwen 2.1 文生圖</option><option value="qwen_edit">Qwen 2.1 改圖</option><option value="qwen_multiref">Qwen 2.1 多圖參考</option><option value="moss">MOSS-Image</option><option value="other">SDXL 系</option><option value="h3_video">H3 影片</option></select>
     <div class="rocker ag-mode" role="radiogroup" aria-label="助手怎麼做" id="agMode" title="讓我看＝主視窗切到助手正在用的那一頁、填好欄位、框起來給你看；後台做＝主視窗不動，做好的圖照樣進圖庫"><span class="cap"></span><button type="button" role="radio" data-v="show" aria-checked="true">讓我看</button><button type="button" role="radio" data-v="bg" aria-checked="false">後台做</button></div>
     <span class="grow"></span>
     <span class="vfd g ag-status" id="agStatus" role="status" aria-live="polite">待機</span>
@@ -1247,6 +1328,12 @@
       <div class="row gap"><input type="password" id="setKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setKeySave" type="button">儲存</button></div>
       <div class="muted sm" id="setKeyState"></div>
     </section>
+    <section class="box" id="setMsBox">
+      <label for="setMsKey">魔塔（ModelScope）Access Token</label>
+      <div class="muted sm">下載中心搜、下載魔塔的公開模型不用填；私有或要授權的模型才要。到 modelscope.cn → 個人中心 → 訪問令牌，整串複製貼在這裡（加密存在這台電腦）。</div>
+      <div class="row gap"><input type="password" id="setMsKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setMsSave" type="button">儲存</button><button class="akey" id="setMsTest" type="button">測試</button><button class="akey warn" id="setMsClear" type="button">清除</button></div>
+      <div class="muted sm" id="setMsState"></div>
+    </section>
     <section class="box" id="setNet">
       <label>網路（代理、下載來源）</label>
       <div class="muted sm">在中國大陸，從 Hugging Face、GitHub、Civitai 下載模型要開梯子。這裡看生圖站現在怎麼連網，也可以測試每個下載來源連不連得到。</div>
@@ -1262,11 +1349,8 @@
     </section>
     <section class="box" id="setPe">
       <label>AI 改寫提示詞</label>
-      <div class="muted sm">預設用通用模型（Qwen3.5-9B 或 Qwen3.6-35B，跟生圖助手同一顆）照各模型的官方寫法改寫。也可以改用官方改寫模型 Qwen-Image 2.1 PE Heretic（社群無審查版，Qwen Research License，<b>不可商用</b>，要另外下載；露骨內容會被寫淡）。8GB 顯卡放不下改寫模型和生圖模型，所以改寫前會先叫 ComfyUI 卸載模型、按下生成前會先關掉改寫模型。</div>
+      <div class="muted sm">用通用模型（Qwen3.5-9B 或 Qwen3.6-35B，跟生圖助手同一顆）照各模型的官方寫法改寫。8GB 顯卡放不下改寫模型和生圖模型，所以改寫前會先叫 ComfyUI 卸載模型、按下生成前會先關掉改寫模型。</div>
       <div class="grid2">
-        <div><span class="sub">改寫用的模型</span><select id="setPeEngine">
-          <option value="general">通用模型 9B／35B（預設）</option>
-          <option value="official">官方 PE（非商用授權，要另外下載）</option></select></div>
         <div><span class="sub">執行方式</span><select id="setPeMode">
           <option value="gpu">GPU（最快，約 6～8 秒，占 5.5GB 顯存）</option>
           <option value="partial">部分放顯卡（較慢）</option>
@@ -1274,7 +1358,8 @@
         <div><span class="sub">通用模型（改寫、助手、成人體位）</span><select id="setPeGeneral">
           <option value="auto">自動（有 35B 就用 35B）</option>
           <option value="35b">Qwen3.6-35B-A3B（較聰明，GPU 約 43 字／秒，占 7.5GB 顯存）</option>
-          <option value="9b">Qwen3.5-9B（較快、較穩）</option></select></div>
+          <option value="9b">Qwen3.5-9B（較快、較穩）</option></select>
+          <div class="muted sm">想用自己下載的模型：把 .gguf 放進 ComfyUI 的 models\LLM（或「外部模型資料夾」裡的 LLM），重新整理後在這裡選它；要讓助手看圖，同一個資料夾還要放它的 mmproj 檔。</div></div>
         <div id="setPeLayersRow"><span class="sub">放顯卡的層數（部分模式）</span><input type="number" id="setPeLayers" min="1" max="40" step="1"></div>
         <div><span class="sub">閒置幾秒後自動關閉</span><input type="number" id="setPeIdle" min="10" max="3600" step="10"></div>
         <div><span class="sub">隨機程度（temperature，官方 1.0）</span><input type="number" id="setPeTemp" min="0.1" max="1.5" step="0.05"></div>
@@ -1303,13 +1388,14 @@
       <div class="muted sm">把網路上別人寫的提示詞 skill（有 SKILL.md 的 GitHub 庫）裝進來、綁到模型上，生圖助手、AI 改寫、只寫詞寫那個模型的提示詞時就會照著用。skill 通常有好幾萬字，生圖站會切成小段，每次只挑跟需求有關的幾段給模型看，助手還能自己翻目錄再讀。只裝在這台電腦（data\skills），授權照各 skill 自己的規定。</div>
       <div class="row gap wrap"><input type="text" id="skUrl" placeholder="https://github.com/作者/庫名（或指到 skill 資料夾的 …/tree/main/資料夾）" spellcheck="false"><button class="akey sm go" id="skInstall" type="button">從 GitHub 安裝</button><button class="akey sm" id="skOpen" type="button" title="自己把 skill 資料夾放進來也可以（資料夾裡要有 SKILL.md），放好按重新整理">打開資料夾</button><button class="akey sm" id="skReload" type="button">重新整理</button></div>
       <div class="muted sm" id="skMsg"></div>
+      <div class="muted sm" id="skPick"></div>
       <div id="skList"></div>
       <span class="sub">綁到哪個模型的寫法</span>
       <div class="grid2" id="skBind"></div>
     </section>
     <section class="box" id="setVideo">
       <label for="setVidEngine">影片模型</label>
-      <div class="muted sm">「動起來」和導演台用哪個模型生影片。內建的是 LTX-2.3（10Eros，有聲音）；想用 Wan、HunyuanVideo 或其他模型，先在 ComfyUI 把工作流調到能跑，再把它匯入這裡：一般「儲存」的 JSON、「匯出（API）」（Export (API)）的 JSON、ComfyUI 生成的 PNG／WebP 都可以（一般「儲存」的要開著 ComfyUI 才轉得了）。</div>
+      <div class="muted sm">「動起來」和導演台用哪個模型生影片。內建的是 MiniMax H3（有聲音；本機要安裝精靈的「H3 影片（本機，選配）」包，8GB 顯卡用 w4a8 版跑得動，也可以用雲端）；想用 Wan、HunyuanVideo 或其他模型，先在 ComfyUI 把工作流調到能跑，再把它匯入這裡：一般「儲存」的 JSON、「匯出（API）」（Export (API)）的 JSON、ComfyUI 生成的 PNG／WebP 都可以（一般「儲存」的要開著 ComfyUI 才轉得了）。</div>
       <div class="row gap wrap"><select id="setVidEngine" style="max-width:340px"></select><button class="akey sm" id="setVidMap" type="button" hidden title="提示詞放哪、首格圖用哪個 Load Image、固定改值、把欄位釘到「動起來」視窗">對應與參數…</button><button class="akey sm" id="setVidDel" type="button" hidden>刪掉這個工作流</button></div>
       <div class="muted sm" id="setVidInfo"></div>
       <div class="row gap wrap"><input type="text" id="setVidName" placeholder="新工作流的名字（不填就用檔名）" style="max-width:300px"><button class="akey sm" id="setVidImport" type="button">匯入工作流…</button>
@@ -1323,7 +1409,7 @@
           <li>長寬：同時有 width、height、length 的節點（空白影片潛空間、WanImageToVideo 這類）照首格圖的比例調，像素數維持工作流原本的。</li>
           <li>長度：讀得到每秒幾格（Create Video 的 fps、Video Combine 的 frame_rate）才照你選的秒數改，不然照工作流。</li>
           <li>存檔：Save Video、Save WEBM、Video Combine（VHS）存的影片收進圖庫；另外存第一格當縮圖、最後一格給導演台接下一段。</li>
-          <li>其他（模型、步數、CFG、負面提示詞、LoRA）都照工作流。導演台的「解析度」只對內建的 LTX 有效。</li>
+          <li>其他（模型、步數、CFG、負面提示詞、LoRA）都照工作流。</li>
         </ul>
       </details>
     </section>
@@ -1493,8 +1579,7 @@
         <button class="akey sm" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
         <button class="akey sm" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
         <button class="akey sm" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
-        <button class="akey sm go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（LTX-2.3 10Eros）">動起來</button>
-        <button class="akey sm go" data-act="video_final" type="button" title="用這支預覽的種子重跑完整解析度（動作會一樣）" hidden>放大成正式版</button>
+        <button class="akey sm go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
         <button class="akey sm" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
         <button class="akey sm" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
         <button class="akey sm" data-act="tagger" data-ic="rewind" type="button">反推</button>
@@ -1568,6 +1653,55 @@
   </div>
 </div>
 
+<div class="modal" id="hubView" hidden>
+  <div class="dialog wide">
+    <div class="row between"><b id="hubViewTitle"></b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="muted sm" id="hubViewMeta"></div>
+    <div class="hub-view-imgs" id="hubViewImgs"></div>
+    <div class="sm" id="hubViewText"></div>
+  </div>
+</div>
+
+<div class="modal" id="imModal" hidden>
+  <div class="dialog wide">
+    <div class="row between"><b>讀圖片參數</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="drop" id="imDrop">
+      <img id="imImg" alt="">
+      <div class="drop-hint">把圖拖到這裡、貼上（Ctrl+V），或<button class="link" id="imPick" type="button">選擇檔案</button></div>
+    </div>
+    <div class="muted sm">看得懂：生圖站、ComfyUI（PNG／WebP，新式取樣節點也行）、WebUI（A1111、Forge、C 站下載的原圖）、NovelAI、SwarmUI、Fooocus。被網站或聊天軟體重新壓縮過的圖，資料通常已經掉了。</div>
+    <div id="imOut" role="status" aria-live="polite"></div>
+    <div class="row gap wrap"><button class="akey go" id="imApply" type="button" disabled>套用到生成頁</button><button class="akey" id="imWf" type="button" hidden title="把圖裡整個 ComfyUI 工作流匯進來，之後在生成頁的模型選單選它（到設定頁的匯入欄看結果）">匯入成工作流</button><button class="akey" id="imCopy" type="button" disabled>複製提示詞</button></div>
+  </div>
+</div>
+
+<div class="modal cb-view" id="cbView" hidden>
+  <div class="dialog wide">
+    <div class="row between"><b id="cbViewTitle">第 1 頁</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="row gap wrap">
+      <button class="akey sm" id="cbViewPrev" type="button">← 上一頁</button>
+      <button class="akey sm" id="cbViewNext" type="button">下一頁 →</button>
+      <button class="akey sm" id="cbViewRedo" type="button">這頁重上</button>
+      <span class="muted sm" id="cbViewInfo"></span>
+    </div>
+    <div class="cb-view-imgs" id="cbViewImgs"></div>
+  </div>
+</div>
+
+<div class="modal" id="hubRunModal" hidden>
+  <div class="dialog">
+    <div class="row between"><b id="hubRunTitle">在 RunningHub 跑</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="muted sm" id="hubRunInfo"></div>
+    <label id="hubRunPromptBox" class="sm">提示詞（留空＝照工作流原本的）<textarea id="hubRunPrompt" rows="4" spellcheck="false"></textarea></label>
+    <div class="drop" id="hubRunDrop">
+      <img id="hubRunImg" alt="">
+      <div class="drop-hint">輸入圖：拖到這裡，或<button class="link" id="hubRunPick" type="button">選擇檔案</button></div>
+    </div>
+    <div class="row gap wrap"><button class="akey go" id="hubRunGo" type="button" disabled>送到 RunningHub</button><button class="akey warn" id="hubRunStop" type="button" hidden>停止</button></div>
+    <div class="sm" id="hubRunMsg" role="status" aria-live="polite"></div>
+  </div>
+</div>
+
 <div class="modal" id="taggerModal" hidden>
   <div class="dialog">
     <div class="row between"><b>反推提示詞</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
@@ -1581,7 +1715,7 @@
     <div class="tg-result" id="tgResult">分析中…</div>
     <div class="tg-cap">
       <div class="row gap wrap">
-        <button class="akey sm" id="tgCapGo" type="button" title="用 AI 改寫的讀圖模型（PE i2i Heretic）寫一段英文說明，會描述畫風。第一次約 25 秒載入，之後每張 5～10 秒，會暫時占用顯存">AI 寫英文說明（含畫風）</button>
+        <button class="akey sm" id="tgCapGo" type="button" title="用 AI 改寫的讀圖模型（通用模型 9B／35B 加看圖檔）寫一段英文說明，會描述畫風。第一次約 25 秒載入，之後每張 5～10 秒，會暫時占用顯存">AI 寫英文說明（含畫風）</button>
         <button class="akey sm warn" id="tgCapCancel" type="button" hidden>取消</button>
         <label class="check inline" title="寫完英文說明後，再請 AI 寫一段中文摘要（會多花幾秒）"><input type="checkbox" id="tgCapZh" checked> 中文對照</label>
         <label class="check inline" id="tgCapUseRow" hidden><input type="checkbox" id="tgCapUse" checked> <span id="tgCapUseLabel">套用時接在 tag 後面</span></label>
@@ -1602,15 +1736,13 @@
     <label class="sub" for="vidPrompt">動作和聲音（英文效果最好）</label>
     <textarea id="vidPrompt" rows="5" spellcheck="false" placeholder="例：The woman slowly turns her head toward the camera and smiles, her hair swaying in the wind. The camera pushes in slowly. Sound of wind and distant birds."></textarea>
     <div class="muted sm">寫「接下來發生什麼」：誰怎麼動、鏡頭怎麼移、聽得到什麼聲音。不用再描述圖裡已經有的東西。</div>
-    <div id="vidModelBox" hidden><span class="sub">影片模型</span><select id="vidModel" aria-label="影片模型"></select></div>
+    <div id="vidModelBox" hidden><span class="sub">影片模型</span><select id="vidModel" aria-label="影片模型"></select></div><div id="vidWhereBox" hidden><span class="sub">在哪裡跑</span><select id="vidWhere" aria-label="在哪裡跑"><option value="local">本機</option><option value="cloud">雲端（要先開好雲端、裝 H3 包）</option></select></div>
     <div class="muted sm" id="vidEngine"></div>
     <div class="wf-grid" id="vidParams" hidden></div>
-    <div id="vidLoraBox" hidden><span class="sub">影片 LoRA（動作、鏡頭；只列 LTX 能用的）</span><div class="wf-grid" id="vidLoras"></div><div class="muted sm" id="vidLoraNone" hidden>還沒有 LTX 能用的 LoRA。到 Civitai 搜「LTX 2.3」的 LoRA，放進 ComfyUI 的 loras 資料夾就會出現在這裡。</div></div>
     <div class="grid2">
-      <div id="vidSecsBox"><span class="sub">長度</span><select id="vidSecs"><option value="3">3 秒</option><option value="5" selected>5 秒</option><option value="8">8 秒（記憶體比較吃緊）</option></select></div>
-      <div id="vidResBox"><span class="sub">解析度</span><select id="vidRes"><option value="720p" selected>720p（約 3 分鐘）</option><option value="480p">480p（較快）</option></select></div>
+      <div id="vidSecsBox"><span class="sub">長度</span><select id="vidSecs"><option value="3">3 秒</option><option value="5" selected>5 秒</option><option value="8">8 秒</option><option value="10">10 秒（本機很久）</option></select></div>
+      <div id="vidResBox"><span class="sub">解析度</span><select id="vidRes"><option value="720p" selected>高畫質（720p）</option><option value="480p">快速（480p）</option></select></div>
     </div>
-    <label class="check" id="vidPreviewBox"><input type="checkbox" id="vidPreview"> 先出 3 支低解析度預覽挑種子；挑中的那支在圖庫按「放大成正式版」（實測一支預覽約 3 分鐘、正式版約 5 分鐘，省得不多）</label>
     <div class="muted sm">會先清空 ComfyUI 的記憶體（影片模型很大），生成期間不能同時生圖。</div>
     <div class="row gap"><button class="akey go" id="vidGo" type="button">開始生成</button></div>
   </div>

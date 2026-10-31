@@ -1,5 +1,5 @@
 // 圖庫：翻頁檢視（每頁 10／30／50／100 張）、篩選搜尋、多選批次（收藏、回收區、匯出 zip、比較）、回收區、燈箱（含參數、動作、快捷鍵）、從圖庫挑圖
-import { $, $$, el, api, toast, debounce, openModal, closeModal, modeName, store, copyText, typing, isVideo, isVideoPreview, IMAGE_ONLY_ACTS, VIDEO_ONLY_ACTS, fmtSecs } from "./util.js";
+import { $, $$, el, api, toast, debounce, openModal, closeModal, modeName, store, copyText, typing, isVideo, IMAGE_ONLY_ACTS, VIDEO_ONLY_ACTS, fmtSecs } from "./util.js";
 import { app } from "./state.js";
 
 let items = [], total = 0, loaded = false, reqSeq = 0;
@@ -485,7 +485,6 @@ async function renderLb() {
   F("lbImg").classList.toggle("alpha", rec.mode === "rembg");  // 去背的透明圖墊棋盤格（play.css）
   for (const a of IMAGE_ONLY_ACTS) $$(`#lbActions [data-act="${a}"]`).forEach((b) => (b.hidden = vid));
   for (const a of VIDEO_ONLY_ACTS) $$(`#lbActions [data-act="${a}"]`).forEach((b) => (b.hidden = !vid));
-  $("#lbActions [data-act=video_final]").hidden = !isVideoPreview(rec);
   const pos = lb.gal && lb.list === items ? `　${(page - 1) * per() + lb.i + 1} / ${total}` : lb.list.length > 1 ? `　${lb.i + 1} / ${lb.list.length}` : "";
   F("lbTitle").textContent = `${modeName[rec.mode] || rec.mode || ""}・${rec.width}×${rec.height}` + pos;
   $$("#lightbox [data-act=download]").forEach((dl) => { dl.href = `/img/${rec.id}`; dl.download = rec.filename; });

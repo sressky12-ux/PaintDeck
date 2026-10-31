@@ -93,9 +93,7 @@ pub const DEFAULT_NEGATIVE: &str = "worst quality, low quality, score_1, score_2
 /// AI 改寫的預設值（舊版 pe.py 的 DEFAULTS）
 pub fn pe_defaults() -> Map<String, Value> {
     let v = json!({"pe_mode": "gpu", "pe_partial_layers": 16, "pe_idle": 120, "pe_close_after": false,
-                   "pe_temperature": 1.0, "pe_think": false, "pe_zh": false, "pe_general": "auto",
-                   // AI 改寫用哪種模型：general＝通用模型 9B／35B（預設）、official＝官方 PE（非商用授權，要另外下載）
-                   "pe_engine": "general"});
+                   "pe_temperature": 1.0, "pe_think": false, "pe_zh": false, "pe_general": "auto"});
     v.as_object().cloned().unwrap_or_default()
 }
 
@@ -104,7 +102,7 @@ pub fn defaults() -> Map<String, Value> {
     m.insert(KEY.into(), json!(""));
     m.insert("blur_nsfw".into(), json!(true));
     m.insert("negative".into(), json!(DEFAULT_NEGATIVE));
-    // 影片模型：內建 LTX-2.3，或 data\video_workflows 裡匯入的工作流代號（video_wf.rs）
+    // 影片模型：內建 MiniMax H3，或 data\video_workflows 裡匯入的工作流代號（video_wf.rs）
     m.insert("video_engine".into(), json!(crate::video_wf::BUILTIN));
     // 取代內建功能：{"<家族>.<模式>": "<工作流組代號>"}（image_wf.rs），例如 anima.inpaint
     m.insert("feature_flows".into(), json!({}));
@@ -126,6 +124,11 @@ pub fn load(path: &Path) -> Map<String, Value> {
             }
             s.extend(file);
         }
+    }
+    // LTX 退場：舊設定的 ltx23 讀成 h3
+    if let Some(e) = s.get("video_engine").and_then(Value::as_str) {
+        let e = crate::video_wf::normalize_engine(e).to_string();
+        s.insert("video_engine".into(), json!(e));
     }
     s
 }
@@ -209,6 +212,21 @@ pub fn civitai_key(s: &Map<String, Value>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// LTX 退場（2026-10-30）：沒寫、或寫著舊的 ltx23，載入後都是 h3
+    #[test]
+    fn video_engine_defaults_to_h3() {
+        let dir = std::env::temp_dir().join(format!("anima_settings_video_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("settings.json");
+        std::fs::write(&p, r#"{"video_engine": "ltx23"}"#).unwrap();
+        assert_eq!(load(&p)["video_engine"], "h3");
+        std::fs::write(&p, "{}").unwrap();
+        assert_eq!(load(&p)["video_engine"], "h3");
+        std::fs::write(&p, r#"{"video_engine": "Wan 2_2"}"#).unwrap();
+        assert_eq!(load(&p)["video_engine"], "Wan 2_2");
+        std::fs::remove_dir_all(dir).unwrap();
+    }
 
     #[test]
     fn key_never_in_public_view() {

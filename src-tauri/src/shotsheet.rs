@@ -801,7 +801,7 @@ mod tests {
         // 英文用空白接
         let en = put_locked("integrated_multimodal_description: Style: anime.", "Ko (S1): female.", false);
         assert_eq!(en, "integrated_multimodal_description: Ko (S1): female. Style: anime.");
-        // 沒有 H3 欄位名（LTX 等引擎）：放在最前面一行
+        // 沒有 H3 欄位名（自訂工作流等引擎）：放在最前面一行
         assert_eq!(put_locked("Style: anime.\nShe turns.", "S1 Ko: female.", false), "S1 Ko: female.\nStyle: anime.\nShe turns.");
         assert_eq!(put_locked("", "S1 Ko: female.", false), "S1 Ko: female.");
         assert_eq!(put_locked("anything", "", true), "anything");

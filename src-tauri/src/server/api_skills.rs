@@ -21,7 +21,10 @@ pub async fn list(State(app): State<Shared>) -> ApiResult {
     let all = blocking(move || skills::list(&d).iter().map(skills::Skill::summary).collect::<Vec<_>>()).await;
     let bind = settings::load(&app.paths.settings).get(skills::BIND_KEY).cloned().unwrap_or_else(|| json!({}));
     let guides: Vec<Value> = crate::agent::GUIDES.iter().map(|g| json!({"name": g.0, "zh": g.2})).collect();
-    ok(json!({"dir": dir.display().to_string(), "skills": all, "bind": bind, "guides": guides}))
+    // 挑段方式：裝了 Qwen3-Embedding 照意思挑，沒有照關鍵字（embed.rs）
+    let a = app.clone();
+    let pick = blocking(move || a.pe.embed.status()).await;
+    ok(json!({"dir": dir.display().to_string(), "skills": all, "bind": bind, "guides": guides, "pick": pick}))
 }
 
 /// 一份的細節：目錄（給模型看的那份）＋每段的標題、大小
@@ -155,7 +158,10 @@ pub async fn install(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     .await
     .map_err(internal)?;
     let r = root.clone();
-    let sk = blocking(move || skills::find(&r, &id).map(|s| s.summary())).await.ok_or_else(|| internal("裝好了卻讀不到 SKILL.md"))?;
+    let i = id.clone();
+    let sk = blocking(move || skills::find(&r, &i).map(|s| s.summary())).await.ok_or_else(|| internal("裝好了卻讀不到 SKILL.md"))?;
+    // 先把每段的意思座標算好（背景，沒裝模型就什麼都不做）
+    app.pe.embed.index_later(root.join(&id));
     ok(json!({"ok": true, "skill": sk, "replaced": replaced}))
 }
 
@@ -168,9 +174,12 @@ pub async fn bind(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     if !skill.is_empty() {
         let root = skills::root(&app.paths.data);
         let s = skill.clone();
-        if !blocking(move || skills::find(&root, &s).is_some()).await {
+        let r = root.clone();
+        if !blocking(move || skills::find(&r, &s).is_some()).await {
             return Err(not_found("沒有這個外掛寫法"));
         }
+        // 自己放進資料夾的 skill 沒經過安裝：綁的時候先在背景算意思座標
+        app.pe.embed.index_later(root.join(&skill));
     }
     let _g = app.settings_lock.lock().await;
     let mut s = settings::load(&app.paths.settings);

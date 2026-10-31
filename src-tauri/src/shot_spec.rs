@@ -7,10 +7,9 @@ fn text(v: &Value, max: usize) -> String {
 
 pub fn normalize_engine(v: &Value) -> String {
     let e = text(v, 100);
-    if e.is_empty() || e == "h3" {
+    // 2026-10-30 LTX 退場：舊拍攝單記的 ltx／ltx23 一律當 H3
+    if e.is_empty() || e == "h3" || e == "ltx" || e == crate::video_wf::LEGACY_LTX {
         "h3".into()
-    } else if e == "ltx" {
-        "ltx23".into()
     } else {
         e
     }
@@ -286,18 +285,18 @@ mod tests {
     }
     #[test]
     fn generic_engine_puts_locked_cast_on_first_line() {
-        let s = crate::shotsheet::normalize(&json!({"engine": "ltx23", "style": "anime",
+        let s = crate::shotsheet::normalize(&json!({"engine": "wan-demo", "style": "anime",
             "cast": [{"name": "Bo", "look_en": "a tall man"}, {"name": "Ada", "locked": true, "look_en": "female, early 20s, silver hair."}],
             "segments": [{"secs": 8}]})).unwrap();
-        let p = compose(&s, 0, "ltx23", "en");
+        let p = compose(&s, 0, "wan-demo", "en");
         assert!(p.starts_with("Ada (S2): female, early 20s, silver hair.\n"), "{p}");
         assert_eq!(p.matches("silver hair").count(), 1, "{p}");
         assert!(p.contains("S1 Bo: a tall man"), "{p}");
     }
     #[test]
     fn generic_engine_preserves_time_dialogue_and_user_facts_without_h3_protocol() {
-        let s=crate::shotsheet::normalize(&json!({"engine":"ltx23","cast":[{"name":"Ada","lang":"Japanese"}],"segments":[{"secs":8,"beats":[{"from":1,"to":3,"action":"right hand raises cup","who":"S1","line":"hello"}],"exit":{"actors":[{"who":"S1","holding":"cup"}]}}]})).unwrap();
-        let p = compose(&s, 0, "ltx23", "en");
+        let s=crate::shotsheet::normalize(&json!({"engine":"wan-demo","cast":[{"name":"Ada","lang":"Japanese"}],"segments":[{"secs":8,"beats":[{"from":1,"to":3,"action":"right hand raises cup","who":"S1","line":"hello"}],"exit":{"actors":[{"who":"S1","holding":"cup"}]}}]})).unwrap();
+        let p = compose(&s, 0, "wan-demo", "en");
         assert!(
             p.contains("[1.000-3.000]")
                 && p.contains("[Japanese] \"hello\"")

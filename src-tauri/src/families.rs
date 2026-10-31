@@ -737,6 +737,13 @@ pub fn resolve(roots: &[PathBuf], name: &str) -> Option<PathBuf> {
     roots.iter().map(|r| r.join(&rel)).find(|p| p.exists())
 }
 
+/// 生圖前檢查：選了模型、卻在所有模型資料夾都找不到這個檔 → 給畫面看的說明（不要讓 family_of 猜成 other、用錯流程）
+pub fn missing_model(roots: &[PathBuf], name: &str) -> Option<String> {
+    (!name.is_empty() && resolve(roots, name).is_none()).then(|| {
+        format!("找不到模型檔「{name}」：ComfyUI 的模型資料夾裡沒有這個檔。剛開站的話等幾秒再按一次；還是不行就到模型選單重選一次，或確認檔案還在")
+    })
+}
+
 pub fn family_of(roots: &[PathBuf], name: &str) -> &'static str {
     resolve(roots, name).map(|p| detect(&p)).unwrap_or(OTHER)
 }
@@ -784,6 +791,22 @@ mod tests {
     use super::*;
     use serde_json::json;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    /// 2026-10-31（第一百九十一筆）：站剛開、還不知道模型資料夾時找不到 MOSS 模型檔 → 判成 other → 用 Anima 的文字編碼器跑 MOSS、
+    /// 報「too many values to unpack」。找不到模型檔要講出來，不能猜成 other
+    #[test]
+    fn missing_model_is_reported_not_guessed() {
+        let d = std::env::temp_dir().join(format!("anima_missing_model_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("moss")).unwrap();
+        std::fs::write(d.join("moss").join("m.safetensors"), "x").unwrap();
+        let roots = vec![d.clone()];
+        assert!(missing_model(&roots, "moss\\m.safetensors").is_none());
+        assert!(missing_model(&roots, "").is_none()); // 沒選模型：照舊交給後面
+        let e = missing_model(&roots, "moss_image_sft_int8_convrot.safetensors").expect("要報找不到");
+        assert!(e.contains("moss_image_sft_int8_convrot.safetensors") && e.contains("ComfyUI"), "{e}");
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     fn s(v: &[&str]) -> Vec<String> {
         v.iter().map(|x| x.to_string()).collect()

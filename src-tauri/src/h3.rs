@@ -15,6 +15,14 @@ use std::path::Path;
 
 /// 10Eros-Max beta5 TURBO-hybrid int8（無審核、Turbo 已烤進去、8 步；TenStrip/10Eros-Max）
 pub const MODEL: &str = "10Eros_Max_h3_TURBO-hybrid_beta5_int8.safetensors";
+/// 同一顆的 w4a8 量化版（14GB）：3070 8GB 實測 512×768 5 秒約 200 秒，比 Q3 GGUF 快 1.8 倍、顯存一樣（2026-10-30）
+pub const MODEL_W4A8: &str = "10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized.safetensors";
+
+/// 給小顯存卡的版本（GGUF、w4a8）：沒指定 ff_chunks 就自動切塊
+pub fn low_vram_model(name: &str) -> bool {
+    let l = name.to_lowercase();
+    l.ends_with(".gguf") || l.contains("w4a8")
+}
 pub const TE: &str = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors";
 pub const VAE: &str = "minimax_h3_video_vae_int8_convrot.safetensors";
 pub const AVAE: &str = "minimax_h3_audio_vae_fp32.safetensors";
@@ -485,10 +493,9 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
     if let (Some(v), a) = (num(p, "shift_video"), num(p, "shift_audio")) {
         model = g.add("MiniMaxH3SigmaShift", json!({"model": model, "shift_video": v, "shift_audio": a.unwrap_or(3.0)}));
     }
-    // 顯存小的卡：feedforward 切塊算，峰值顯存變低、結果一樣（ComfyUI 內建 MiniMaxChunkFeedForward）。
-    // GGUF 量化版本來就是給小顯存用的：沒指定就切 8（3070 8GB 實測過）
-    let gguf = model_name.to_lowercase().ends_with(".gguf");
-    let chunks = num(p, "ff_chunks").map(|x| x as i64).or(gguf.then_some(8));
+    // 顯存小的卡：feedforward 切塊算，峰值顯存變低、結果一樣（MiniMaxChunkFeedForward，節點在 ComfyUI-KJNodes，不是內建）。
+    // GGUF、w4a8 本來就是給小顯存用的：沒指定就切 8（3070 8GB 實測過）；ff_chunks 1＝不切
+    let chunks = num(p, "ff_chunks").map(|x| x as i64).or(low_vram_model(model_name).then_some(8));
     if let Some(c) = chunks.filter(|c| (2..=64).contains(c)) {
         model = g.add("MiniMaxChunkFeedForward", json!({"model": model, "chunks": c, "seq_threshold": 4096}));
     }
@@ -742,6 +749,11 @@ mod tests {
         assert!(by_class(&g, "MiniMaxChunkFeedForward").is_empty(), "指定 1＝不切");
         let (g, _) = build(&json!({"prompt": "x", "ff_chunks": 8}), &dir(), 0).unwrap();
         assert_eq!(by_class(&g, "MiniMaxChunkFeedForward")[0]["inputs"]["chunks"], 8);
+        // w4a8 也是小顯存版：沒指定就切 8；預設 int8 不切
+        let (g, _) = build(&json!({"prompt": "x", "model": MODEL_W4A8}), &dir(), 0).unwrap();
+        assert_eq!(by_class(&g, "UNETLoader")[0]["inputs"]["unet_name"], MODEL_W4A8);
+        assert_eq!(by_class(&g, "MiniMaxChunkFeedForward")[0]["inputs"]["chunks"], 8, "w4a8 沒指定就切 8");
+        assert!(by_class(&n, "MiniMaxChunkFeedForward").is_empty(), "int8 預設不切");
         assert_eq!(info["h3_mode"], "fl2v");
         assert_eq!(info["family"], "h3");
         assert_eq!(info["frames"], 243);

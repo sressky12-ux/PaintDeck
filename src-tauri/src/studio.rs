@@ -142,7 +142,7 @@ fn os(s: impl AsRef<OsStr>) -> OsString {
 
 // ---------------------------------------------------------------- Job Object
 #[cfg(windows)]
-mod job {
+pub(crate) mod job {
     use std::os::windows::io::AsRawHandle;
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
     use windows_sys::Win32::System::JobObjects::{
@@ -195,7 +195,7 @@ mod job {
 }
 
 #[cfg(not(windows))]
-mod job {
+pub(crate) mod job {
     pub struct Job;
     impl Job {
         pub fn kill_on_close() -> Option<Job> {

@@ -176,8 +176,34 @@ test('Qwen 複製期間換模型，不往新模型塞舊結果', async () => {
   assert.equal(d.refs.length, 0); assert.equal(d.texts.length, 0);
 });
 
-test('H3 與 LTX 的聲音及語言會寫進提示詞', async () => {
-  for (const family of ['h3', 'ltx']) {
+test('助手：圖放進附圖，句子裡寫跟附圖一樣的編號', async () => {
+  const refs = [], texts = [];
+  const d = { ctx: { family: () => 'agent', insert: (x) => texts.push(x), images: { ref: {
+    max: 4, count: () => refs.length, tag: (n) => `圖 ${n}`, add: (r) => { refs.push(r); return refs.length + 2; },
+  } } } };
+  const subject = moduleContext('assetdrawer.js', {
+    api: async (url, opts) => url.endsWith('/apply') ? { text: '橘髮', images: ['a', 'b'] } : { name: opts.json.file },
+    el: element, toast() {}, assets: {}, store: { get: () => false },
+  }, 'use');
+  await subject.use(d, asset(1, '小克'));
+  assert.deepEqual(refs.map((r) => r.name), ['a', 'b']);
+  assert.deepEqual(texts, ['小克（圖 3、圖 4）：橘髮']);
+});
+
+test('H3：頁面自己放圖（place），文字照插，不走 <imageN>', async () => {
+  const placed = [], texts = [];
+  const d = { ctx: { family: () => 'h3', insert: (x) => texts.push(x), images: { place: async (it, p, toInput) => { placed.push(it.name, ...p.images, (await toInput('a')).name); } } } };
+  const subject = moduleContext('assetdrawer.js', {
+    api: async (url, opts) => url.endsWith('/apply') ? { text: '橘髮', images: ['a', 'b'], views: { a: 'portrait' } } : { name: 'copied_' + opts.json.file },
+    el: element, toast() {}, assets: {}, store: { get: () => false },
+  }, 'use');
+  await subject.use(d, asset(1, '小克'));
+  assert.deepEqual(placed, ['小克', 'a', 'b', 'copied_a']);
+  assert.deepEqual(texts, ['橘髮']);
+});
+
+test('H3 的聲音及語言會寫進提示詞（LTX 已退場）', async () => {
+  for (const family of ['h3']) {
     const d = drawer(async () => ({ text: 'look', images: [], voice: 'soft voice', lang: 'Japanese' }), family);
     await d.use(asset(1, 'Alice'));
     assert.equal(d.texts.length, 1);

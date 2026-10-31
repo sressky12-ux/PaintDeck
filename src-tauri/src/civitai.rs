@@ -202,7 +202,7 @@ impl Civitai {
         }
     }
 
-    async fn get_json(&self, url: &str, query: &[(&str, String)]) -> Result<Value, String> {
+    pub(crate) async fn get_json(&self, url: &str, query: &[(&str, String)]) -> Result<Value, String> {
         let r = self
             .authed(self.http.get(url).query(query))
             .timeout(Duration::from_secs(40))

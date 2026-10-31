@@ -25,7 +25,7 @@ let P = null;        // 目前的專案
 let chars = [];      // 角色卡
 let running = false; // 目前專案有背景工作在跑
 let shown = false;
-let videoChoices = [], defaultVideoEngine = "ltx23";
+let videoChoices = [], defaultVideoEngine = "h3";
 const slotControls = new Map();
 
 // ---------------------------------------------------------------- 載入
@@ -63,9 +63,13 @@ export async function openProject(id) {
   const [p, catalog] = await Promise.all([api(`/api/director/project/${id}`), api("/api/video/workflows").catch(() => null)]);
   if (seq !== openSeq) return;
   P = p;
+  // 2026-10-30 LTX 退場：舊專案、舊段落記的 ltx23 就是內建 H3（下次存檔寫回去）
+  const legacy = (o) => { if (o?.video_engine === "ltx23") o.video_engine = "h3"; if (o?.engine === "ltx23") o.engine = "h3"; };
+  legacy(P.settings);
+  (P.segments || []).forEach(legacy);
   if (catalog) {
-    defaultVideoEngine = catalog.engine || "ltx23";
-    videoChoices = [catalog.builtin || { id: "ltx23", name: "LTX-2.3（內建）" }, ...(catalog.workflows || [])];
+    defaultVideoEngine = catalog.engine || "h3";
+    videoChoices = [{ id: catalog.builtin?.id || "h3", name: gen.H3_NAME }, ...(catalog.workflows || [])];
   }
   const selector = F("dirProj");
   if (![...(selector.options || [])].some((o) => o.value === id)) selector.append(el("option", { value: id }, p.title || "未命名"));
@@ -101,6 +105,7 @@ function fillForm() {
   if (![...(F("dirSecs").options || [])].some((o) => o.value === seconds)) F("dirSecs").append(el("option", { value: seconds }, `${seconds} 秒`));
   F("dirSecs").value = seconds;
   F("dirRes").value = s.res || "720p";
+  F("dirWhere").value = s.h3_where === "cloud" ? "cloud" : "local";
   F("dirStyle").value = s.style || "anime";
   F("dirVisual").value = s.visual || "";
   F("dirExtra").value = s.extra || "";
@@ -147,8 +152,10 @@ function storyCount() {
   const segs = +F("dirSegN").value || Math.min(24, Math.max(3, Math.floor(n / 120)));
   F("dirStoryN").textContent = n ? `${n} 字` : "";
   const secs = +F("dirSecs").value;
-  const per = (F("dirRes").value === "480p" ? 3.5 : 5) * (secs / 5) + 0.5;
-  F("dirEst").textContent = n ? `${+F("dirSegN").value ? "" : "AI 自動大約 "}${segs} 段 × ${secs} 秒 ≈ ${segs * secs} 秒的片；全部生成約 ${Math.round(segs * per)} 分鐘（3070 實測一段 720p 5 秒約 4～5 分鐘）` : "";
+  // H3 實測：本機 8GB 顯卡 w4a8 512×768 5 秒約 3～4 分鐘；雲端 L40S 10 秒約 4～4.5 分鐘
+  const cloud = F("dirWhere").value === "cloud";
+  const per = cloud ? 0.45 * secs + 0.5 : (F("dirRes").value === "480p" ? 3.5 : 6) * (secs / 5) + 0.5;
+  F("dirEst").textContent = n ? `${+F("dirSegN").value ? "" : "AI 自動大約 "}${segs} 段 × ${secs} 秒 ≈ ${segs * secs} 秒的片；全部生成約 ${Math.round(segs * per)} 分鐘（${cloud ? "雲端 L40S 實測 10 秒一段約 4 分鐘" : "8GB 顯卡實測 512×768 5 秒一段約 3～4 分鐘，720p 更久"}）` : "";
 }
 
 const picked = (id) => [...F(id).querySelectorAll(".chip.on")].map((b) => b.dataset.v || b.dataset.id);
@@ -157,7 +164,7 @@ function readForm() {
   if (!P) return;
   P.story = F("dirStory").value;
   P.settings = { ...(P.settings || {}),
-    segments: +F("dirSegN").value, seconds: +F("dirSecs").value, res: F("dirRes").value, style: F("dirStyle").value,
+    segments: +F("dirSegN").value, seconds: +F("dirSecs").value, res: F("dirRes").value, h3_where: F("dirWhere").value, style: F("dirStyle").value,
     visual: F("dirVisual").value, extra: F("dirExtra").value, camera: picked("dirCamera"), light: picked("dirLight"), characters: picked("dirChars"), review: F("dirReview")?.checked !== false };
   storyCount();
   saveSoon();
@@ -340,7 +347,7 @@ function setRunning(on) {
   running = on;
   F("dirStop").hidden = !on;
   for (const id of ["dirRun", "dirConcat", "dirPlan", "dirShots", "dirImgUse", "dirNew", "dirDel", "dirRename", "dirProj"]) F(id).disabled = on;
-  for (const id of ["dirStory", "dirSegN", "dirSecs", "dirRes", "dirStyle", "dirVisual", "dirExtra", "dirReview"]) if (F(id)) F(id).disabled = on;
+  for (const id of ["dirStory", "dirSegN", "dirSecs", "dirRes", "dirWhere", "dirStyle", "dirVisual", "dirExtra", "dirReview"]) if (F(id)) F(id).disabled = on;
   if (!on && P) {
     const segs = P.segments || [];
     F("dirRun").disabled = segs.some((s) => !!s.pending_take);
@@ -516,7 +523,7 @@ export function init() {
     F("dirRun").parentElement.append(el("label", { class: "check inline", title: "每拍完一鏡先預覽並採用；取消勾選會自動採用新版本並連拍" }, review, " 逐鏡審片"));
   }
   // 導演分鏡：資產的外觀文字接在劇情後面
-  drawer.mount(F("dirAssets"), { family: () => "ltx", insert: drawer.appendTo(F("dirStory")) });
+  drawer.mount(F("dirAssets"), { family: () => "h3", insert: drawer.appendTo(F("dirStory")) });
   F("dirSegN").append(...Array.from({ length: 29 }, (_, k) => el("option", { value: k + 2 }, `${k + 2} 段`)));
   F("dirProj").onchange = async () => { await save(); openProject(F("dirProj").value); };
   F("dirNew").onclick = async () => {
@@ -538,7 +545,7 @@ export function init() {
     try { await api("/api/director/project/delete", { json: { id: P.id } }); await loadProjects(null); } catch (e) { toast(e.message, "err"); }
   };
   for (const id of ["dirStory", "dirVisual", "dirExtra"]) F(id).addEventListener("input", readForm);
-  for (const id of ["dirSegN", "dirSecs", "dirRes", "dirStyle"]) F(id).addEventListener("change", readForm);
+  for (const id of ["dirSegN", "dirSecs", "dirRes", "dirWhere", "dirStyle"]) F(id).addEventListener("change", readForm);
   F("dirImgUse").onclick = () => {
     const b = gen.baseParams();
     if (!b.model) return toast("生成頁還沒選模型", "err");

@@ -59,6 +59,8 @@ pub struct Section {
 
 pub struct Skill {
     pub id: String,
+    /// skill 資料夾（意思座標的快取 .vectors.json 放這裡，見 embed.rs）
+    pub dir: PathBuf,
     pub name: String,
     pub desc: String,
     /// source.json（從 GitHub 裝的才有：網址、庫、授權、安裝時間）
@@ -304,7 +306,7 @@ pub fn load(dir: &Path) -> Option<Skill> {
         return None;
     }
     let source = std::fs::read(dir.join("source.json")).ok().and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or(Value::Null);
-    let mut sk = Skill { id: id.clone(), name: String::new(), desc: String::new(), source, files: 0, parts: vec![], sections: vec![] };
+    let mut sk = Skill { id: id.clone(), dir: dir.to_path_buf(), name: String::new(), desc: String::new(), source, files: 0, parts: vec![], sections: vec![] };
     let mut read = 0u64;
     for (i, (rel, path)) in files.iter().enumerate() {
         // 整個資料夾讀超過上限（有人放了一大包資料進來）就停，前面讀到的照用
@@ -421,6 +423,16 @@ impl Skill {
 
     /// 照需求挑段（回索引，照原本順序）：核心段先放（不超過額度一半才放），再依分數高到低裝到額度
     pub fn pick(&self, query: &str, budget: usize) -> Vec<usize> {
+        self.pick_by(None, query, budget)
+    }
+
+    /// 給模型看的一段：標題＋內文（算意思座標用，embed.rs）
+    pub fn doc_text(&self, i: usize) -> String {
+        format!("{}\n{}", self.parts[i].title, self.parts[i].text.trim())
+    }
+
+    /// 同 pick；sem＝意思座標排好的分數（embed.rs 算的，高到低）。沒有就照關鍵字（ranked）
+    pub fn pick_by(&self, sem: Option<&[(f64, usize)]>, query: &str, budget: usize) -> Vec<usize> {
         let mut chosen = vec![];
         let mut used = 0;
         let core = self.sections.iter().find(|s| {
@@ -432,9 +444,13 @@ impl Skill {
                 used += self.parts[s.first].tokens;
             }
         }
-        let ranked = self.ranked(query);
-        // 分數不到第一名三成的多半只是撞到幾個常見字，不挑，免得把額度花在不相干的段
-        let floor = ranked.first().map(|(s, _)| s * MIN_RATIO).unwrap_or(0.0);
+        // 關鍵字：分數不到第一名三成的多半只是撞到幾個常見字，不挑，免得把額度花在不相干的段。
+        // 意思座標每段都有分數（相似度），照排名裝到額度為止
+        let (ranked, ratio) = match sem {
+            Some(r) => (r.iter().copied().filter(|(_, i)| *i < self.parts.len()).collect::<Vec<_>>(), 0.0),
+            None => (self.ranked(query), MIN_RATIO),
+        };
+        let floor = ranked.first().map(|(s, _)| s * ratio).unwrap_or(0.0);
         for (s, i) in ranked {
             if s >= floor && !chosen.contains(&i) && used + self.parts[i].tokens <= budget {
                 chosen.push(i);
@@ -500,7 +516,11 @@ impl Skill {
 
     /// AI 改寫、只寫詞：照需求挑的段（它們不能叫工具，所以不給目錄）。挑不到就空字串
     pub fn pick_block(&self, query: &str, budget: usize) -> String {
-        let idx = self.pick(query, budget);
+        self.pick_block_by(None, query, budget)
+    }
+
+    pub fn pick_block_by(&self, sem: Option<&[(f64, usize)]>, query: &str, budget: usize) -> String {
+        let idx = self.pick_by(sem, query, budget);
         if idx.is_empty() {
             return String::new();
         }
@@ -509,7 +529,11 @@ impl Skill {
 
     /// 助手：挑好的段＋目錄（別的段用 guide 工具讀）
     pub fn agent_block(&self, guide: &str, query: &str) -> String {
-        let idx = self.pick(query, PICK_AGENT);
+        self.agent_block_by(guide, query, None)
+    }
+
+    pub fn agent_block_by(&self, guide: &str, query: &str, sem: Option<&[(f64, usize)]>) -> String {
+        let idx = self.pick_by(sem, query, PICK_AGENT);
         let mut s = format!("{} {FORMAT_NOTE}", self.header());
         if !idx.is_empty() {
             s += "\nParts picked for this request:\n\n";

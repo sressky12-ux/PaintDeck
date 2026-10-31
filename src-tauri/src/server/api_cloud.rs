@@ -1912,6 +1912,23 @@ pub async fn remote_options(app: &Shared, node: &str, field: &str) -> Vec<String
     combo(&v, node, field)
 }
 
+/// 雲端 ComfyUI 有沒有這個節點（INT 欄位的節點沒有選項清單，不能用 remote_options 判斷）
+pub async fn remote_has_node(app: &Shared, node: &str) -> bool {
+    let cloud = &app.agent.cloud;
+    let Some(ep) = cloud.endpoints() else {
+        return false;
+    };
+    let r = cloud
+        .req(reqwest::Method::GET, format!("{}/object_info/{node}", ep.comfy), ep.comfy_key.as_deref())
+        .timeout(Duration::from_secs(20))
+        .send()
+        .await;
+    match r {
+        Ok(r) => r.json::<Value>().await.is_ok_and(|v| v.get(node).is_some()),
+        Err(_) => false,
+    }
+}
+
 /// 網址模式：LoRA 沒辦法上傳，要遠端已經有（照原名、斜線方向、只看檔名依序找）
 async fn remote_lora(app: &Shared, ep: &Endpoints, name: &str) -> Result<String, String> {
     if let Some(r) = app.agent.cloud.st().loras.get(name).cloned() {

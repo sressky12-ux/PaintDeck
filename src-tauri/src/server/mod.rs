@@ -9,6 +9,7 @@ mod api_assets;
 mod api_charsheet;
 mod api_bundle;
 mod api_cloud;
+mod api_colorbook;
 mod api_comic;
 mod api_director;
 mod api_gallery;
@@ -18,6 +19,7 @@ mod api_h3chain;
 mod api_shotsheet;
 mod api_skills;
 mod api_lib;
+mod api_hub;
 mod api_misc;
 mod api_pe;
 mod api_play;
@@ -334,7 +336,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/cache/clear", post(api_cache::clear))
         .route("/api/settings/export", get(api_gen::settings_export))
         .route("/api/settings/import", post(api_gen::settings_import))
-        // 影片模型（內建 LTX-2.3 或匯入的 ComfyUI 工作流）
+        // 影片模型（內建 MiniMax H3 或匯入的 ComfyUI 工作流）
         .route("/api/video/workflows", get(api_video::list).post(api_video::add))
         .route("/api/video/media/upload", post(api_video::upload_media).layer(DefaultBodyLimit::max(220 * 1024 * 1024)))
         .route("/api/video/workflows/{id}", get(api_video::detail).post(api_video::set_map).delete(api_video::remove))
@@ -365,6 +367,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/models/download", post(api_models::download))
         .route("/api/models/downloads", get(api_models::downloads))
         .route("/api/models/restart_comfy", post(api_models::restart_comfy))
+        .route("/api/models/fetch_listed", post(api_models::fetch_listed))
         // 生成與任務
         .route("/api/diagnostics", get(api_diagnostics::list))
         .route("/api/diagnostics/job/{job}", get(api_diagnostics::job))
@@ -392,6 +395,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/reset/undo", post(api_misc::reset_undo))
         // 輸入圖
         .route("/api/upload", post(api_gallery::upload))
+        .route("/api/image/meta", post(api_gallery::image_meta))
         .route("/api/to_input", post(api_gallery::to_input))
         .route("/input/{name}", get(api_gallery::input_file))
         // 圖庫
@@ -464,6 +468,16 @@ pub fn router(app: Shared) -> Router {
         .route("/api/civitai/bases", get(api_misc::civitai_bases))
         .route("/api/civitai/search", get(api_misc::civitai_search))
         .route("/api/civitai/download", post(api_misc::civitai_download))
+        .route("/api/hub/sources", get(api_hub::sources))
+        .route("/api/hub/search", get(api_hub::search))
+        .route("/api/hub/files", get(api_hub::files))
+        .route("/api/hub/tags", get(api_hub::tags))
+        .route("/api/hub/download", post(api_hub::download))
+        .route("/api/hub/workflow", post(api_hub::workflow))
+        .route("/api/hub/modelscope", get(api_hub::ms_get).post(api_hub::ms_set))
+        .route("/api/hub/modelscope/test", post(api_hub::ms_test))
+        .route("/api/hub/rh_run", post(api_hub::rh_run))
+        .route("/api/hub/rh_stop", post(api_hub::rh_stop))
         .route("/api/downloads", get(api_misc::downloads))
         // AI 改寫提示詞
         .route("/api/pe/rewrite", post(api_pe::rewrite))
@@ -509,6 +523,17 @@ pub fn router(app: Shared) -> Router {
         .route("/api/comic/layout/ai", post(api_comic::layout_ai))
         .route("/api/comic/script", post(api_comic::script))
         .route("/api/comic/run/remove", post(api_comic::run_remove))
+        // 整本上色（黑白漫畫，整本丟進來自動上色）
+        .route("/api/colorbook", get(api_colorbook::list))
+        .route("/api/colorbook/new", post(api_colorbook::new).layer(DefaultBodyLimit::max(800 * 1024 * 1024)))
+        .route("/api/colorbook/{id}", get(api_colorbook::get))
+        .route("/api/colorbook/{id}/sheet", post(api_colorbook::sheet))
+        .route("/api/colorbook/{id}/page", post(api_colorbook::page))
+        .route("/api/colorbook/{id}/run", post(api_colorbook::run))
+        .route("/api/colorbook/{id}/stop", post(api_colorbook::stop))
+        .route("/api/colorbook/{id}/file/{dir}/{name}", get(api_colorbook::file))
+        .route("/api/colorbook/{id}/zip", get(api_colorbook::zip))
+        .route("/api/colorbook/{id}/delete", post(api_colorbook::delete))
         // 生圖助手
         .route("/api/agent/sessions", get(api_agent::sessions))
         .route("/api/agent/session/new", post(api_agent::session_new))
@@ -683,6 +708,14 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
     // 使用者自己 ComfyUI 的 extra_model_paths.yaml 裡的資料夾也算（model_dirs::roots）
     crate::model_dirs::init_comfy(&paths.comfy_root);
     let db = Arc::new(Db::open(&paths.db).map_err(|e| format!("開資料庫失敗：{e}"))?);
+    // 程式附的 LoRA 備註（MOSS 合集等）併進資料庫：沒有的才補，要掃 LoRA 資料夾所以放背景
+    {
+        let (db, res, roots) = (db.clone(), paths.res.clone(), paths.lora_roots());
+        std::thread::spawn(move || match crate::setup::merge_lora_notes(&db, &res, &roots) {
+            0 => {}
+            n => eprintln!("[LoRA 備註] 補上或更新了 {n} 筆"),
+        });
+    }
     let hub = Hub::new();
     let diagnostics = crate::diagnostics::Store::new(&paths);
     let comfy = Comfy::new(comfy_url, db.clone(), hub.clone());
@@ -744,6 +777,8 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
             eprintln!("舊角色卡搬進資產庫失敗：{}", e.1);
         }
     });
+    // 升級換模型：刪掉官方 PE、換上新的通用 9B（只做一次；下載失敗下次開站再試，見 api_pe.rs）
+    tokio::spawn(api_pe::retire_old_models(app.clone()));
     // ComfyUI 開著時，問它看得到哪些模型資料夾（補 yaml 讀不到的，例如別的啟動器用參數帶進去的資料夾）；每分鐘更新一次
     let live_url = comfy_url.to_string();
     tokio::spawn(async move {

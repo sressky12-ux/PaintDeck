@@ -49,10 +49,13 @@ impl StripPack {
         s
     }
 
-    /// Anima 精修 tag：只分 underwear 與否，接上使用者補充 tag
+    /// Anima 精修 tag：先照 `target_keep` 查；補丁沒有這組就只分 underwear 與否（舊補丁沒有 _shoes），接上使用者補充 tag
     pub fn refine_tags(&self, target: &str, keep: &str, extra: &str) -> String {
         let k = if keep == "underwear" { "underwear" } else { "all" };
-        let mut s = self.text("refine", &format!("{target}_{k}"));
+        let mut s = self.text("refine", &format!("{target}_{keep}"));
+        if s.is_empty() {
+            s = self.text("refine", &format!("{target}_{k}"));
+        }
         let extra = extra.trim();
         if !s.is_empty() && !extra.is_empty() {
             s.push_str(", ");
@@ -81,8 +84,10 @@ mod tests {
         assert_eq!(p.qwen_prompt("female", "all", ""), "A");
         assert_eq!(p.qwen_prompt("female", "all", "keep hat"), "A\nkeep hat");
         assert_eq!(p.qwen_prompt("male", "underwear", ""), "B");
-        // refine 只分 underwear 與否：keep=shoes 走 _all
+        // 補丁沒有 _shoes 那組：keep=shoes 走 _all；有就用它
         assert_eq!(p.refine_tags("female", "shoes", ""), "ra");
+        let p2 = pack(json!({"qwen": {}, "refine": {"female_all": "ra", "female_shoes": "rs"}}));
+        assert_eq!(p2.refine_tags("female", "shoes", "x"), "rs, x");
         assert_eq!(p.refine_tags("female", "underwear", "miku"), "ru, miku");
         // 補丁缺這組 → 空字串，不會拼出只有 extra 的句子
         assert_eq!(p.qwen_prompt("male", "all", "x"), "");

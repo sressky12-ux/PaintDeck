@@ -11,6 +11,7 @@
 //!   POST /api/models/import {path, kind}   從電腦裡的路徑複製進來
 //!   POST /api/models/place {name, kind}    _incoming 裡猜不出分類的檔，使用者選好分類後歸位
 //!   POST /api/models/download {url, kind}、GET /api/models/downloads   貼網址下載（Hugging Face、Civitai、一般直接連結）
+//!   POST /api/models/fetch_listed {rel}   下載安裝清單裡的某個檔（生成頁缺 MOSS LoRA 時的一鍵下載）
 //!   POST /api/models/restart_comfy         重開 ComfyUI（外部資料夾改了要重開才生效；只有生圖站自己開的 ComfyUI 能重開）
 use super::{bad, blocking, internal, ok, ApiResult, Body, Shared};
 use crate::model_dirs::{self, Dir};
@@ -198,8 +199,9 @@ fn model_name(raw: &str) -> Result<String, super::ApiError> {
     Ok(n)
 }
 
-/// _incoming 裡的檔（已經是正式檔名）放進 models\<分類>。kind 空的＝自己猜；猜不出來就留在 _incoming 等使用者選
-fn place_file(models: &Path, src: &Path, kind: Option<&str>) -> Value {
+/// _incoming 裡的檔（已經是正式檔名）放進 models\<分類>（sub＝分類底下的子資料夾，例如下載中心的 LoRA 照家族分）。
+/// kind 空的＝自己猜；猜不出來就留在 _incoming 等使用者選
+fn place_file(models: &Path, src: &Path, kind: Option<&str>, sub: Option<&str>) -> Value {
     let name = src.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
     let (guess, fam, why) = model_dirs::classify_file(src);
     let kind = kind.filter(|k| !k.is_empty() && *k != "auto").and_then(model_dirs::canonical).or(guess);
@@ -211,7 +213,7 @@ fn place_file(models: &Path, src: &Path, kind: Option<&str>) -> Value {
     let Some(k) = kind else {
         return json!({"name": name, "placed": false, "need_kind": true, "why": why, "family": fam});
     };
-    let dst = models.join(k).join(&name);
+    let dst = models.join(k).join(sub.unwrap_or("")).join(&name);
     if dst.exists() {
         // src 一定是 _incoming 裡生圖站自己收下的那份（上傳、複製、下載來的），原檔還在使用者那邊：丟掉，免得越堆越多
         let _ = std::fs::remove_file(src);
@@ -258,7 +260,7 @@ pub async fn upload(State(app): State<Shared>, Query(q): Query<HashMap<String, S
     let _ = tokio::fs::remove_file(&done).await;
     tokio::fs::rename(&part, &done).await.map_err(internal)?;
     let models = models_root(&app);
-    ok(blocking(move || place_file(&models, &done, Some(&kind))).await)
+    ok(blocking(move || place_file(&models, &done, Some(&kind), None)).await)
 }
 
 /// 從電腦裡的路徑複製進來（原本的檔不動）
@@ -274,7 +276,7 @@ pub async fn import_path(State(app): State<Shared>, Body(body): Body) -> ApiResu
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         let tmp = dir.join(&name);
         std::fs::copy(&src, &tmp).map_err(|e| format!("複製失敗（硬碟滿了？）：{e}"))?;
-        Ok(place_file(&models, &tmp, Some(&kind)))
+        Ok(place_file(&models, &tmp, Some(&kind), None))
     })
     .await
     .map_err(bad)?;
@@ -293,7 +295,7 @@ pub async fn place(State(app): State<Shared>, Body(body): Body) -> ApiResult {
         return Err(bad(format!("找不到 {}（可能已經歸位了）", src.display())));
     }
     let models = models_root(&app);
-    ok(blocking(move || place_file(&models, &src, Some(&kind))).await)
+    ok(blocking(move || place_file(&models, &src, Some(&kind), None)).await)
 }
 
 // ---------------------------------------------------------------- 貼網址下載
@@ -414,6 +416,32 @@ pub(crate) fn download_to(url: String, dest: PathBuf, size: u64, sha256: Option<
     id
 }
 
+/// download_to 那幾筆的進度：（已下載, 總大小, 全部結束了沒, 失敗的原因）。升級換新 9B 時用（api_pe.rs retire_old_models）
+pub(crate) fn progress_of(ids: &[u64]) -> (u64, u64, bool, Vec<String>) {
+    let g = DLS.lock().unwrap_or_else(|e| e.into_inner());
+    let (mut done, mut total, mut over, mut fails) = (0, 0, true, vec![]);
+    for id in ids {
+        let Some(d) = g.iter().find(|d| d["id"] == *id) else {
+            fails.push("下載紀錄不見了".to_string());
+            continue;
+        };
+        let size = d["total"].as_u64().unwrap_or(0);
+        total += size;
+        match d["status"].as_str().unwrap_or("") {
+            "done" => done += size,
+            "error" => {
+                done += d["done"].as_u64().unwrap_or(0);
+                fails.push(d["error"].as_str().unwrap_or("下載失敗").to_string());
+            }
+            _ => {
+                done += d["done"].as_u64().unwrap_or(0);
+                over = false;
+            }
+        }
+    }
+    (done, total, over, fails)
+}
+
 async fn fetch_to(id: u64, url: &str, dest: &Path, size: u64, sha256: Option<&str>) -> Result<(), String> {
     let client = reqwest::Client::builder()
         .proxy(crate::net::proxy())
@@ -461,7 +489,7 @@ pub async fn download(State(app): State<Shared>, Body(body): Body) -> ApiResult 
         let r = fetch(id, &url, &key, &dir).await;
         match r {
             Ok(path) => {
-                let res = blocking(move || place_file(&models, &path, Some(&kind))).await;
+                let res = blocking(move || place_file(&models, &path, Some(&kind), None)).await;
                 dl_set(id, |d| {
                     d.insert("status".into(), json!(if res["placed"] == true { "done" } else if res["need_kind"] == true { "need_kind" } else { "error" }));
                     if let Some(e) = res.get("error") {
@@ -525,6 +553,111 @@ async fn fetch(id: u64, url: &str, civitai_key: &str, dir: &Path) -> Result<Path
     .await
 }
 
+/// 下載中心（api_hub）要下載的一個檔：網址、檔名、大小、SHA256 都是來源（C 站、魔塔）的清單給的
+pub(crate) struct Known {
+    pub url: String,
+    pub name: String,
+    /// 確切大小（魔塔的清單是確切的；C 站的 sizeKB 只是約數，給 None）
+    pub size: Option<u64>,
+    pub sha256: Option<String>,
+    /// 放哪一類（loras、vae…）；None＝看檔頭自己猜（主模型：UNET 還是整包 checkpoint）
+    pub kind: Option<String>,
+    /// 分類底下的子資料夾（LoRA 照家族分：qwen21、moss…）
+    pub sub: Option<String>,
+    /// C 站金鑰（只會送給 civitai.com）
+    pub bearer: Option<String>,
+    /// 魔塔登入的 Cookie（只會送給 modelscope.cn）
+    pub cookie: Option<String>,
+}
+
+/// 下載中心的下載歸位成功後要做的事（收歸位結果）
+pub(crate) type OnPlaced = Box<dyn FnOnce(&Value) + Send>;
+
+/// 下載中心的下載：先存 _incoming（.part 續傳），有 SHA256 就核對（不合就丟掉這次自己下載的暫存檔），再歸位（place_file）。
+/// 歸位成功後呼叫 done(歸位結果)，例如存 LoRA 的觸發詞。進度跟貼網址下載一樣在 /api/models/downloads；回傳 id
+pub(crate) fn download_known(app: &Shared, k: Known, done: Option<OnPlaced>) -> u64 {
+    let (id, already) = dl_begin(&k.url);
+    if already {
+        return id;
+    }
+    let name = super::basename(&k.name);
+    dl_set(id, |d| {
+        d.insert("name".into(), json!(name));
+        d.insert("total".into(), json!(k.size));
+    });
+    let (dir, models) = (incoming(app), models_root(app));
+    tokio::spawn(async move {
+        let r = fetch_known(id, &k, &dir.join(&name)).await;
+        match r {
+            Ok(path) => {
+                let (kind, sub) = (k.kind.clone(), k.sub.clone());
+                let res = blocking(move || place_file(&models, &path, kind.as_deref(), sub.as_deref())).await;
+                if res["placed"] == true {
+                    if let Some(f) = done {
+                        f(&res);
+                    }
+                }
+                dl_set(id, |d| {
+                    d.remove("note");
+                    d.insert("status".into(), json!(if res["placed"] == true { "done" } else if res["need_kind"] == true { "need_kind" } else { "error" }));
+                    if let Some(e) = res.get("error") {
+                        d.insert("error".into(), e.clone());
+                    }
+                    d.insert("result".into(), res);
+                });
+            }
+            Err(e) => dl_set(id, |d| {
+                d.remove("note");
+                d.insert("status".into(), json!("error"));
+                d.insert("error".into(), json!(e));
+            }),
+        }
+    });
+    id
+}
+
+async fn fetch_known(id: u64, k: &Known, dest: &Path) -> Result<PathBuf, String> {
+    if super::basename(&k.name).is_empty() || !model_dirs::is_model_file(dest) {
+        return Err(format!("「{}」不是模型檔（要是 {} 其中一種）", k.name, model_dirs::EXTS.join("、")));
+    }
+    let client = reqwest::Client::builder()
+        .proxy(crate::net::proxy())
+        .user_agent("Mozilla/5.0 (anima-app models)")
+        .connect_timeout(std::time::Duration::from_secs(20))
+        .read_timeout(std::time::Duration::from_secs(90))
+        .build()
+        .map_err(|e| e.to_string())?;
+    let tag = dl::tag(&k.url);
+    let job = dl::Job {
+        bearer: k.bearer.as_deref(),
+        cookie: k.cookie.as_deref(),
+        size: k.size,
+        tag: Some(&tag),
+        ..dl::Job::new(&client, &k.url)
+    };
+    dl::fetch(&job, dl::Dest::Path(dest.to_path_buf()), &mut |done, total| {
+        dl_set(id, |d| {
+            d.insert("done".into(), json!(done));
+            if total.is_some() {
+                d.insert("total".into(), json!(total));
+            }
+        });
+    })
+    .await?;
+    if let Some(want) = k.sha256.as_deref().filter(|s| !s.is_empty()) {
+        dl_set(id, |d| {
+            d.insert("note".into(), json!("核對檔案內容中…"));
+        });
+        let t = dest.to_path_buf();
+        let got = blocking(move || crate::setup::sha256_file(&t).map_err(|e| e.to_string())).await?;
+        if !got.eq_ignore_ascii_case(want) {
+            let _ = tokio::fs::remove_file(dest).await;
+            return Err("下載完了，但內容跟來源公布的檔案核對不上（SHA256 不同），可能是下載途中壞掉：已經丟掉，再按一次會重新下載".into());
+        }
+    }
+    Ok(dest.to_path_buf())
+}
+
 pub async fn downloads() -> ApiResult {
     let g = DLS.lock().unwrap_or_else(|e| e.into_inner());
     ok(json!({"downloads": g.iter().rev().take(30).cloned().collect::<Vec<_>>()}))
@@ -540,12 +673,64 @@ pub async fn restart_comfy(State(app): State<Shared>) -> ApiResult {
         return Err(bad("這個 ComfyUI 不是生圖站開的：請自己把 ComfyUI 關掉再開一次，新的模型資料夾才會生效"));
     };
     f().map_err(bad)?;
+    crate::setup::set_updated(vec![]); // 開站換新的元件，重開後就生效了
     ok(json!({"ok": true}))
+}
+
+/// 生成頁缺 MOSS 加速／編輯 LoRA 時一鍵下載：{rel: "loras/moss/xxx.safetensors"}，只認安裝清單裡的檔（setup::listed_file）。
+/// 已經有＝{ok, have: true}；不然開始下載，回 {ok, id, name, size}（進度看 /api/models/downloads）
+pub async fn fetch_listed(State(app): State<Shared>, Body(body): Body) -> ApiResult {
+    let rel = body["rel"].as_str().unwrap_or_default();
+    let (size, url, sha) = crate::setup::listed_file(&app.paths.res, rel).ok_or_else(|| bad(format!("安裝清單裡沒有 {rel}")))?;
+    let dest = models_root(&app).join(rel);
+    if dest.is_file() {
+        return ok(json!({"ok": true, "have": true}));
+    }
+    // LoRA 在別的資料夾已經有同一顆（大小＋SHA256）：不下載，回它在 ComfyUI 的名稱（lora）讓生成頁直接用
+    let (res, models, extra, roots) = (app.paths.res.clone(), models_root(&app), crate::model_dirs::load(&app.paths.data), app.paths.lora_roots());
+    let rel2 = rel.to_string();
+    let found = blocking(move || {
+        let f = crate::setup::lora_elsewhere(&res, &models, &extra, &rel2)?;
+        roots.iter().find_map(|r| f.strip_prefix(r).ok()).map(|p| p.to_string_lossy().replace('/', "\\"))
+    })
+    .await;
+    if let Some(lora) = found {
+        return ok(json!({"ok": true, "have": true, "lora": lora}));
+    }
+    // check：只問有沒有、不下載（生成頁 MOSS 4B 文字編碼器，不在 LoRA 清單裡看不到）
+    if body["check"].as_bool() == Some(true) {
+        return ok(json!({"ok": true, "have": false}));
+    }
+    let name = dest.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
+    let id = download_to(url, dest, size, sha);
+    ok(json!({"ok": true, "id": id, "name": name, "size": size}))
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 升級換新 9B 時看下載進度：已下載、總大小、全部結束了沒、失敗原因
+    #[test]
+    fn progress_of_sums_and_reports_failures() {
+        let pid = std::process::id();
+        let (a, _) = dl_begin(&format!("https://example.invalid/progress-a-{pid}.gguf"));
+        dl_set(a, |d| {
+            d.insert("total".into(), json!(100));
+            d.insert("done".into(), json!(40));
+        });
+        let (b, _) = dl_begin(&format!("https://example.invalid/progress-b-{pid}.gguf"));
+        dl_set(b, |d| {
+            d.insert("total".into(), json!(50));
+            d.insert("status".into(), json!("done"));
+        });
+        assert_eq!(progress_of(&[a, b]), (90, 150, false, vec![]));
+        dl_set(a, |d| {
+            d.insert("status".into(), json!("error"));
+            d.insert("error".into(), json!("連不上"));
+        });
+        assert_eq!(progress_of(&[a, b]), (90, 150, true, vec!["連不上".to_string()]));
+    }
 
     #[test]
     fn download_urls() {

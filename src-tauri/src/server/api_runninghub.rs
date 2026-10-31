@@ -33,19 +33,19 @@ fn http() -> &'static reqwest::Client {
 }
 
 #[cfg(windows)]
-fn seal(s: &str) -> Result<String, String> {
+pub(super) fn seal(s: &str) -> Result<String, String> {
     crate::settings::protect(s).map_err(|e| format!("加密金鑰失敗：{e}"))
 }
 #[cfg(not(windows))]
-fn seal(s: &str) -> Result<String, String> {
+pub(super) fn seal(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 #[cfg(windows)]
-fn unseal(s: &str) -> Option<String> {
+pub(super) fn unseal(s: &str) -> Option<String> {
     crate::settings::unprotect(s).ok()
 }
 #[cfg(not(windows))]
-fn unseal(s: &str) -> Option<String> {
+pub(super) fn unseal(s: &str) -> Option<String> {
     Some(s.to_string())
 }
 
@@ -200,10 +200,22 @@ pub type Fetched = (String, String, Vec<u8>);
 /// 送一份節點圖上 RunningHub 跑完、把成品抓回來（不存檔）。job＝(工作編號前面要記進工作清單的 params, info)，長片不記
 pub async fn run_files(
     app: &Shared,
+    nodes: Map<String, Value>,
+    job: Option<(&Value, &Value)>,
+    token: &CancellationToken,
+    on_status: &(dyn Fn(String) + Send + Sync),
+) -> Result<(String, Vec<Fetched>), String> {
+    run_files_in(app, nodes, job, token, on_status, None).await
+}
+
+/// 同 run_files；wid＝建任務時帶的 workflowId（下載中心「在 RunningHub 跑」帶那個工作流自己的編號），None＝設定裡的
+pub async fn run_files_in(
+    app: &Shared,
     mut nodes: Map<String, Value>,
     job: Option<(&Value, &Value)>,
     token: &CancellationToken,
     on_status: &(dyn Fn(String) + Send + Sync),
+    wid: Option<&str>,
 ) -> Result<(String, Vec<Fetched>), String> {
     let c = cfg(app);
     if c.key.is_empty() {
@@ -224,7 +236,7 @@ pub async fn run_files(
     }
     rh::rewrite(&mut nodes, &map, &c.models);
     on_status("送到 RunningHub…".into());
-    let created = post_json(&c, "/task/openapi/create", &rh::create_body(&c.key, &nodes, c.instance, &c.workflow_id)).await?;
+    let created = post_json(&c, "/task/openapi/create", &rh::create_body(&c.key, &nodes, c.instance, wid.unwrap_or(&c.workflow_id))).await?;
     let task = rh::parse_create(&created)?;
     let jid = format!("rh-{task}");
     if let Some((params, info)) = job {
@@ -292,7 +304,20 @@ pub async fn run_graph(
     token: &CancellationToken,
     on_status: &(dyn Fn(String) + Send + Sync),
 ) -> Result<(String, Vec<i64>), String> {
-    let (job, got) = run_files(app, nodes, Some((params, info)), token, on_status).await?;
+    run_graph_in(app, nodes, params, info, token, on_status, None).await
+}
+
+/// 同 run_graph；wid 見 run_files_in
+pub async fn run_graph_in(
+    app: &Shared,
+    nodes: Map<String, Value>,
+    params: &Value,
+    info: &Value,
+    token: &CancellationToken,
+    on_status: &(dyn Fn(String) + Send + Sync),
+    wid: Option<&str>,
+) -> Result<(String, Vec<i64>), String> {
+    let (job, got) = run_files_in(app, nodes, Some((params, info)), token, on_status, wid).await?;
     let mut ids = vec![];
     for (sub, base, bytes) in &got {
         ids.extend(super::api_cloud::keep_output(app, sub, base, bytes, params, info, &job)?);

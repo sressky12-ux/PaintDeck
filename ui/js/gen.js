@@ -1,5 +1,5 @@
 // 生成頁：表單、模式切換、送出任務、即時預覽、結果列與圖片動作
-import { $, $$, el, api, toast, debounce, store, uploadFile, pickFile, makeDrop, openModal, closeModal, modeName, isVideo, isVideoPreview, IMAGE_ONLY_ACTS, VIDEO_ONLY_ACTS, fmtSecs } from "./util.js";
+import { $, $$, el, api, toast, debounce, store, uploadFile, pickFile, makeDrop, openModal, closeModal, modeName, isVideo, IMAGE_ONLY_ACTS, VIDEO_ONLY_ACTS, fmtSecs } from "./util.js";
 import { mediaSlotsControl } from "./video-slots.js";
 import { app } from "./state.js";
 import { attachAutocomplete } from "./autocomplete.js";
@@ -18,6 +18,7 @@ import * as wfpanel from "./wfpanel.js";
 import * as models from "./models.js";
 import * as drawer from "./assetdrawer.js";
 import * as lk from "./lockedchips.js";
+import * as imgmeta from "./imgmeta.js";
 
 const SIZES = [
   ["直 1024×1536", 1024, 1536], ["直 832×1216", 832, 1216], ["直 896×1152", 896, 1152], ["方 1024×1024", 1024, 1024],
@@ -149,15 +150,21 @@ export function init() {
   // 工作流參數面板（選了「⚙ 生圖工作流」才出現）、把內建功能匯出成 ComfyUI 工作流
   wfpanel.init({ adopt: adoptSampler });
   F("exportGraph").onclick = exportBuiltin;
+  // 讀圖片參數：套用時照圖的模式（ComfyUI、WebUI 的圖是文生圖）；匯入工作流到設定頁的匯入欄
+  imgmeta.init({ apply: (p) => applyParams(p, true), importWf: (f) => { app.showPage("settings"); models.importImageFile(f); } });
+  F("readMeta").onclick = () => imgmeta.open();
   F("expSave").onclick = exportSave;
   F("expOpen").onclick = () => wfpanel.reveal(F("expOpen").dataset.path);
   F("expGoImport").onclick = goImport;
   F("otherModelsGo").onclick = () => { app.showPage("settings"); models.focusImport(); };
   F("basicMissingHide").onclick = () => { store.set("basicMissingHide", true); F("basicMissing").hidden = true; };
   F("dirsPendingGo").onclick = restartForDirs;
+  F("comfyUpdatedGo").onclick = restartForUpdate;
   F("dirsPendingHide").onclick = () => { store.set("dirsPendingHide", dirsPendingSig(app.state?.models?.dirs_pending)); F("dirsPending").hidden = true; };
   F("turboLora").onchange = () => { modelDefaults(); save(); };
   F("mossFast").onchange = (e) => setMossFast(e.target.checked);
+  F("mossDeband").onchange = (e) => setMossDeband(e.target.checked);
+  F("mossEdit").onchange = (e) => setMossEdit(e.target.checked);
   F("ipMethod").onchange = () => { F("denoise").value = F("ipMethod").value === "lllite" ? 1 : 0.75; F("denoiseOut").textContent = F("denoise").value; save(); };
   F("ipArea").onchange = () => { F("ipPadRow").hidden = F("ipArea").value !== "masked"; save(); };
   F("upRefine").onchange = () => { F("upRefineRow").hidden = !F("upRefine").checked; save(); };
@@ -191,7 +198,7 @@ export function init() {
   F("initTagger").onclick = () => S.init && tagger.open({ name: S.init.name }, applyTags, fam(), triggerWords);
   F("initParams").onclick = () => S.init?.params && applyParams(S.init.params, false);
   document.addEventListener("paste", async (e) => {
-    if (app.page !== "gen") return;
+    if (app.page !== "gen" || !$("#imModal").hidden) return; // 讀圖片參數的視窗開著：貼給它（imgmeta.js）
     const files = [...(e.clipboardData?.files || [])].filter((x) => x.type.startsWith("image/"));
     if (!files.length) return;
     e.preventDefault();
@@ -350,6 +357,7 @@ function fillModels(m) {
   F("otherModels").hidden = !(app.state?.online && names.length && !flows.length);
   if (names.length) F("otherModelsText").textContent = `你的 ComfyUI 裡還有 ${names.join("、")}：生圖站內建的功能畫不了它們，但可以把你平常用的 ComfyUI 工作流匯進來用（之後模型選單最下面會出現「⚙ 工作流」）。`;
   paintDirsPending(m.dirs_pending);
+  paintComfyUpdated(m.comfy_updated);
   checkBasic(m);
 }
 
@@ -363,6 +371,62 @@ function paintDirsPending(p) {
   F("dirsPendingGo").hidden = !p.can_restart;
   F("dirsPendingManual").hidden = !!p.can_restart;
 }
+function paintComfyUpdated(u) {
+  const box = F("comfyUpdated");
+  box.hidden = !u?.list?.length;
+  if (box.hidden) return;
+  F("comfyUpdatedList").textContent = u.list.join("、");
+  F("comfyUpdatedGo").hidden = !u.can_restart;
+  F("comfyUpdatedManual").hidden = !!u.can_restart;
+}
+async function restartForUpdate() {
+  try {
+    await api("/api/models/restart_comfy", { json: {} });
+    F("comfyUpdated").hidden = true;
+    toast("ComfyUI 重開中，大約半分鐘後就是新版", "ok");
+  } catch (e) { toast(e.message, "err"); }
+}
+
+// 安裝清單裡的檔（MOSS 加速／編輯 LoRA）不在：問要不要下載，下載好重新整理模型清單再接著做 then（/api/models/fetch_listed）
+// 清單裡的 LoRA：檔名對得上 re，或是後端說「別的資料夾已經有同一顆」時記下的名稱（store loraAlias，fetchListed 寫）
+function listed(d) {
+  d.is = (name) => d.re.test(name) || name === store.get("loraAlias", {})[d.rel];
+  return d;
+}
+fetchListed.last = {};
+const rememberAlias = (rel, lora) => lora && store.set("loraAlias", { ...store.get("loraAlias", {}), [rel]: lora });
+
+async function fetchListed(rel, label, size, then) {
+  // 先問有沒有：別的資料夾有大小＋SHA256 一樣的同一顆也算（後端回它的名稱 lora），就不用問要不要下載
+  try {
+    const c = await api("/api/models/fetch_listed", { json: { rel, check: true } });
+    if (c.have) {
+      // 檔在、LoRA 選單卻還沒列出來（ComfyUI 還沒讀到）：then 又會叫回來，不要一直繞
+      if (Date.now() - (fetchListed.last[rel] || 0) < 10000) return toast(`${label.trim()}的檔已經在了，但 ComfyUI 的清單還沒更新：等幾秒再試，或到模型頁按「重開 ComfyUI」`, "err");
+      fetchListed.last[rel] = Date.now();
+      rememberAlias(rel, c.lora);
+      await app.refreshState();
+      return then();
+    }
+  } catch { /* 問不到就照舊問要不要下載 */ }
+  if (!confirm(`找不到${label}（${rel}）。現在下載嗎？約 ${size}，下載好會自動套用。`)) return;
+  try {
+    const r = await api("/api/models/fetch_listed", { json: { rel } });
+    if (r.have) { rememberAlias(rel, r.lora); await app.refreshState(); return then(); }
+    toast(`開始下載${label}（約 ${size}），好了會自動套用；進度在設定頁的下載清單`, "ok");
+    const t = setInterval(async () => {
+      let d;
+      try { d = ((await api("/api/models/downloads")).downloads || []).find((x) => x.id === r.id); } catch { return; }
+      if (!d || d.status === "run") return;
+      clearInterval(t);
+      if (d.status !== "done") return toast(`${label}下載失敗：${d.error || "不明原因"}（再勾一次會接著下載）`, "err");
+      await app.refreshState();
+      toast(`${label}下載好了`, "ok");
+      then();
+    }, 2000);
+  } catch (e) { toast(e.message, "err"); }
+}
+
 async function restartForDirs() {
   try {
     await api("/api/models/restart_comfy", { json: {} });
@@ -401,16 +465,73 @@ const defaultNeg = () => (fam() === "qwen21" ? (isQwenAnime() ? QWEN_ANIME_NEG :
 
 // MOSS 快速：lodestones 的 8 步 DMD 加速 LoRA 掛 0.35、步數 10（2026-10-17 實測 3070：25 步約 40 秒 → 約 16 秒，構圖畫風接近）
 // 勾選狀態不另外存：清單裡有啟用這顆 LoRA 就算開著（手動移除它，勾勾也會跟著取消）
-const MOSS_FAST = { re: /(^|[\\/])moss_speed_dmd[^\\/]*\.safetensors$/i, strength: 0.35, steps: 10, normal: 25 };
-const fastLora = () => (app.state?.models?.loras || []).find((x) => MOSS_FAST.re.test(x.name));
-const fastOn = () => S.loras.some((l) => l.enabled && MOSS_FAST.re.test(l.name));
+const MOSS_FAST = listed({ re: /(^|[\\/])moss_speed_dmd[^\\/]*\.safetensors$/i, rel: "loras/moss/moss_speed_dmd_lodestones.safetensors", strength: 0.35, steps: 10, normal: 25 });
+const fastLora = () => (app.state?.models?.loras || []).find((x) => MOSS_FAST.is(x.name));
+const fastOn = () => S.loras.some((l) => l.enabled && MOSS_FAST.is(l.name));
+
+// MOSS 4B 文字編碼器（2026-10-31）：Qwen3.5-4B＋投影轉接器，graphs.rs MOSS_TE_4B／MOSS_4B_ADAPTER。不在 LoRA 清單裡，問後端有沒有
+const MOSS_4B = [["text_encoders/Qwen3.5-4B_int8_convrot.safetensors", " MOSS 4B 文字編碼器", "4.8 GB"],
+  ["moss_encoder_adapters/moss_qwen35_4b_to_9b_1600_train.safetensors", " MOSS 4B 轉接器", "21 MB"]];
+// 都有＝true；缺的話一個接一個下載（每個都先問），回 false
+async function have4b() {
+  const miss = [];
+  for (const f of MOSS_4B) {
+    try { if (!(await api("/api/models/fetch_listed", { json: { rel: f[0], check: true } })).have) miss.push(f); } catch { return true; }
+  }
+  if (!miss.length) return true;
+  const next = () => { const f = miss.shift(); if (f) fetchListed(f[0], f[1], f[2], miss.length ? next : () => toast("4B 文字編碼器都下載好了，再按一次生成", "ok")); };
+  next();
+  return false;
+}
+
+// MOSS 色彩／深度控制的轉接器（darask0，2026-10-31）：用一般 LoRA 載入器掛，所以放在 loras 底下；graphs.rs MOSS_CONTROL_LORA
+const MOSS_CONTROL = listed({ re: /(^|[\\/])moss-color-depth-control[^\\/]*\.safetensors$/i, rel: "loras/moss/moss-color-depth-control.safetensors" });
+const controlLora = () => (app.state?.models?.loras || []).find((x) => MOSS_CONTROL.is(x.name));
+
+// MOSS 照指令改圖（2026-10-30）：圖生圖時輸入圖當參考圖（ComfyUI 的 TextEncodeMOSSImageEdit，comfy_moss 補丁移植），掛編輯 LoRA
+// 預設的 chinoll Moss-Image-Edit 在 MOSS 包裡；使用者自己掛了別的編輯 LoRA（Civitai）就不加
+const MOSS_EDIT = listed({ re: /(^|[\\/])moss_edit_chinoll[^\\/]*\.safetensors$/i, rel: "loras/moss/moss_edit_chinoll.safetensors", strength: 1.0 });
+const editOn = () => fam() === "moss" && S.mode === "img2img" && F("mossEdit").checked;
+function setMossEdit(on) {
+  F("mossEdit").checked = on;
+  if (on && !S.loras.some((l) => l.enabled && /edit|a2r|2real|2anime/i.test(l.name))) {
+    const l = (app.state?.models?.loras || []).find((x) => MOSS_EDIT.is(x.name));
+    if (!l) fetchListed("loras/moss/moss_edit_chinoll.safetensors", " MOSS 編輯 LoRA", "300 MB", () => F("mossEdit").checked && setMossEdit(true));
+    else {
+      const have = S.loras.find((x) => x.name === l.name);
+      if (have) Object.assign(have, { enabled: true, strength: MOSS_EDIT.strength });
+      else S.loras.push({ name: l.name, strength: MOSS_EDIT.strength, enabled: true, title: l.title, min: l.min, max: l.max, slider: l.slider });
+    }
+  }
+  renderLoras();
+  familyUI();
+  save();
+}
+
+// MOSS 去色帶（2026-10-31）：MATLOWAI/MOSS-Image-SFT-DeBand 的 L37–41 權重差，一般 LoRA 載入器、強度 1.0，只對 SFT 模型有意義
+const MOSS_DEBAND = listed({ re: /(^|[\\/])moss_image_sft_banding_fix_L37-41[^\\/]*\.safetensors$/i, rel: "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors" });
+const debandOn = () => S.loras.some((l) => l.enabled && MOSS_DEBAND.is(l.name));
+function setMossDeband(on) {
+  if (on) {
+    const l = (app.state?.models?.loras || []).find((x) => MOSS_DEBAND.is(x.name));
+    if (!l) {
+      F("mossDeband").checked = false;
+      return fetchListed(MOSS_DEBAND.rel, " MOSS 去色帶修正", "1.1 GB", () => { F("mossDeband").checked = true; setMossDeband(true); });
+    }
+    const have = S.loras.find((x) => x.name === l.name);
+    if (have) Object.assign(have, { enabled: true, strength: 1.0 });
+    else S.loras.push({ name: l.name, strength: 1.0, enabled: true, title: l.title, min: l.min, max: l.max, slider: l.slider });
+  } else S.loras = S.loras.filter((x) => !MOSS_DEBAND.is(x.name));
+  renderLoras();
+  save();
+}
 
 function setMossFast(on) {
   if (on) {
     const l = fastLora();
     if (!l) {
       F("mossFast").checked = false;
-      return toast("找不到 MOSS 加速 LoRA（loras\\moss\\moss_speed_dmd_lodestones.safetensors）", "err");
+      return fetchListed(MOSS_FAST.rel, " MOSS 加速 LoRA", "1.1 GB", () => { F("mossFast").checked = true; setMossFast(true); });
     }
     const have = S.loras.find((x) => x.name === l.name);
     if (have) Object.assign(have, { enabled: true, strength: MOSS_FAST.strength });
@@ -418,7 +539,7 @@ function setMossFast(on) {
     S.fastPrevSteps = +F("steps").value;
     F("steps").value = MOSS_FAST.steps;
   } else {
-    S.loras = S.loras.filter((x) => !MOSS_FAST.re.test(x.name));
+    S.loras = S.loras.filter((x) => !MOSS_FAST.is(x.name));
     F("steps").value = S.fastPrevSteps && S.fastPrevSteps !== MOSS_FAST.steps ? S.fastPrevSteps : MOSS_FAST.normal;
   }
   renderLoras();
@@ -466,8 +587,8 @@ function pick(id, v) { if ([...F(id).options].some((o) => o.value === v)) F(id).
 
 function modelDefaults() {
   // 加速 LoRA 只給 MOSS 用，換到別的模型就拿掉
-  if (fam() !== "moss" && S.loras.some((l) => MOSS_FAST.re.test(l.name))) {
-    S.loras = S.loras.filter((x) => !MOSS_FAST.re.test(x.name));
+  if (fam() !== "moss" && S.loras.some((l) => MOSS_FAST.is(l.name) || MOSS_DEBAND.is(l.name))) {
+    S.loras = S.loras.filter((x) => !MOSS_FAST.is(x.name) && !MOSS_DEBAND.is(x.name));
     renderLoras();
   }
   if (fam() === "moss") { F("steps").value = fastOn() ? MOSS_FAST.steps : MOSS_FAST.normal; F("cfg").value = 3; pick("sampler", "euler"); pick("scheduler", "sgm_uniform"); }
@@ -502,6 +623,9 @@ function modelHint() {
   else if (wfLock) F("samplerLock").textContent = "工作流的步數、CFG、取樣器、排程照工作流本身，在上面的「工作流參數」改；勾「用生成頁的步數、CFG、取樣器」才會用這裡的。";
   F("mossFastRow").hidden = fam() !== "moss";
   F("mossFast").checked = fastOn();
+  F("mossDebandRow").hidden = fam() !== "moss" || !/sft/i.test(F("model").value || "");
+  F("mossDeband").checked = debandOn();
+  F("mossTeRow").hidden = fam() !== "moss";
   F("exportRow").hidden = wf;  // 匯入的工作流本來就是 ComfyUI 的工作流，匯出在設定頁
   F("modelHint").textContent = wf
     ? "匯入的工作流：提示詞、負面提示詞（空白＝照工作流）、種子、寬高（文生圖）、張數、輸入圖、遮罩都會套進工作流；生成頁選的 LoRA 會自動接在主模型載入節點後面。" +
@@ -627,7 +751,11 @@ function layAspect() {
 function familyUI() {
   const q = fam() === "qwen21", noLllite = fam() !== "anima";
   F("layBox").hidden = !layOn();
-  F("controlBox").hidden = noLllite || !(S.mode === "txt2img" || S.mode === "img2img");
+  // MOSS：文生圖用色彩／深度控制（另一套欄位，graphs.rs moss_control）
+  const mossCtl = fam() === "moss" && S.mode === "txt2img";
+  F("controlBox").hidden = !mossCtl && (noLllite || !(S.mode === "txt2img" || S.mode === "img2img"));
+  for (const id of ["ctrlTypeWrap", "ctrlPreWrap", "ctrlInvertRow"]) F(id).hidden = mossCtl;
+  F("ctrlMossRow").hidden = !mossCtl;
   F("hiresBox").hidden = fam() === "custom" || !(S.mode === "txt2img" || S.mode === "img2img");
   F("ipMethodRow").hidden = noLllite;
   F("refFamilyWarn").hidden = q || fam() === "custom" || S.mode !== "multiref";
@@ -637,6 +765,8 @@ function familyUI() {
   F("inpaintBox").hidden = S.mode !== "inpaint" || cw;
   F("upscaleBox").hidden = S.mode !== "upscale" || cw;
   F("denoiseHint").textContent = (q ? MODE_HINT_Q : fam() === "moss" ? MODE_HINT_M : MODE_HINT)[S.mode] || "";
+  F("mossEditRow").hidden = !(fam() === "moss" && S.mode === "img2img");
+  if (editOn()) F("denoiseHint").textContent = "照指令改圖：輸入圖只當參考，從空白重畫（重繪固定 1）。提示詞寫要怎麼改，例如「把外套改成紅色，其他保持不變」。";
   pe.refreshTask();
   renderLocked();
 }
@@ -821,6 +951,7 @@ function renderLoras() {
   if (S.officialTurbo !== undefined && ot !== S.officialTurbo) { S.officialTurbo = ot; modelDefaults(); }
   S.officialTurbo = ot;
   F("mossFast").checked = fastOn();
+  F("mossDeband").checked = debandOn();
   const box = F("loraStack");
   box.innerHTML = "";
   renderTrig();
@@ -957,8 +1088,17 @@ export function collectParams() {
     p.hires = { enabled: F("hiresOn").checked, scale: num("hiresScale"), denoise: num("hiresDenoise"), upscaler: F("hiresUpscaler").value };
     p.control = { enabled: F("ctrlOn").checked, type: F("ctrlType").value, preprocess: F("ctrlPre").value, invert: F("ctrlInvert").checked,
       strength: num("ctrlStr"), start: 0, end: num("ctrlEnd"), image: S.ctrl?.name || (S.mode === "img2img" ? S.init?.name : null) };
+    if (fam() === "moss") {
+      if (S.mode === "txt2img" && p.control.enabled) p.moss_control = { enabled: true, image: p.control.image, depth: F("ctrlMossDepth").checked,
+        color: F("ctrlMossColor").checked, strength: p.control.strength, end: p.control.end, adapter: controlLora()?.name };
+      delete p.control;
+    }
   }
-  if (layOn()) { const boxes = lay.usable(); if (boxes.length) p.layout = boxes; }
+  // 姿勢參考圖（MOSS）：有色彩／深度控制轉接器就改用它（深度圖當控制、從空白畫），沒有照舊從深度圖重繪
+  if (fam() === "moss" && p.pose_control && controlLora()) p.pose_control = { ...p.pose_control, adapter: controlLora().name };
+  if (layOn() && !editOn()) { const boxes = lay.usable(); if (boxes.length) p.layout = boxes; }
+  if (editOn()) p.moss_edit = "auto";
+  if (fam() === "moss" && F("mossTe").value === "4b") p.moss_te = "4b";
   if (fam() === "custom") {
     // 工作流組：「工作流參數」面板改過的值（鍵是「節點編號.欄位」，後端最後套上）
     const ov = wfpanel.overrides(F("model").value.slice(3), S.mode);
@@ -975,7 +1115,7 @@ export function baseParams() {
 }
 
 const FORM_IDS = ["prompt", "negative", "width", "height", "autoSize", "denoise", "ipMethod", "ipArea", "ipGrow", "ipBlur", "ipPad", "upModel", "upScale", "upRefine", "upDenoise",
-  "hiresOn", "hiresScale", "hiresDenoise", "hiresUpscaler", "ctrlOn", "ctrlType", "ctrlPre", "ctrlStr", "ctrlEnd", "ctrlInvert", "model", "steps", "cfg", "sampler", "scheduler", "turboLora", "seed", "count", "refPixels",
+  "hiresOn", "hiresScale", "hiresDenoise", "hiresUpscaler", "ctrlOn", "ctrlType", "ctrlPre", "ctrlStr", "ctrlEnd", "ctrlInvert", "ctrlMossDepth", "ctrlMossColor", "mossTe", "model", "steps", "cfg", "sampler", "scheduler", "turboLora", "seed", "count", "refPixels",
   "stripTarget", "stripKeep", "stripRefine", "stripDenoise", "stripMerge", "stripExtra", "stripTags", "sheetReq",
   "opTop", "opBottom", "opLeft", "opRight", "opFeather", "autoDetail", "detailDenoise", "batchLines"];
 
@@ -1025,7 +1165,7 @@ function restore() {
   const d = {
     prompt: "masterpiece, best quality, safe, 1girl, solo, ", width: 1024, height: 1536, autoSize: true, denoise: 0.6,
     ipMethod: "lllite", ipArea: "full", ipGrow: 8, ipBlur: 12, ipPad: 64, upScale: "2", upDenoise: 0.3,
-    hiresScale: 1.5, hiresDenoise: 0.4, ctrlType: "any", ctrlPre: "canny", ctrlStr: 1, ctrlEnd: 1, ctrlInvert: true,
+    hiresScale: 1.5, hiresDenoise: 0.4, ctrlType: "any", ctrlPre: "canny", ctrlStr: 1, ctrlEnd: 1, ctrlInvert: true, ctrlMossDepth: true, ctrlMossColor: true, mossTe: "9b",
     stripTarget: "female", stripKeep: "all", stripRefine: true, stripDenoise: 0.35, stripMerge: true, stripExtra: "", stripTags: "", sheetReq: "",
     opTop: 0, opBottom: 0, opLeft: 0, opRight: 0, opFeather: 40, autoDetail: false, detailDenoise: 0.4, batchLines: false,
     steps: 8, cfg: 1, count: "4", mode: "txt2img",
@@ -1036,7 +1176,13 @@ function restore() {
 // 從圖庫或圖片讀到的參數套回表單
 export function applyParams(p, withMode = true) {
   if (!p) return toast("這張圖沒有可用的生成參數", "err");
-  const set = (id, v) => { if (v !== undefined && v !== null && F(id)) F(id).value = v; };
+  // 選單沒有這個值（別台電腦、別的軟體的取樣器）就維持目前的，不要變成空白
+  const set = (id, v) => {
+    const e = F(id);
+    if (v === undefined || v === null || !e) return;
+    if (e.tagName === "SELECT" && ![...e.options].some((o) => o.value === String(v))) return;
+    e.value = v;
+  };
   set("prompt", p.prompt); set("negative", p.negative); set("steps", p.steps); set("cfg", p.cfg);
   set("sampler", p.sampler); set("scheduler", p.scheduler); set("seed", p.seed);
   if (p.width && p.height && p.mode !== "upscale") { set("width", p.width); set("height", p.height); }
@@ -1152,6 +1298,12 @@ async function generate() {
   } else if (S.mode !== "txt2img" && !p.init_image) return toast("請先放入一張圖片", "err");
   if (S.mode === "inpaint" && !p.mask) return toast("請先按「畫遮罩」塗出要重繪的區域", "err");
   if (p.control?.enabled && !p.control.image) return toast("構圖控制需要一張控制圖", "err");
+  if (fam() === "moss" && S.mode === "txt2img" && F("ctrlOn").checked) {
+    if (!S.ctrl?.name) return toast("構圖控制需要一張參考圖：拖進控制圖那一格", "err");
+    if (!F("ctrlMossDepth").checked && !F("ctrlMossColor").checked) return toast("深度、色塊至少勾一個", "err");
+    if (!controlLora()) return fetchListed(MOSS_CONTROL.rel, " MOSS 色彩／深度控制轉接器", "300 MB", () => toast("下載好了，再按一次生成", "ok"));
+  }
+  if (fam() === "moss" && F("mossTe").value === "4b" && !(await have4b())) return;
   if (S.mode === "sheet") {
     if (!p.sheet.req) return toast("請先寫「修改要求」，或從常用要求挑一個", "err");
     if (/[图圖]\s*2/.test(p.sheet.req) && !p.sheet.ref) return toast("要求裡提到圖2，請先放服裝參考圖", "err");
@@ -1238,7 +1390,6 @@ function show(rec) {
   img.classList.toggle("alpha", rec.mode === "rembg");  // 去背的透明圖墊棋盤格（play.css）
   for (const a of IMAGE_ONLY_ACTS) $$(`#viewActions [data-act="${a}"]`).forEach((b) => (b.hidden = isVid));
   for (const a of VIDEO_ONLY_ACTS) $$(`#viewActions [data-act="${a}"]`).forEach((b) => (b.hidden = !isVid));
-  $("#viewActions [data-act=video_final]").hidden = !isVideoPreview(rec);
   F("viewEmpty").hidden = true;
   F("viewActions").hidden = false;
   const ls = (rec.params?.loras || []).map((x) => `${(x.name || "").replace(/\.safetensors$/, "")} ${x.strength}`);
@@ -1302,14 +1453,6 @@ export async function imageAction(act, rec, btn, quiet = false) {
       if (!quiet) { app.showPage("gen"); toast(`已加入多圖參考（第 ${refs.get().length} 張）`, "ok"); }
     } else if (act === "video") {
       openVideo(rec);
-    } else if (act === "video_final") {
-      // 同一個種子重跑完整兩段：第一段跟預覽一模一樣，再放大
-      const p = (await api(`/api/image/${rec.id}`)).params || {};
-      // 預覽只有內建的 LTX 有（舊的預覽沒記 video_engine）
-      const res = await api("/api/generate", { json: { count: 1, params: { ...p, video_engine: p.video_engine || "ltx23", video_preview: false, poster: undefined, prompt_resolved: undefined } } });
-      for (const j of res.jobs) S.pending.set(j.job, { seed: j.seed });
-      renderStrip();
-      toast(`已排入正式版（種子 ${p.seed}），720p 5 秒大約 3 分鐘`, "ok");
     } else if (act === "lib") {
       const full = await api(`/api/image/${rec.id}`);
       if (!full.params || !Object.keys(full.params).length) return toast("這張圖沒有生成參數，沒辦法存成整套設定", "err");
@@ -1333,16 +1476,14 @@ export async function imageAction(act, rec, btn, quiet = false) {
   }
 }
 
-// ---------------------------------------------------------------- 讓圖動起來（內建 LTX-2.3 10Eros，或設定裡匯入的 ComfyUI 影片工作流）
+// ---------------------------------------------------------------- 讓圖動起來（內建 MiniMax H3，或設定裡匯入的 ComfyUI 影片工作流）
+// 2026-10-30 LTX-2.3 退場：內建影片就是 H3（server\api_h3.rs 的 from_gen／submit_from_gen）
 /** 內建影片模型的名字（寫在網頁這邊才會進英文字典） */
-export const LTX_NAME = "LTX-2.3 10Eros（內建）";
-/** 影片模型選 H3：「動起來」改開導演頁的 H3 影片台（video_wf::H3） */
-export const H3_NAME = "MiniMax H3（H3 影片台）";
+export const H3_NAME = "MiniMax H3（內建）";
 /** 現在用的影片模型：{id, name, builtin, info, error}（info＝自訂工作流看懂的摘要，見 video_wf.rs） */
 export async function videoEngine() {
   const r = await api("/api/video/workflows");
-  if (r.engine === r.builtin.id) return { id: r.builtin.id, name: LTX_NAME, builtin: true, info: null, error: "" };
-  if (r.engine === "h3") return { id: "h3", name: H3_NAME, builtin: false, h3: true, info: null, error: "" };
+  if (r.engine === r.builtin.id) return { id: r.builtin.id, name: H3_NAME, builtin: true, info: null, error: "" };
   const w = r.workflows.find((x) => x.id === r.engine);
   return { id: r.engine, name: w?.name || r.engine, builtin: false, info: w?.info || null, pins: w?.pins || [], media_slots: w?.media_slots || w?.info?.media_slots || [], error: w ? w.error || "" : "找不到這個工作流" };
 }
@@ -1361,17 +1502,18 @@ function paintVidMedia() {
   vidMedia.element.id = "vidMediaSlots";
   F("vidParams").after(vidMedia.element);
 }
-/** 「動起來」選的是不是 H3 本機：回傳模型檔名（空字串＝用設定裡的影片模型） */
+/** 「動起來」指定了 H3 本機的哪顆模型：回傳模型檔名（空字串＝內建的自動挑，或設定裡的匯入工作流） */
 const vidH3Model = () => (F("vidModel").value.startsWith("h3:") ? F("vidModel").value.slice(3) : "");
+/** 這次走 H3（內建、或下拉指定了 H3 模型） */
+const vidIsH3 = () => !!vidEng?.builtin || !!vidH3Model();
 
-// 影片模型下拉：設定裡的（LTX 或自訂工作流）＋本機裝了的 H3（GGUF 量化版排前面）
+// 影片模型下拉：設定裡的（H3 自動挑或自訂工作流）＋本機裝了的 H3 模型（GGUF 量化版排前面）
 function fillVidModel() {
   const sel = F("vidModel"), keep = store.get("vidModel", "");
   const h3 = [...vidH3].sort((a, b) => b.toLowerCase().endsWith(".gguf") - a.toLowerCase().endsWith(".gguf"));
-  sel.replaceChildren(el("option", { value: "" }, vidEng ? vidEng.name : LTX_NAME),
+  sel.replaceChildren(el("option", { value: "" }, vidEng ? vidEng.name : H3_NAME),
     ...h3.map((m) => el("option", { value: "h3:" + m }, m.toLowerCase().endsWith(".gguf") ? `MiniMax H3 本機量化版（${m}）` : `MiniMax H3 本機（${m}）`)));
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
-  F("vidModelBox").hidden = !h3.length;
   paintVidModel();
 }
 
@@ -1407,56 +1549,34 @@ function pinOverrides() {
   return Object.keys(o).length ? o : undefined;
 }
 
-// 內建 LTX 的影片 LoRA：打勾＋強度，記在這個瀏覽器（{檔名: 強度}，沒勾的不記）
-const LTX_LORA_MAX = 4;
-const ltxLoras = () => (app.state?.models?.loras || []).filter((x) => x.ltx);
-function vidLoraOn() { return !!vidEng?.builtin && !vidH3Model(); }
-function paintVidLoras() {
-  const on = vidLoraOn(), list = ltxLoras(), mine = store.get("vidLoras", {});
-  F("vidLoraBox").hidden = !on;
-  F("vidLoraNone").hidden = !!list.length;
-  F("vidLoras").replaceChildren(...list.map((l) => {
-    const chk = el("input", { type: "checkbox", checked: l.name in mine });
-    const num = el("input", { type: "number", step: "0.05", min: "-2", max: "2", value: mine[l.name] ?? 1, "aria-label": "強度" });
-    const put = () => {
-      const all = store.get("vidLoras", {});
-      if (!chk.checked) delete all[l.name];
-      else if (!(l.name in all) && Object.keys(all).length >= LTX_LORA_MAX) { chk.checked = false; return toast(`影片 LoRA 最多同時掛 ${LTX_LORA_MAX} 個`, "err"); }
-      else all[l.name] = num.value === "" ? 1 : +num.value;
-      store.set("vidLoras", all);
-    };
-    chk.onchange = num.onchange = put;
-    return el("div", { class: "wf-f" }, el("label", { class: "check", title: l.name, translate: "no" }, chk, " ", l.title || l.name.replace(/\.safetensors$/i, "")), num);
-  }));
-}
-/** 這次要送的影片 LoRA（只送目前還在的） */
-function vidLoraParams() {
-  if (!vidLoraOn()) return undefined;
-  const have = new Set(ltxLoras().map((l) => l.name));
-  const v = Object.entries(store.get("vidLoras", {})).filter(([n]) => have.has(n)).map(([name, strength]) => ({ name, strength }));
-  return v.length ? v : undefined;
-}
+// H3 可以選本機或雲端（記在這個瀏覽器，預設本機）；雲端走 H3 影片台同一條路（/api/h3/generate），影片做好進圖庫
+const vidCloud = () => vidIsH3() && F("vidWhere").value === "cloud";
+F("vidWhere").value = store.get("h3Where", "local") === "cloud" ? "cloud" : "local";
+F("vidWhere").onchange = () => { store.set("h3Where", F("vidWhere").value); paintVidModel(); };
 
-// 選 H3：沒有預覽挑種子（LTX 專用）、說明換成 H3 的
+// 下拉指定了 H3 模型：說明換成那顆的
 function paintVidModel() {
   paintPins();
   paintVidMedia();
-  paintVidLoras();
+  F("vidWhereBox").hidden = !vidIsH3();
+  // 雲端用雲端機器上的模型，本機的模型清單用不到
+  F("vidModelBox").hidden = !vidH3.length || vidCloud();
+  if (vidCloud()) {
+    F("vidResBox").hidden = F("vidSecsBox").hidden = false;
+    F("vidEngine").textContent = "MiniMax H3 雲端：要先在「導演 → H3 影片」開好雲端（勾 H3 影片包），做好的影片會進圖庫";
+    return;
+  }
   const m = vidH3Model();
   if (!m) return paintVidEngine();
   F("vidResBox").hidden = F("vidSecsBox").hidden = false;
-  F("vidPreviewBox").hidden = true;
   F("vidEngine").textContent = m.toLowerCase().endsWith(".gguf")
-    ? "MiniMax H3 本機量化版：有聲音、動作比 LTX 穩。8GB 顯卡很慢（實測 480p 3 秒約 15 分鐘），720p、長一點的可能要一兩個小時或記憶體不夠"
-    : "MiniMax H3 本機：有聲音、動作比 LTX 穩。這個模型 21GB，要 24GB 以上的顯卡才跑得動";
+    ? "MiniMax H3 本機量化版：有聲音。8GB 顯卡很慢（實測 480p 3 秒約 15 分鐘），720p、長一點的可能要一兩個小時或記憶體不夠"
+    : /w4a8/i.test(m)
+      ? "MiniMax H3 本機 w4a8：有聲音，8GB 顯卡跑得動（實測 512×768 5 秒約 3～4 分鐘）"
+      : "MiniMax H3 本機：有聲音。這個模型很大，顯卡小的話選 w4a8 版";
 }
 
 async function openVideo(rec) {
-  // 影片模型選 H3：帶這張圖到導演頁的 H3 影片台當首幀
-  try {
-    const eng = await videoEngine();
-    if (eng.h3) return (await import("./h3.js")).startFrom(rec);
-  } catch { /* 讀不到設定：照舊開下面的視窗，它會顯示錯誤 */ }
   vidRec = rec;
   vidMediaEpoch++; vidMedia = null; F("vidMediaSlots")?.remove();
   F("vidSrc").src = `/img/${rec.id}`;
@@ -1466,27 +1586,25 @@ async function openVideo(rec) {
   F("vidEngine").textContent = "";
   try { vidEng = await videoEngine(); } catch (e) { F("vidEngine").textContent = "讀不到影片模型的設定：" + e.message; return; }
   paintVidEngine();
-  paintVidLoras();
-  // 本機有 H3 模型就多一個選項（讀不到就只有設定裡的）
+  // 本機有 H3 模型就列出來可以指定（讀不到就只有設定裡的）
   try { vidH3 = ((await api("/api/h3/info")).local?.models) || []; } catch { vidH3 = []; }
   fillVidModel();
 }
 
-// 設定裡的影片模型（LTX 或自訂工作流）的說明和選項
+// 設定裡的影片模型（內建 H3 或自訂工作流）的說明和選項
 function paintVidEngine() {
   if (!vidEng) return;
-  // 自訂工作流：沒有預覽；解析度照工作流；讀得到每秒幾格才能選秒數
+  // 自訂工作流：解析度照工作流；讀得到每秒幾格才能選秒數
   const custom = !vidEng.builtin, i = vidEng.info;
   const notes = [];
   if (vidEng.error) notes.push("這個工作流讀不懂：" + vidEng.error);
   else if (custom) {
     if (!i.image) notes.push("這個工作流沒有 Load Image，不能從圖生影片");
     notes.push(i.seconds ? "解析度照工作流" : "長度、解析度照工作流");
-  }
+  } else notes.push("本機自動挑最省顯存的 H3 模型（8GB 顯卡用 w4a8）");
   F("vidEngine").textContent = `影片模型：${vidEng.name}${notes.length ? "・" + notes.join("・") : ""}・到「設定」可以換`;
   F("vidResBox").hidden = custom;
   F("vidSecsBox").hidden = custom && !i?.seconds;
-  F("vidPreviewBox").hidden = custom;
 }
 F("vidModel").onchange = () => { store.set("vidModel", F("vidModel").value); paintVidModel(); };
 F("vidGo").onclick = async () => {
@@ -1497,16 +1615,21 @@ F("vidGo").onclick = async () => {
   try {
     const media = vidMedia?.read() || {};
     const r = await api("/api/to_input", { json: { id: vidRec.id } });
-    const preview = F("vidPreview").checked && !F("vidPreviewBox").hidden;
-    const h3 = vidH3Model(), ov = pinOverrides(), vl = vidLoraParams();
-    const res = await api("/api/generate", { json: { count: preview ? 3 : 1, params: {
+    const h3 = vidIsH3(), m = vidH3Model(), ov = pinOverrides();
+    const params = {
       mode: "video", init_image: r.name, prompt, seed: -1, video_seconds: +F("vidSecs").value, video_res: F("vidRes").value,
-      video_preview: preview, idea: vidRec.idea || "", model: "", ...(h3 ? { video_engine: "h3", h3_model: h3 } : {}), ...(ov ? { wf_overrides: ov } : {}),
-      ...(vl ? { video_loras: vl } : {}), ...(Object.keys(media).length ? { media_slots: media } : {}) } } });
+      idea: vidRec.idea || "", model: "", ...(h3 ? { video_engine: "h3" } : {}), ...(m ? { h3_model: m } : {}), ...(ov ? { wf_overrides: ov } : {}),
+      ...(Object.keys(media).length ? { media_slots: media } : {}) };
+    if (vidCloud()) {
+      await api("/api/h3/generate", { json: { gen: params, where: "cloud", count: 1 } });
+      closeModal("#vidModal");
+      return toast("已送到雲端：H3 影片做好會進圖庫（進度在「導演 → H3 影片」）", "ok");
+    }
+    const res = await api("/api/generate", { json: { count: 1, params } });
     for (const j of res.jobs) S.pending.set(j.job, { seed: j.seed });
     renderStrip();
     closeModal("#vidModal");
-    toast(h3 ? "H3 影片已排入：本機很慢，進度看右上角的任務面板" : preview ? "已排入 3 支預覽：挑一支喜歡的，在它上面按「放大成正式版」" : vidEng && !vidEng.builtin ? "影片已排入" : "影片已排入，720p 5 秒大約 3 分鐘", "ok");
+    toast(h3 ? "H3 影片已排入：本機要跑幾分鐘，進度看右上角的任務面板" : "影片已排入", "ok");
   } catch (e) { toast(e.message, "err"); }
   finally { b.disabled = false; }
 };

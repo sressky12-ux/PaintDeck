@@ -1,4 +1,4 @@
-// AI 改寫提示詞（Qwen-Image 2.1 PE Heretic）：想法 → 官方格式的完整提示詞；版本歷史、差異標示、反覆微調、中文對照、建議比例、生成時自動改寫。
+// AI 改寫提示詞（通用模型 9B／35B；官方 PE 2026-10-30 拿掉了）：想法 → 官方格式的完整提示詞；版本歷史、差異標示、反覆微調、中文對照、建議比例、生成時自動改寫。
 // 後端是 /api/pe/rewrite（SSE 串流）；llama-server 的啟動、顯存協調、快取都在伺服器那邊。
 import { $, $$, el, toast, store, api, fmtBytes } from "./util.js";
 import { app } from "./state.js";
@@ -40,8 +40,10 @@ export function init(c) {
   peSeed = s.seed || 0;
   zhCost = s.zhCost ?? null;
   F("peIdea").value = s.idea || "";
-  F("peZhOn").checked = !!s.zh;
-  F("peThinkOn").checked = !!s.think;
+  // 還沒自己切過：照設定頁的「預設開啟」（2026-10-29 盤點：以前永遠照瀏覽器存的舊值，設定頁勾了沒反應）
+  const def = app.state?.settings || {};
+  F("peZhOn").checked = !!(s.zh ?? def.pe_zh);
+  F("peThinkOn").checked = !!(s.think ?? def.pe_think);
   F("peAuto").checked = !!s.auto;
   F("peDiffOn").checked = s.diff ?? true;
   // 改寫預設：舊版只有「成人（體位）」勾選框，勾著的就換成選單的 adult
@@ -53,6 +55,14 @@ export function init(c) {
   F("pePreset").onchange = () => { refreshTask(); save(); };
   F("pePose").onchange = () => { refreshTask(); save(); };
   F("pePoseCtl").onchange = save;
+  // 2026-10-31 使用者：「可以從35b/9b進行自由切換 因為疑似這裡都強制使用35b」。跟設定頁「通用模型」同一個設定（pe_general）
+  F("peGeneral").onchange = async () => {
+    try {
+      await api("/api/settings", { json: { pe_general: F("peGeneral").value } });
+      await app.refreshState();
+      toast("AI 改寫改用：" + F("peGeneral").selectedOptions[0].textContent, "ok");
+    } catch (e) { toast(e.message, "err"); }
+  };
   // 到設定頁改這個類型的系統提示詞
   F("peEditSys").onclick = () => {
     const t = task();
@@ -142,8 +152,28 @@ function mismatch(t) {
   if (!qwen && t === "i2i") return "「改圖版」是給 Qwen 2.1 看參考圖用的，目前的模型用不到。建議選「自動」。";
   if (t === "i2i" && !withImg) return "「改圖版」要看參考圖，現在的模式沒有放圖，改寫會失敗。換到圖生圖、局部重繪或多圖參考再用。";
   if (qwen && t === "t2i" && withImg) return "現在是要放圖的模式，「文生圖版」不會看你放的圖，只照想法寫。要它看圖請選「自動」或「改圖版」。";
+  // 2026-10-29 盤點：MOSS 的圖生圖／局部重繪按「自動」會走文生圖版、不送原圖，以前一聲不吭
+  if (!qwen && prose() && t === "t2i" && withImg) return "MOSS-Image 的改寫不會看你放的圖，只照想法寫整張畫面的描述。只想改一小處（例如換個手勢）又要其他不變，建議換 Qwen 2.1 用「改圖版」。";
   if (t === "adult" && withImg) return "「成人（體位）」只照想法寫文生圖用的提示詞，不會看你放的圖。";
   return "";
+}
+
+// 底下那行「模型：…」照後端 pe.rs::rewrite_kind 寫出這次會用哪顆。2026-10-30 官方 PE 整個拿掉：只剩通用模型，看圖的還要它的看圖檔
+function modelNote(t) {
+  const av = app.state?.pe?.available;
+  if (!av) return "模型：通用模型 Qwen3.5-9B／Qwen3.6-35B（跟生圖助手同一顆）";
+  if (!av.adult) return "模型：找不到改寫模型，到「安裝與修復」勾「AI 改寫、生圖助手」下載通用 9B";
+  if (t === "i2i" && !av.vision) return `模型：通用模型 ${av.adult}（看圖要它的看圖檔 mmproj，改寫時會附下載按鈕）`;
+  return `模型：通用模型 ${t === "i2i" ? av.vision : av.adult}`;
+}
+
+// 設定頁指定了 LLM 資料夾裡的某一顆：選單多一項顯示它（選回自動／35B／9B 就不再出現）
+function syncGeneral(cur) {
+  const sel = F("peGeneral");
+  if (document.activeElement === sel) return;
+  sel.querySelector("option[data-custom]")?.remove();
+  if (!["auto", "35b", "9b"].includes(cur)) sel.append(el("option", { value: cur, "data-custom": "1" }, `指定：${cur}`));
+  sel.value = cur;
 }
 
 export function refreshTask() {
@@ -159,12 +189,14 @@ export function refreshTask() {
   let txt = TASK_TEXT[t];
   if (t === "adult") txt += prose() ? `；${qwen ? "Qwen 2.1" : "MOSS-Image"}：寫成英文句子` :"；Anima：品質、評級、人數、姿勢 tag 由程式加，模型補外觀和場景 tag";
   if (isNoctAnime()) txt += "；Noct Q Anime：開頭固定 An anime illustration of";
-  if (t === "adult" && app.state?.pe?.available && !app.state.pe.available.adult) txt += "（找不到通用版模型 Huihui-Qwen3.5-9B-abliterated，請到「安裝與修復」勾「AI 改寫、生圖助手」下載）";
+  if (t === "adult" && app.state?.pe?.available && !app.state.pe.available.adult) txt += "（找不到通用版模型 Qwen3.5-9B Defiant Fable，請到「安裝與修復」勾「AI 改寫、生圖助手」下載）";
   if (t === "i2i") {
     const n = ctx.images().length;
     txt += n ? `（目前 ${n} 張圖）` : "（還沒有放圖）";
   }
   F("peTask").textContent = txt;
+  F("peModelNote").textContent = modelNote(t);
+  syncGeneral(app.state?.settings?.pe_general || "auto");
   F("peZhCost").textContent = zhCost != null ? `（約多 ${Math.max(1, Math.round(zhCost))} 秒）` : "（會多花幾秒）";
   const st = app.state?.pe;
   F("peBox").classList.toggle("disabled", !!st && !st.ok);
@@ -461,7 +493,25 @@ export function restore(p) {
   render();
 }
 
+// 升級換模型（拿掉官方 PE、換上新的通用 9B，後端 server\api_pe.rs retire_old_models）：改寫框裡顯示進度，換階段時跳一次通知
+let retirePhase = "";
+function showRetire(r) {
+  const box = $("#peRetire");
+  if (box) {
+    box.hidden = !r?.msg;
+    box.textContent = r?.msg ? r.msg + (r.phase === "downloading" ? `（已下載 ${r.pct ?? 0}%）` : "") : "";
+  }
+  if (r?.phase && r.phase !== retirePhase) {
+    retirePhase = r.phase;
+    toast(r.msg, r.phase === "error" ? "err" : r.phase === "done" ? "ok" : "");
+  }
+}
+
+// 狀態列顯示的模型種類（後端的 kind）
+const KIND_NAME = { adult: "通用", adult_vision: "通用＋看圖" };
+
 export function onStatus(st) {
+  showRetire(st?.retire);
   const chip = $("#peChip");
   if (!chip) return;
   if (!st?.ok) { chip.hidden = true; return; }
@@ -469,7 +519,7 @@ export function onStatus(st) {
   const where = st.ngl === 0 ? "CPU" : st.ngl >= 99 ? "GPU" : `GPU ${st.ngl} 層`;
   // 生圖助手借用同一個 llama-server：kind 是 adult_vision@9b／@35b
   const agent = /^adult_vision@/.test(st.kind || "");
-  const kind = agent ? "助手 " + st.kind.split("@")[1].toUpperCase() : st.kind || "";
+  const kind = agent ? "助手 " + st.kind.split("@")[1].toUpperCase() : KIND_NAME[st.kind] || st.kind || "";
   chip.textContent = st.busy ? (agent ? "助手思考中" : "AI 改寫中") : `改寫模型 ${kind}・${where}` + (st.idle_left != null ? `・${st.idle_left} 秒後關閉` : "");
   chip.title = "AI 改寫用的 llama-server（127.0.0.1:8199）。按下生成前會自動關掉，把顯存讓給生圖。點一下立刻關閉。";
 }
@@ -487,7 +537,7 @@ function mmPaint() {
 }
 
 export function mmprojFix(text) {
-  if (/找不到 pe_(?:t2i|i2i)_heretic/.test(text || "")) return peModelFix(text);
+  if (/找不到 AI 改寫用的通用模型/.test(text || "")) return peModelFix(text);
   if (!/下載讀圖檔/.test(text || "")) return null;
   const btn = el("button", { class: "akey go", type: "button" }, "下載讀圖檔");
   const box = el("div", { class: "mmproj-fix" }, btn, " ", el("span", { class: "note muted" }, mm.text));
@@ -529,6 +579,6 @@ export function mmprojFix(text) {
 }
 
 export function peModelFix(text) {
-  if (!/找不到 pe_(?:t2i|i2i)_heretic/.test(text || "")) return null;
-  return el("a", { class: "akey sm go", href: "/setup#models" }, "去補改寫模型");
+  if (!/找不到 AI 改寫用的通用模型/.test(text || "")) return null;
+  return el("a", { class: "akey sm go", href: "/setup#models" }, "去下載通用 9B");
 }

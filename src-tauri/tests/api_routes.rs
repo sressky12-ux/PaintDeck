@@ -124,7 +124,8 @@ async fn video_workflow_import_select_delete() {
     let base = station("video_wf").await;
     let list = || async { reqwest::get(format!("{base}/api/video/workflows")).await.unwrap().json::<Value>().await.unwrap() };
     let v = list().await;
-    assert_eq!(v["engine"], "ltx23");
+    // 2026-10-30 LTX 退場：內建影片是 H3
+    assert_eq!(v["engine"], "h3");
     assert_eq!(v["workflows"], json!([]));
 
     // ComfyUI 一般存檔（有 nodes、links）要擋，並且講要用「匯出（API）」
@@ -166,7 +167,7 @@ async fn video_workflow_import_select_delete() {
         .unwrap();
     assert_eq!(r.status().as_u16(), 200);
     let v = list().await;
-    assert_eq!(v["engine"], "ltx23", "正在用的被刪掉：換回內建");
+    assert_eq!(v["engine"], "h3", "正在用的被刪掉：換回內建");
     assert_eq!(v["workflows"], json!([]));
 }
 
@@ -259,10 +260,14 @@ async fn h3_video_engine_setting() {
     assert_eq!(code, 200, "{e}");
     let v: Value = reqwest::get(format!("{base}/api/video/workflows")).await.unwrap().json().await.unwrap();
     assert_eq!(v["engine"], "h3");
-    // 生成頁、導演台的影片（/api/generate）不走 H3：請他到 H3 影片台
+    // 2026-10-30 LTX 退場：設定選 H3（內建）時，生成頁的影片也走 H3（測試站沒有 ComfyUI → 講沒連線）
     let p = json!({"mode": "video", "prompt": "x", "init_image": "a.png", "model": "", "seed": 1});
     let (code, e) = post(&base, "/api/generate", json!({"count": 1, "params": p})).await;
-    assert!(code == 400 && e["error"].as_str().unwrap_or("").contains("H3 影片"), "{e}");
+    assert!(code == 400 && e["error"].as_str().unwrap_or("").contains("ComfyUI 沒有連線"), "{e}");
+    // 舊網頁送來 ltx23：一樣當 H3
+    let p = json!({"mode": "video", "prompt": "x", "init_image": "a.png", "model": "", "seed": 1, "video_engine": "ltx23"});
+    let (code, e) = post(&base, "/api/generate", json!({"count": 1, "params": p})).await;
+    assert!(code == 400 && e["error"].as_str().unwrap_or("").contains("ComfyUI 沒有連線"), "{e}");
     // 「動起來」明確選 H3 本機：走 H3（測試站沒有 ComfyUI → 講沒連線，不是叫他去 H3 影片台）
     let p = json!({"mode": "video", "prompt": "x", "init_image": "a.png", "model": "", "seed": 1, "video_engine": "h3", "h3_model": "a.gguf"});
     let (code, e) = post(&base, "/api/generate", json!({"count": 1, "params": p})).await;

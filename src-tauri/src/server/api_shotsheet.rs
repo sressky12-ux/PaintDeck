@@ -245,9 +245,8 @@ pub async fn polish(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 /// {name, sheet} → 存成資產庫的拍攝單範本（kind=shot），回存好的那筆
 pub async fn template(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let s = sheet_of(&b)?;
-    let family = if s["engine"] == "h3" { "h3" } else { "ltx" };
     let it = item_from(
-        &json!({"kind": "shot", "name": b["name"], "family": family, "data": sh::template_of(&s)}),
+        &json!({"kind": "shot", "name": b["name"], "family": "h3", "data": sh::template_of(&s)}),
         None,
     )?;
     let _g = app.assets_lock.lock().await;

@@ -105,6 +105,28 @@ fn media_name_ok(n: &str) -> bool {
     n.starts_with("h3_") && !n.contains(['/', '\\']) && super::basename(n) == n && kind_of(n).is_some()
 }
 
+/// 生成頁「動起來」的首幀是 /api/to_input 放進 input 的一般圖名：複製成 h3_ 開頭的素材名（跟 /api/h3/media 一樣用內容雜湊），
+/// 雲端上傳和名稱檢查才認得；已經是素材名就不動
+fn adopt_first(input: &Path, p: &mut Map<String, Value>) -> Result<(), String> {
+    let Some(n) = p.get("first").and_then(Value::as_str).map(str::trim).filter(|s| !s.is_empty()).map(str::to_string) else { return Ok(()) };
+    if media_name_ok(&n) {
+        return Ok(());
+    }
+    if n.contains(['/', '\\']) || super::basename(&n) != n || kind_of(&n) != Some(Kind::Image) {
+        return Err(format!("首幀圖名不對：{n}"));
+    }
+    let bytes = std::fs::read(input.join(&n)).map_err(|_| format!("首幀圖 {n} 不見了：重新按一次「動起來」"))?;
+    let hash = Sha256::digest(&bytes).iter().take(6).map(|b| format!("{b:02x}")).collect::<String>();
+    let ext = Path::new(&n).extension().and_then(|e| e.to_str()).unwrap_or("png").to_lowercase();
+    let name = format!("h3_{hash}.{ext}");
+    let dst = input.join(&name);
+    if !dst.exists() {
+        std::fs::write(&dst, &bytes).map_err(|e| format!("存素材失敗：{e}"))?;
+    }
+    p.insert("first".into(), json!(name));
+    Ok(())
+}
+
 /// 轉檔的暫存檔：同一個資料夾、每次不同名（h3_xx.<亂數>.part.mp4），轉成功才改名成正式檔
 fn part_path(dst: &Path) -> PathBuf {
     let stem = dst.file_stem().and_then(|s| s.to_str()).unwrap_or("h3");
@@ -265,6 +287,35 @@ fn h3ish(n: &str) -> bool {
     l.contains("h3") || l.contains("10eros") || l.contains("minimax")
 }
 
+/// 本機沒指定模型時挑哪顆：10Eros w4a8（8GB 卡實測最快）→ GGUF；都沒有＝None（用預設 int8）。
+/// 只挑 10Eros：官方 fl2va 那類 w4a8 不一定每種玩法都能用（2026-10-30）
+fn pick_local_model(models: &[String]) -> Option<String> {
+    let l = |m: &&String| m.to_lowercase();
+    models
+        .iter()
+        .find(|m| l(m).contains("10eros") && l(m).contains("w4a8"))
+        .or_else(|| models.iter().find(|m| l(m).ends_with(".gguf")))
+        .cloned()
+}
+
+/// 低顯存切塊的節點（ComfyUI-KJNodes 的 MiniMaxChunkFeedForward）在不在
+async fn local_chunk_node(app: &Shared) -> bool {
+    // chunks 是 INT 欄位、沒有選項清單：看節點在不在就好
+    app.comfy.object_info("MiniMaxChunkFeedForward").await.is_ok()
+}
+
+/// 切塊節點沒裝：自動切（沒指定）就改成不切，免得整張圖送出去才失敗；使用者自己開了就講清楚要裝什麼
+fn fit_chunks(p: &mut Map<String, Value>, has_node: bool) -> Result<(), String> {
+    if has_node {
+        return Ok(());
+    }
+    if p.get("ff_chunks").and_then(Value::as_f64).is_some_and(|c| c >= 2.0) {
+        return Err("「低顯存」切塊要裝 ComfyUI-KJNodes 節點（有 MiniMaxChunkFeedForward 的新版）：裝好重開 ComfyUI，或把「低顯存」改回自動".into());
+    }
+    p.insert("ff_chunks".into(), json!(1));
+    Ok(())
+}
+
 /// 本機 ComfyUI 有沒有 H3 節點
 async fn local_nodes(app: &Shared) -> bool {
     app.comfy.options("MiniMaxH3ReferenceToVideo", "ref_image_size").await.map(|v| !v.is_empty()).unwrap_or(false)
@@ -275,6 +326,39 @@ async fn local_models(app: &Shared) -> Vec<String> {
     let mut v = app.comfy.options("UNETLoader", "unet_name").await.unwrap_or_default();
     v.extend(app.comfy.options("UnetLoaderGGUF", "unet_name").await.unwrap_or_default());
     v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).filter(|n| h3ish(n)).collect()
+}
+
+/// 本機 ComfyUI 載得到的檔（主模型含 GGUF、文字編碼器、VAE）
+pub(super) struct LocalFiles {
+    pub unets: Vec<String>,
+    pub clips: Vec<String>,
+    pub vaes: Vec<String>,
+}
+
+/// H3 本機要的檔缺哪些（主模型、文字編碼器、影像 VAE、聲音 VAE）：空的＝都有
+pub(super) fn local_missing(have: &LocalFiles, model: &str) -> Vec<String> {
+    let need = [(&have.unets, model), (&have.clips, h3::TE), (&have.vaes, h3::VAE), (&have.vaes, h3::AVAE)];
+    need.into_iter().filter(|(v, n)| !v.iter().any(|x| x == n)).map(|(_, n)| n.to_string()).collect()
+}
+
+pub(super) async fn local_files(app: &Shared) -> LocalFiles {
+    let names = |v: Vec<Value>| v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).collect::<Vec<_>>();
+    let opt = |n: &'static str, f: &'static str| async move { names(app.comfy.options(n, f).await.unwrap_or_default()) };
+    let mut unets = opt("UNETLoader", "unet_name").await;
+    unets.extend(opt("UnetLoaderGGUF", "unet_name").await);
+    LocalFiles { unets, clips: opt("CLIPLoader", "clip_name").await, vaes: opt("VAELoader", "vae_name").await }
+}
+
+/// 送到本機前先查檔：缺了就直接講缺哪個、去哪補，不要送出去才拿到 ComfyUI 的「Value not in list」
+pub(super) async fn check_local_files(app: &Shared, model: &str) -> Result<(), String> {
+    let miss = local_missing(&local_files(app).await, model);
+    if miss.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "本機缺 H3 影片要用的檔：{}。到「設定 → 安裝與修復」的安裝精靈勾「H3 影片（本機，選配）」下載，或改用雲端",
+        miss.join("、")
+    ))
 }
 
 /// 生成頁的比例 → H3 的比例選項（挑最接近的）
@@ -290,7 +374,7 @@ fn aspect_of(p: &Map<String, Value>) -> &'static str {
 
 /// 生成頁「動起來」選了 H3（video_engine "h3"）：生成頁的參數換成 H3 的。
 /// 有首幀＝圖生影片、沒有＝文生影片；480p＝快速、其他＝高畫質；提示詞沒照 H3 格式就包成一個鏡頭；
-/// 沒指定 h3_model 時本機有 GGUF 量化版就用它（8GB 卡跑得動，3 秒約 15 分鐘）
+/// 沒指定 h3_model 時挑本機最省顯存的（pick_local_model：10Eros w4a8 → GGUF）
 pub fn from_gen(p: &Map<String, Value>, local_models: &[String]) -> Result<Value, String> {
     let s = |k: &str| p.get(k).and_then(Value::as_str).unwrap_or("").trim().to_string();
     let raw = s("prompt");
@@ -308,7 +392,7 @@ pub fn from_gen(p: &Map<String, Value>, local_models: &[String]) -> Result<Value
     }
     let model = match s("h3_model") {
         m if !m.is_empty() => m,
-        _ => local_models.iter().find(|m| m.to_lowercase().ends_with(".gguf")).cloned().unwrap_or_else(|| h3::MODEL.to_string()),
+        _ => pick_local_model(local_models).unwrap_or_else(|| h3::MODEL.to_string()),
     };
     let mut h = json!({
         "h3_mode": if first.is_empty() { "t2v" } else { "i2v" },
@@ -324,7 +408,39 @@ pub fn from_gen(p: &Map<String, Value>, local_models: &[String]) -> Result<Value
     if !first.is_empty() {
         h["first"] = json!(first);
     }
+    if let Some(d) = p.get("director") {
+        h["director"] = d.clone();
+    }
     Ok(h)
+}
+
+/// 雲端能不能跑 H3：開好了、而且裝了 H3 影片包
+pub(super) fn cloud_ready(packs: Option<super::api_cloud::Packs>) -> Result<super::api_cloud::Packs, String> {
+    let packs = packs.ok_or("雲端還沒開好：按「開雲端」，等燈號變綠")?;
+    if !packs.h3 {
+        return Err("雲端這台沒裝 H3 影片包：關機後到雲端設定勾「H3 影片」再開".into());
+    }
+    Ok(packs)
+}
+
+/// 導演台選雲端：生成頁格式的參數換成 H3、上傳首幀、在雲端跑一支，跑完才回來 → (任務 id, 圖庫編號)。
+/// 最後一格（_poster/<poster>-last）跟成品一起下載回本機的 _poster
+pub(super) async fn cloud_one(app: &Shared, gen: &Map<String, Value>, token: &CancellationToken, on_status: &(dyn Fn(String) + Send + Sync)) -> Result<(String, Vec<i64>), String> {
+    cloud_ready(app.agent.cloud.live_packs())?;
+    app.agent.cloud.touch();
+    let Value::Object(mut h) = from_gen(gen, &[])? else { return Err("送來的資料格式不對".into()) };
+    fit_chunks(&mut h, super::api_cloud::remote_has_node(app, "MiniMaxChunkFeedForward").await)?;
+    let p = one(&Value::Object(h), 0);
+    for n in media_names(&p) {
+        on_status(format!("上傳素材 {n}…"));
+        super::api_cloud::upload_input(app, &app.paths.input.join(&n)).await?;
+    }
+    let (q, input) = (p.clone(), app.paths.input.clone());
+    let (nodes, info) = blocking(move || h3::build(&q, &input, 0)).await.map_err(|e| e.0)?;
+    let mut params = p.clone();
+    params["seed"] = info["seed"].clone();
+    params["prompt_resolved"] = info["prompt"].clone();
+    super::api_cloud::run_graph(app, nodes, &params, &info, token, on_status).await
 }
 
 /// 生成頁送來的 H3 影片：換成 H3 參數，排進本機 ComfyUI；回傳跟生成頁一樣的 [{job, seed}]
@@ -333,14 +449,15 @@ pub async fn submit_from_gen(app: &Shared, p: &Map<String, Value>, count: i64) -
         return Err(bad("ComfyUI 沒有連線。解法：重新開啟「繪匣 PaintDeck」。"));
     }
     if !local_nodes(app).await {
-        return Err(bad("本機的 ComfyUI 沒有 MiniMax H3 節點：更新 ComfyUI，或改用 LTX"));
+        return Err(bad("本機的 ComfyUI 沒有 MiniMax H3 節點：更新 ComfyUI，或在 H3 影片台改用雲端"));
     }
     let models = local_models(app).await;
-    let h = from_gen(p, &models).map_err(bad)?;
-    let m = h["model"].as_str().unwrap_or("").to_string();
-    if !models.contains(&m) {
-        return Err(bad(format!("本機 ComfyUI 找不到 H3 模型 {m}：到「導演 → H3 影片」看說明下載，或改用 LTX")));
+    let mut h = from_gen(p, &models).map_err(bad)?;
+    if let Some(o) = h.as_object_mut() {
+        fit_chunks(o, local_chunk_node(app).await).map_err(bad)?;
     }
+    let m = h["model"].as_str().unwrap_or("").to_string();
+    check_local_files(app, &m).await.map_err(bad)?;
     {
         let (hh, input) = (h.clone(), app.paths.input.clone());
         blocking(move || h3::build(&hh, &input, 0)).await.map_err(|e| bad(e.0))?;
@@ -381,6 +498,8 @@ pub async fn info(State(app): State<Shared>) -> ApiResult {
     } else {
         (false, vec![], vec![], false)
     };
+    let local_chunk = online && local_chunk_node(&app).await;
+    let local_pick = pick_local_model(&local_models);
     ok(json!({
         "templates": templates,
         "modes": h3::MODES,
@@ -390,7 +509,8 @@ pub async fn info(State(app): State<Shared>) -> ApiResult {
         "cloud_models": cloud_models,
         "cloud_loras": cloud_loras,
         "cloud_selflift": cloud_selflift,
-        "local": {"online": online, "nodes": local_nodes, "models": local_models, "loras": local_loras, "selflift": local_selflift},
+        "local": {"online": online, "nodes": local_nodes, "models": local_models, "loras": local_loras, "selflift": local_selflift,
+                  "chunk": local_chunk, "pick": local_pick},
         "defaults": {"model": h3::MODEL, "official_ref2va": h3::OFFICIAL_REF2VA, "steps": 8, "sampler": "res_multistep", "scheduler": "simple",
                      "seconds": 5, "quality": "std", "aspect": "16:9", "mode_loras": h3::MODE_LORAS.iter().map(|(m, f, t)| json!({"mode": m, "file": f, "trigger": t})).collect::<Vec<_>>()},
     }))
@@ -404,21 +524,53 @@ fn mode_of(p: &Value) -> String {
     }
 }
 
-/// {params, count, where: "cloud"|"local"|"runninghub"} → {task}；背景跑，進度：{"type":"h3","task","state":"queued|running|done|queued_local|error|stopped","msg", "ids"?/"jobs"?}
+/// 送來的 H3 參數：H3 影片台送 params（原樣用）；生成頁「動起來」選雲端送 gen（生成頁的參數，照 from_gen 換成 H3 的）
+pub(super) fn params_of(b: &Value, local_models: &[String]) -> Result<Map<String, Value>, String> {
+    if let Some(Value::Object(g)) = b.get("gen") {
+        return match from_gen(g, local_models)? {
+            Value::Object(m) => Ok(m),
+            _ => Err("送來的資料格式不對".into()),
+        };
+    }
+    match b.get("params") {
+        Some(Value::Object(p)) => Ok(p.clone()),
+        _ => Err("送來的資料格式不對：缺少 params".into()),
+    }
+}
+
+/// {params | gen, count, where: "cloud"|"local"|"runninghub"} → {task}；背景跑，進度：{"type":"h3","task","state":"queued|running|done|queued_local|error|stopped","msg", "ids"?/"jobs"?}
 pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
-    let Some(Value::Object(mut p)) = b.get("params").cloned() else {
-        return Err(bad("送來的資料格式不對：缺少 params"));
-    };
-    let count = b.get("count").and_then(crate::py::int).unwrap_or(1).clamp(1, MAX_COUNT);
     // RunningHub：整份節點圖丟上去跑（api_runninghub），不用開雲端機器
     let rhub = b["where"] == "runninghub";
     let cloud = b["where"] != "local" && !rhub;
+    // 生成頁的參數換 H3 的時候，本機才照本機有的模型挑；雲端、RunningHub 用預設的 int8
+    let picks = if b.get("gen").is_some() && !cloud && !rhub { local_models(&app).await } else { vec![] };
+    let mut p = params_of(&b, &picks).map_err(bad)?;
+    if b.get("gen").is_some() {
+        let input = app.paths.input.clone();
+        p = blocking(move || adopt_first(&input, &mut p).map(|_| p)).await.map_err(bad)?;
+    }
+    let count = b.get("count").and_then(crate::py::int).unwrap_or(1).clamp(1, MAX_COUNT);
     if p.get("seed").and_then(crate::py::int).is_none_or(|s| s < 0) {
         p.insert("seed".into(), json!(super::api_director::random_seed()));
     }
     p.insert("mode".into(), json!("video"));
     p.insert("video_engine".into(), json!("h3"));
     p.insert("save_last".into(), json!(true));
+    // 本機沒指定模型：挑最省顯存的；切塊節點（KJNodes）沒裝就不切（2026-10-30）
+    let has_chunk_node = if rhub {
+        false
+    } else if cloud {
+        super::api_cloud::remote_has_node(&app, "MiniMaxChunkFeedForward").await
+    } else {
+        if p.get("model").and_then(Value::as_str).unwrap_or("").is_empty() {
+            if let Some(m) = pick_local_model(&local_models(&app).await) {
+                p.insert("model".into(), json!(m));
+            }
+        }
+        local_chunk_node(&app).await
+    };
+    fit_chunks(&mut p, has_chunk_node).map_err(bad)?;
     let p = Value::Object(p);
     let mode = mode_of(&p);
     let names = media_names(&p);
@@ -443,10 +595,7 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
             return Err(bad("RunningHub 上沒有生圖站的 RefMod 檔：取消「用 RefMod 鎖臉」再送，或改用雲端顯卡"));
         }
     } else if cloud {
-        let packs = app.agent.cloud.live_packs().ok_or_else(|| bad("雲端還沒開好：按「開雲端」，等燈號變綠"))?;
-        if !packs.h3 {
-            return Err(bad("雲端這台沒裝 H3 影片包：關機後到雲端設定勾「H3 影片」再開"));
-        }
+        let packs = cloud_ready(app.agent.cloud.live_packs()).map_err(bad)?;
         if needs_advanced(&p) && !packs.h3x {
             return Err(bad("這個玩法要「H3 進階包」：關機後到雲端設定勾「H3 進階玩法」再開"));
         }
@@ -458,6 +607,11 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         if !ok_nodes {
             return Err(bad("本機的 ComfyUI 沒有 MiniMax H3 節點：更新 ComfyUI，或改用雲端"));
         }
+        let model = match p["model"].as_str().unwrap_or("") {
+            "" => h3::MODEL,
+            m => m,
+        };
+        check_local_files(&app, model).await.map_err(bad)?;
         super::api_refmod::ensure_local(&app, &refmods).await.map_err(bad)?;
     }
     let task = format!("h3-{:x}", super::api_director::random_seed());
@@ -705,13 +859,65 @@ pub async fn write(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 mod tests {
     use super::*;
 
+    /// 2026-10-30 使用者轉來的回報：影片模型沒裝也照送 ComfyUI，失敗後叫人去刷新 LoRA。送出前就講清楚缺哪個檔
+    #[test]
+    fn missing_files_listed() {
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        let only_unet = LocalFiles { unets: s(&[h3::MODEL_W4A8]), clips: vec![], vaes: vec![] };
+        assert_eq!(local_missing(&only_unet, h3::MODEL_W4A8), vec![h3::TE, h3::VAE, h3::AVAE]);
+        let all = LocalFiles { unets: s(&[h3::MODEL_W4A8]), clips: s(&[h3::TE]), vaes: s(&[h3::VAE, h3::AVAE]) };
+        assert!(local_missing(&all, h3::MODEL_W4A8).is_empty());
+        assert_eq!(local_missing(&all, "my-own-h3.safetensors"), vec!["my-own-h3.safetensors"]);
+    }
+
+    /// 雲端送 H3 之前：沒開好、沒裝 H3 包都要擋（導演台跟 /api/h3/generate 同一句）
+    #[test]
+    fn cloud_ready_checks_packs() {
+        use super::super::api_cloud::Packs;
+        assert!(cloud_ready(None).unwrap_err().contains("雲端還沒開好"));
+        assert!(cloud_ready(Some(Packs { agent: true, h3: false, h3x: false })).unwrap_err().contains("沒裝 H3 影片包"));
+        assert!(cloud_ready(Some(Packs { agent: false, h3: true, h3x: false })).is_ok());
+    }
+
+    /// 生成頁「動起來」的首幀是一般 input 圖名：複製成 h3_ 開頭的素材名，雲端上傳、名稱檢查才認得
+    #[test]
+    fn gen_first_frame_becomes_h3_media() {
+        let dir = std::env::temp_dir().join(format!("anima_h3_adopt_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("aw_123.png"), b"png").unwrap();
+        let mut p = json!({"first": "aw_123.png"}).as_object().unwrap().clone();
+        adopt_first(&dir, &mut p).unwrap();
+        let n = p["first"].as_str().unwrap().to_string();
+        assert!(media_name_ok(&n), "{n}");
+        assert_eq!(std::fs::read(dir.join(&n)).unwrap(), b"png");
+        // 已經是素材名：不動
+        adopt_first(&dir, &mut p).unwrap();
+        assert_eq!(p["first"], json!(n));
+        let mut gone = json!({"first": "aw_missing.png"}).as_object().unwrap().clone();
+        assert!(adopt_first(&dir, &mut gone).is_err());
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// 「動起來」選雲端：送生成頁的參數（gen），在這裡換成 H3 的；H3 影片台照舊送 params
+    #[test]
+    fn gen_body_converts() {
+        let h = params_of(&json!({"gen": {"prompt": "x", "init_image": "a.png", "video_res": "480p"}}), &[]).unwrap();
+        assert_eq!((h["h3_mode"].as_str(), h["quality"].as_str()), (Some("i2v"), Some("fast")));
+        let raw = json!({"params": {"h3_mode": "t2v", "prompt": "y"}});
+        assert_eq!(Value::Object(params_of(&raw, &[]).unwrap()), raw["params"]);
+        assert!(params_of(&json!({}), &[]).is_err());
+        assert!(params_of(&json!({"gen": {"prompt": ""}}), &[]).is_err());
+    }
+
     #[test]
     fn gen_params_become_h3() {
         let p = |v: Value| v.as_object().unwrap().clone();
         let models = vec!["10Eros_Max_h3_TURBO-hybrid_beta5_int8.safetensors".to_string(), "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf".to_string()];
         let h = from_gen(&p(json!({"prompt": "she waves", "init_image": "a.png", "video_seconds": 3, "video_res": "480p", "seed": 7})), &models).unwrap();
         assert_eq!((h["h3_mode"].as_str(), h["first"].as_str(), h["quality"].as_str(), h["seconds"].as_f64()), (Some("i2v"), Some("a.png"), Some("fast"), Some(3.0)));
-        assert_eq!(h["model"], "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf", "本機有 GGUF 就優先");
+        assert_eq!(h["model"], "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf", "沒有 w4a8 時用 GGUF");
+        let with_w4 = [models.clone(), vec!["minimax_h3_fl2va_pruned_w4a8_mixed.safetensors".into(), h3::MODEL_W4A8.into()]].concat();
+        assert_eq!(from_gen(&p(json!({"prompt": "x"})), &with_w4).unwrap()["model"], h3::MODEL_W4A8, "10Eros w4a8 最優先、不挑官方 fl2va");
         assert_eq!(h["seed"], 7);
         assert!(h["prompt"].as_str().unwrap().starts_with("integrated_multimodal_description: [Shot 1] she waves"));
         // 沒圖＝文生影片、照寬高挑比例、720p＝高畫質、已經是 H3 格式就不包
@@ -724,6 +930,24 @@ mod tests {
         assert_eq!(from_gen(&p(json!({"prompt": "x", "h3_model": "m.safetensors"})), &models).unwrap()["model"], "m.safetensors");
         assert!(from_gen(&p(json!({"prompt": "x", "init_image": "..\\a.png"})), &models).is_err());
         assert!(from_gen(&p(json!({"prompt": " "})), &models).is_err());
+    }
+
+    #[test]
+    fn chunks_fit_installed_nodes() {
+        let p = |v: Value| v.as_object().unwrap().clone();
+        // 節點在：什麼都不動
+        let mut a = p(json!({"ff_chunks": 8}));
+        fit_chunks(&mut a, true).unwrap();
+        assert_eq!(a["ff_chunks"], 8);
+        // 沒裝、自動：改成不切
+        let mut b = p(json!({}));
+        fit_chunks(&mut b, false).unwrap();
+        assert_eq!(b["ff_chunks"], 1);
+        // 沒裝、使用者自己開：講清楚要裝 KJNodes
+        assert!(fit_chunks(&mut p(json!({"ff_chunks": 8})), false).unwrap_err().contains("KJNodes"));
+        let mut c = p(json!({"ff_chunks": 1}));
+        fit_chunks(&mut c, false).unwrap();
+        assert_eq!(c["ff_chunks"], 1);
     }
 
     #[test]

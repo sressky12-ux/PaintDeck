@@ -230,6 +230,10 @@ pub async fn say(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     if cloud && app.agent.cloud.live_packs().is_some_and(|p| !p.agent) {
         return Err(bad("雲端這台只裝了 H3 影片包，沒有助手的腦袋：關機後在雲端設定勾「生圖助手」再開"));
     }
+    // 雲端只裝 MOSS-Image（api_cloud::render）：先講，免得每輪都想完才在送圖時失敗（2026-10-29 盤點）
+    if cloud && !words && families::family_of(&app.paths.unet_roots(), &tx(&st["base"]["model"])) != MOSS {
+        return Err(bad("雲端目前只裝 MOSS-Image：生成頁請換成 MOSS 模型再按「用生成頁目前的設定」"));
+    }
     if !words && !cloud && !app.comfy.live().online {
         return Err(bad("ComfyUI 沒有連線"));
     }
@@ -488,6 +492,10 @@ fn reject_zh(fb: &str) -> &'static str {
         "這件事助手不能做（要你自己按），退回"
     } else if fb.starts_with("Redrawing with refs keeps") {
         "圖生圖轉不了角度，請它改用「角色多視圖」"
+    } else if fb.starts_with("Redrawing cannot change only the pose") {
+        "圖生圖改不了姿勢（只會畫成另一個人），請它改用「改圖」直接改你的圖"
+    } else if fb.starts_with("Your previous round built on user image") {
+        "它這輪不用你的圖、要照文字重畫一張新的，提醒它回到你的圖上改（確定要新圖就放行）"
     } else if fb.contains("tool calls for this request") {
         "工具叫太多次了，請它收尾"
     } else if fb.contains(" needs \"") || fb.contains("must be") && fb.contains("api") {
@@ -600,7 +608,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         let mut guide = app.pe.agent_text(ag::guide_id(family));
         if let Some(s) = crate::skills::for_guide(&app.paths.data, &app.paths.settings, ag::family_guide(family)) {
             guide += "\n\n";
-            guide += &s.agent_block(ag::family_guide(family), &ask);
+            guide += &app.pe.embed.agent_block(&s, ag::family_guide(family), &ask).await;
         }
         let system = ag::system_prompt(&app.pe.agent_text("agent"), &guide, family, &ag::loras_text(&cat, &fixed, allow));
         let (rounds, count) = (st["rounds"].as_i64().unwrap_or(3), st["count"].as_i64().unwrap_or(2));
@@ -646,9 +654,13 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
             let guide = ag::GUIDES.iter().find(|g| g.0 == target).map(|g| g.0).unwrap_or_else(|| ag::pick_guide(family, uall.len(), &ask));
             let mut gtext = app.pe.agent_text(ag::guide_text_id(guide).unwrap_or("agent_other"));
             // 只寫詞不能叫工具：外掛寫法照請求挑段一次給
-            if let Some(b) = crate::skills::for_guide(&app.paths.data, &app.paths.settings, guide).map(|s| s.pick_block(&ask, crate::skills::PICK_WRITE)).filter(|b| !b.is_empty()) {
+            let picked = match crate::skills::for_guide(&app.paths.data, &app.paths.settings, guide) {
+                Some(s) => app.pe.embed.pick_block(&s, &ask, crate::skills::PICK_WRITE).await,
+                None => String::new(),
+            };
+            if !picked.is_empty() {
                 gtext += "\n\n";
-                gtext += &b;
+                gtext += &picked;
             }
             let system = ag::prompt_system(&app.pe.agent_text("agent_prompt"), &gtext, guide, family);
             let mut msgs = ag::build_prompt_messages(&system, &events, &uparts);
@@ -736,7 +748,9 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
                     return Err(format!("助手連續 {rejects} 次寫不出能用的回覆，先停下來。可以換一顆腦袋或把要求說得更簡單再試一次。"));
                 }
                 note(app, id, reject_zh(&fb)).await;
-                if fb.starts_with("You marked") || fb.starts_with("You were shown") || fb.starts_with("Everything in your check") || fb.starts_with("The user attached") {
+                if fb.starts_with("You marked") || fb.starts_with("You were shown") || fb.starts_with("Everything in your check") || fb.starts_with("The user attached")
+                    || fb.starts_with("Your previous round built on user image")
+                {
                     nudged = true;
                 }
                 extra.push(json!({"role": "assistant", "content": content}));

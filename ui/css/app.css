@@ -272,7 +272,15 @@ input[type=range]:focus-visible { outline-offset: 0; }
 .lora-card-meta .badge.auto { border: 1px dashed var(--acc); }
 .lora-card-meta .chip { font-size: 10px; padding: 3px 6px 2px; }
 .lora-library-note { padding-top: 2px; padding-bottom: 8px; }
-#cvBase { width: 175px; min-width: 140px; }
+/* 下載中心（hub.js） */
+.hub-bar { display: flex; flex-wrap: wrap; gap: 8px 14px; align-items: center; padding: 4px 6px 0; }
+.hub-badges { display: flex; flex-wrap: wrap; gap: 4px; }
+.card .badge.src { background: var(--key-dark); color: var(--ph-green); }
+.card .badge.no { background: #4a3a1d; color: var(--warn); }
+.card .hub-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card .bd select.sm { max-width: 100%; }
+.card .ph.none { aspect-ratio: auto; min-height: 44px; }  /* 魔塔的搜尋結果幾乎都沒有封面：不要佔一大塊 */
+#hubFam { max-width: 260px; }
 .chip { border: 0; background: var(--key); color: var(--label); border-radius: 3px; padding: 4px 8px 3px; font-size: 12px; cursor: pointer;
   box-shadow: 0 2px 0 var(--key-side), inset 0 1px 0 rgba(255,255,255,.45); transition: transform .06s, box-shadow .06s; }
 .chip:active, .chip.on { transform: translateY(2px); box-shadow: 0 0 0 var(--key-side), inset 0 1px 3px rgba(0,0,0,.25); }
@@ -536,7 +544,7 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .lib { display: grid; grid-template-rows: auto auto auto 1fr; gap: 6px; padding: 22px 14px 12px; min-height: 0; }
 .lib-scroll { overflow-y: auto; min-height: 0; padding: 4px 2px 70px; }
 #page-settings .lib { grid-template-rows: 1fr; }
-#page-civitai .lib { grid-template-rows: auto auto 1fr; }
+#page-civitai .lib { grid-template-rows: auto auto auto auto 1fr; }  /* 下載中心：來源／種類、搜尋列、魔塔分類、說明、卡片 */
 #page-loras .lib { grid-template-rows: auto auto 1fr; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .toolbar select, .toolbar input[type=date] { width: auto; }
@@ -587,6 +595,13 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
   box-shadow: 0 0 0 2px var(--bezel); }
 .card .ph.blur { filter: blur(18px); transition: filter .2s; }
 .card:hover .ph.blur { filter: none; }
+.card .ph.zoom { cursor: zoom-in; }
+#hubTags { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }  /* 魔塔分類：一行，多的左右捲（網頁版也是一行） */
+#hubTags .chip { flex: none; }
+/* 下載中心「看樣張大圖」（hub.js view） */
+.hub-view-imgs { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; margin: 8px 0; max-height: 64vh; overflow-y: auto; }
+.hub-view-imgs img { display: block; width: 100%; border-radius: 4px; background: var(--viewer); }
+.hub-view-imgs img.blur { filter: blur(18px); cursor: pointer; }
 .card .bd { padding: 8px 4px 2px; display: flex; flex-direction: column; gap: 4px; flex: 1; }
 .card .t { font-weight: 700; font-size: 13px; line-height: 1.3; }
 .card .trig { font: 12px/1.4 var(--f-data); color: var(--warn); word-break: break-word; }
@@ -661,6 +676,11 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .tg-result { max-height: 46vh; overflow-y: auto; display: flex; flex-wrap: wrap; gap: 6px; padding: 2px; }
 .tg-result .chip small { color: inherit; opacity: .7; margin-left: 4px; font-family: var(--f-data); }
 .tg-result .chip.off { opacity: .35; text-decoration: line-through; }
+/* 讀圖片參數（imgmeta.js） */
+.im-grid { display: grid; grid-template-columns: auto 1fr; gap: 4px 10px; margin: 8px 0; font-size: 12px; }
+.im-grid dt { font-weight: 600; white-space: nowrap; }
+.im-grid dd { margin: 0; min-width: 0; overflow-wrap: anywhere; }
+.im-grid pre { margin: 0; white-space: pre-wrap; max-height: 8em; overflow-y: auto; font-family: var(--f-data); font-size: 12px; }
 .tg-result .chip .zh { margin-left: 4px; font-size: 11px; opacity: .8; }
 .tg-result .chip.auto { border-style: dashed; }
 .tg-cap { border-top: 1px solid var(--groove); padding-top: 8px; }
@@ -924,6 +944,25 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 /* ---------- 漫畫台 ---------- */
 #page-comic .lib { grid-template-rows: auto 1fr; }
 .cm-cols { grid-template-columns: minmax(340px, 480px) 1fr; }
+#page-comic.on { grid-template-rows: auto minmax(0, 1fr); gap: 8px; }
+/* 整本上色（js/colorbook.js） */
+.cb-cols { grid-template-columns: minmax(320px, 420px) 1fr; }
+.cb-drop { min-height: 84px; cursor: pointer; }
+.cb-pages { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 10px; align-content: start; }
+.cb-page { background: var(--field); border-radius: 6px; padding: 8px; display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+.cb-page.error { box-shadow: 0 0 0 2px var(--warn); }
+.cb-page.color, .cb-page.blank { opacity: .78; }
+.cb-page select { max-width: 92px; }
+.cb-page textarea { font: 11.5px/1.4 var(--f-data); }
+.cb-pr > summary { cursor: pointer; font-size: 12px; color: var(--label-dim); }
+.cb-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; cursor: zoom-in; }
+.cb-imgs.one { grid-template-columns: 1fr; }
+.cb-imgs img { width: 100%; aspect-ratio: 5 / 7; object-fit: contain; background: #fff; border-radius: 3px; }
+.cb-view .dialog { width: min(1500px, 100%); }
+.cb-view-imgs { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.cb-view-imgs.one { grid-template-columns: minmax(0, 720px); justify-content: center; }
+.cb-view-imgs figure { margin: 0; display: flex; flex-direction: column; gap: 4px; align-items: center; min-width: 0; }
+.cb-view-imgs img { max-width: 100%; max-height: 76vh; object-fit: contain; background: #fff; }
 .cm-flow button { flex: 1; }
 .cm-layouts { display: grid; grid-template-columns: repeat(auto-fill, minmax(46px, 1fr)); gap: 6px; }
 .cm-lay { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 6px 2px 4px; border: 0; border-radius: 6px; background: var(--key); color: var(--label); cursor: pointer; font: 600 11px/1 var(--f-ui); }

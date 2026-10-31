@@ -685,6 +685,24 @@ pub async fn upload(
     ok(r)
 }
 
+/// 「讀圖片參數」（生成頁的「讀圖片參數…」）：上傳一張圖（multipart，一個檔案），不存檔。回傳
+/// {"params": 生成頁參數或 null, "source": "anima"|"comfyui"|"webui"|"novelai"|"other"|null, "workflow": 圖裡有沒有 ComfyUI 工作流, "notes": [提醒]}
+pub async fn image_meta(mut mp: Multipart) -> ApiResult {
+    let field = mp
+        .next_field()
+        .await
+        .map_err(|e| bad(format!("讀不到上傳的檔案：{e}")))?
+        .ok_or_else(|| bad("沒有上傳檔案"))?;
+    let raw = field
+        .bytes()
+        .await
+        .map_err(|e| bad(format!("讀不到上傳的檔案：{e}")))?;
+    if imgmeta::image_kind(&raw).is_none() {
+        return Err(bad("只看得懂 PNG、WebP、JPEG 圖片"));
+    }
+    ok(blocking(move || imgmeta::read_found_json(&raw)).await)
+}
+
 pub async fn to_input(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     let id = body
         .get("id")

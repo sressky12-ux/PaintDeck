@@ -24,7 +24,7 @@ function director(api, initial) {
   get('dirRedo').checked = false;
   const subject = load('director.js', {
     document: { getElementById: get }, api, el: element, debounce: () => () => {}, toast() {},
-    store: { get: (_, d) => d, set() {} }, gen: {}, drawer: {}, renderTakePanel: () => null,
+    store: { get: (_, d) => d, set() {} }, gen: { H3_NAME: 'MiniMax H3（內建）' }, drawer: {}, renderTakePanel: () => null,
     mediaSlotsControl: () => ({ element: element('div'), read: () => ({}) }), layoutEditor: () => ({ setAspect() {}, set() {}, el: element('div') }),
   }, `{ run, selectTake, openProject, current: () => P, setProject: (p) => {P=p;running=false;} }`);
   subject.setProject(initial);
@@ -85,12 +85,14 @@ test('take panel previews every saved version and exposes only an explicit adopt
 });
 
 test('opening a sheet-created project selects it and displays its engine over the global default', async () => {
-  const p = { id: 'new-film', title: 'New film', settings: { video_engine: 'ltx23', seconds: 7.5 }, segments: [] };
+  // 2026-10-30 LTX 退場：舊專案記的 ltx23 顯示成內建 H3
+  const p = { id: 'new-film', title: 'New film', settings: { video_engine: 'ltx23', seconds: 7.5 }, segments: [{ engine: 'ltx23' }] };
   const { subject, get } = director(async url => url === '/api/video/workflows'
-    ? { engine: 'h3', builtin: { id: 'ltx23', name: 'LTX local' }, workflows: [] } : p, null);
+    ? { engine: 'wf-x', builtin: { id: 'h3', name: 'builtin' }, workflows: [] } : p, null);
   await subject.openProject('new-film');
   assert.equal(get('dirProj').value, 'new-film');
   assert.ok(get('dirProj').options.some(o => o.value === 'new-film'));
-  assert.ok(get('dirVidEngine').textContent.includes('LTX local'));
+  assert.ok(get('dirVidEngine').textContent.includes('MiniMax H3'), get('dirVidEngine').textContent);
+  assert.equal(p.segments[0].engine, 'h3');
   assert.equal(get('dirSecs').value, '7.5');
 });

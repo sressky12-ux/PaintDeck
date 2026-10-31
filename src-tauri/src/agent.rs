@@ -39,7 +39,6 @@ const GUIDE_OTHER: &str = include_str!("../../resources/agent/guide_other.txt");
 /// 寫法庫（2026-10-27）：使用者原話「把 每個模型的官方寫提示詞skill都分類整理教一教給他。讓他真的會寫。嚴謹分類。」
 const GUIDE_QWEN_EDIT: &str = include_str!("../../resources/agent/guide_qwen_edit.txt");
 const GUIDE_QWEN_MULTI: &str = include_str!("../../resources/agent/guide_qwen_multiref.txt");
-const GUIDE_LTX: &str = include_str!("../../resources/agent/guide_ltx.txt");
 /// 「只寫詞」模式的工作說明：不碰繪圖模型，只回提示詞卡（{target}／{guide}／{sizes} 由程式填）
 const PROMPT_SYSTEM: &str = include_str!("../../resources/agent/prompt_mode.txt");
 /// H3 影片台「AI 幫我寫」：T2VA／I2VA／FL2VA 用 base，Ref2VA（多素材、換角色、特效…）用 ref
@@ -49,8 +48,8 @@ const H3_BOARD: &str = include_str!("../../resources/agent/h3_board.txt");
 /// 影片台拍攝單「AI 潤飾」（2026-10-24）
 const H3_SHEET: &str = include_str!("../../resources/agent/h3_sheet.txt");
 
-/// 設定頁可以改的十三份：(編號, 預設文字)
-pub const EDITABLE_TEXTS: [(&str, &str); 13] = [
+/// 設定頁可以改的十二份：(編號, 預設文字)（2026-10-30 LTX 退場，拿掉 agent_ltx）
+pub const EDITABLE_TEXTS: [(&str, &str); 12] = [
     ("agent", DEFAULT_SYSTEM),
     ("agent_prompt", PROMPT_SYSTEM),
     ("agent_qwen21", GUIDE_QWEN),
@@ -59,7 +58,6 @@ pub const EDITABLE_TEXTS: [(&str, &str); 13] = [
     ("agent_moss", GUIDE_MOSS),
     ("agent_anima", GUIDE_ANIMA),
     ("agent_other", GUIDE_OTHER),
-    ("agent_ltx", GUIDE_LTX),
     ("agent_h3_base", H3_BASE),
     ("agent_h3_ref", H3_REF),
     ("agent_h3_board", H3_BOARD),
@@ -89,8 +87,7 @@ pub const GUIDES: &[(&str, &str, &str, &str)] = &[
     ("qwen_multiref", "agent_qwen_multiref", "Qwen 2.1 多圖參考", "Qwen-Image 2.1 with two or more reference pictures named <image1>, <image2>…"),
     ("moss", "agent_moss", "MOSS-Image", "MOSS-Image: detailed prose, text in the picture, comic pages"),
     ("other", "agent_other", "SDXL 系", "SDXL-family models (Illustrious, NoobAI, Pony)"),
-    ("ltx_video", "agent_ltx", "LTX-2.3 影片", "LTX-2.3 video (the video tool): text to video and image to video"),
-    ("h3_video", "agent_h3_base", "H3 影片", "MiniMax H3 video (the H3 video page)"),
+    ("h3_video", "agent_h3_base", "H3 影片", "MiniMax H3 video with sound (the video tool and the H3 video page): text or image to video"),
 ];
 
 /// 寫法名稱 → 設定頁編號（認不得就 None）
@@ -133,10 +130,10 @@ pub fn prompt_family<'a>(target: &str, fallback: &'a str) -> &'a str {
 static H3_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bh3\b|minimax").unwrap());
 static VIDEO_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)影片|視頻|视频|動起來|动起来|動畫|运镜|運鏡|\bvideo\b|\bclip\b|\banimate\b").unwrap());
 
-/// 「只寫詞」自動挑寫法：講到影片 → 影片（有講 H3 就是 H3，不然是本機 LTX）；Qwen 附一張圖 → 改圖、兩張以上 → 多圖參考；其他照家族
+/// 「只寫詞」自動挑寫法：講到影片 → H3 影片（2026-10-30 起內建影片就是 H3）；Qwen 附一張圖 → 改圖、兩張以上 → 多圖參考；其他照家族
 pub fn pick_guide(family: &str, images: usize, ask: &str) -> &'static str {
     if VIDEO_ASK.is_match(ask) || H3_ASK.is_match(ask) {
-        return if H3_ASK.is_match(ask) { "h3_video" } else { "ltx_video" };
+        return "h3_video";
     }
     match (family, images) {
         (QWEN21, 1) => "qwen_edit",
@@ -150,7 +147,7 @@ pub fn needed_guide(action: &Map<String, Value>, family: &str, refs_mode: &str) 
     match tx(action.get("action").unwrap_or(&Value::Null)).as_str() {
         "call" => match tx(action.get("tool").unwrap_or(&Value::Null)).as_str() {
             "edit" => Some("qwen_edit"),
-            "video" => Some("ltx_video"),
+            "video" => Some("h3_video"),
             _ => None,
         },
         "generate" if family == QWEN21 && refs_mode == "multi" => match action.get("refs").and_then(Value::as_array).map(Vec::len).unwrap_or(0) {
@@ -178,7 +175,6 @@ const GUIDE_ECHO: &[&str] = &[
     "real danbooru tags in lowercase",
     "real danbooru spellings only",
     "subject and look,",
-    "mature and revealing",
     "work in this order",
     "positional phrases",
     "the medium noun",
@@ -406,10 +402,16 @@ describe the new version in the prompt (the new hair, the new background…) and
 Changing the background needs at least 0.7; changing a hair or clothing color needs at least 0.85; turning the person into a zombie or monster, or adding heavy wounds and gore, needs 0.9. \
 Remove from the prompt the words for what is being replaced (new background on a beach → no cafe, window or coffee machine words). \
 If your result kept too much of the original (old color, old background), raise denoise by 0.1 instead of only repeating words. \
-The prompt still describes the whole picture you want. Leave refs out to draw from text only; when the user wants a similar character or style, describe it in the prompt instead. Redrawing keeps the angle and pose: for a turnaround, a back or side view or other angles of the user's character, call the character_sheet tool with \"ref\":N instead.",
-        _ => "You can look at user images but cannot feed them to the image model: describe in the prompt everything you need from them.",
+The prompt still describes the whole picture you want. Leave refs out to draw from text only; when the user wants a similar character or style, describe it in the prompt instead. Redrawing keeps the angle and pose: for a turnaround, a back or side view or other angles of the user's character, call the character_sheet tool with \"ref\":N instead. \
+To change only the pose, the arms or the hands while keeping everything else, redrawing does not work either (low denoise keeps the old pose, high denoise turns the picture into another person): call the edit tool with \"ref\":N and an instruction that names only that change.",
+        _ => return format!("{head}\nYou can look at user images but cannot feed them to the image model: describe in the prompt everything you need from them."),
     };
-    format!("{head}\n{how}")
+    // 2026-10-29 使用者轉來回報：要「原圖不變只改手臂」，助手卻先畫一張新的 CG 人再在上面改，新畫風之後洗不掉
+    let keep = "When the user wants THEIR picture kept and only something changed, every try starts from the user's picture (refs, or the edit tool with \"ref\":N). \
+Never draw a new picture from text first and then fix or edit it toward the user's picture: its new face and style stay for good. \
+If a try changed the person or the style, go back to the user's picture with a clearer instruction instead of working on that result. \
+Edit your own result (edit with \"id\") only when it already looks like the user's picture and needs one more change.";
+    format!("{head}\n{how}\n{keep}")
 }
 
 /// 工作說明＋使用者附圖的說明
@@ -557,9 +559,10 @@ pub fn request_images(events: &[Value]) -> Vec<i64> {
         .iter()
         .rposition(|e| ev_kind(e) == "user" && !truthy(e.get("mid")))
         .unwrap_or(0);
+    // look 工具的結果只是拿來看的圖（2026-10-29 盤點：算進來會讓「只看圖」的請求交卷 best:[] 被退回）
     events[start..]
         .iter()
-        .filter(|e| ev_kind(e) == "result")
+        .filter(|e| ev_kind(e) == "result" && e["tool"] != "look")
         .flat_map(|e| e["ids"].as_array().cloned().unwrap_or_default())
         .filter_map(|v| v.as_i64())
         .collect()
@@ -748,6 +751,17 @@ static SIZE_ITEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^(?:\d{3,4
 // 要角色的新角度：三視圖、轉身、背面、側面、多視角…
 static NEW_VIEW: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)三視圖|三视图|四視圖|四视图|多視角|多视角|轉身|转身|背面|背影|側面|侧面|設定圖|设定图|turn-?around|back view|side view|character sheet|other angles?").unwrap());
+// 要換姿勢、手臂、手勢（圖生圖做不到：低重繪留著舊姿勢，高重繪變成另一個人）
+static POSE_CHANGE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)姿勢|姿势|姿態|姿态|動作|动作|手臂|胳膊|手勢|手势|舉起|举起|抬起|抬手|舉手|举手|叉腰|插腰|\bpose\b|\barms?\b|\braise").unwrap());
+// 說自己「不用 refs」：英文 no／without，中文「不帶 refs」（2026-10-29 實測 Fable 寫「用文字重繪，不帶 refs」被當成說要用、連擋三次）
+static NO_REFS: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:\bno|without|not use|don't use|不帶|不带|不用|沒有|没有|不使用|不加|無|无)\s*(?:the\s*)?refs").unwrap());
+/// 要換姿勢時圖生圖最多准到多少重繪（再高就是畫成另一個人，改叫 edit）
+const POSE_REDRAW_MAX: f64 = 0.5;
+// 「姿勢不變」那種反過來的說法
+static KEEP_POSE: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?i)(?:姿勢|姿势|動作|动作|pose)\s*(?:不變|不变|不要變|不要变|保持|一樣|一样)|(?:同樣|同样|一樣的|一样的|保持)\s*(?:的)?\s*(?:姿勢|姿势|動作|动作)|same pose|keep (?:the )?pose").unwrap());
 static NO_ITEM: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)[:：]\s*(?:no\b|not\b|missing|wrong|✗|❌|否|沒有|不對)").unwrap());
 
 /// 引號外面有中日韓文字（要畫進圖裡的字可以放引號裡）
@@ -876,9 +890,19 @@ fn repair_prompt_tail(raw: &str) -> Option<Map<String, Value>> {
     (fixed != raw).then(|| json_in(&fixed)).flatten()
 }
 
+/// 9B 會把 refs／denoise 寫進提示詞字串裡、而且沒把字串收好（"prompt":"…, refs:[1],"width":832）：整個 JSON 壞掉。
+/// 把那一段拆回成欄位（2026-10-29 真模型實測 heretic-v2 連三次都這樣）
+fn repair_field_leak(raw: &str) -> Option<Map<String, Value>> {
+    static LEAK: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r#"("prompt"\s*:\s*"(?:[^"\\]|\\.)*?)\s*,?\s*\b(refs?|denoise)\s*[:=]\s*(\[[^\]]*\]|[0-9]+(?:\.[0-9]+)?)\s*,\s*""#).unwrap()
+    });
+    let fixed = LEAK.replace(raw, r#"${1}","${2}":${3},""#).to_string();
+    (fixed != raw).then(|| json_in(&fixed)).flatten()
+}
+
 /// 模型輸出 → 正規化的動作；不合格回傳要退回給它的英文說明
 pub fn parse_action(raw: &str, c: &Check) -> Result<Map<String, Value>, String> {
-    let Some(m) = json_in(raw).or_else(|| repair_check(raw)).or_else(|| repair_prompt_tail(raw)) else {
+    let Some(m) = json_in(raw).or_else(|| repair_check(raw)).or_else(|| repair_prompt_tail(raw)).or_else(|| repair_field_leak(raw)) else {
         return Err("Your reply was not a JSON object. Reply with exactly ONE JSON object, nothing else.".into());
     };
     let mut action = tx(m.get("action").unwrap_or(&Value::Null)).trim().to_lowercase();
@@ -966,6 +990,11 @@ fn parse_call(m: &Map<String, Value>, named: Option<&str>, c: &Check) -> Result<
     };
     let (args, level, why) = crate::agent_tools::check_call(&tool, &args)?;
     let name = crate::agent_tools::find(&tool).map(|t| t.name).unwrap_or_default();
+    // 「id」是圖庫編號、「ref」才是使用者附的圖。這個請求還沒畫過圖、id 又剛好是使用者圖片的號碼（1～4）：
+    // 一定是把附圖寫成 id，照送會改到圖庫第 N 張（2026-10-29 真模型實測 9B 寫 {"id":1}）
+    if let Some(n) = args.get("id").and_then(Value::as_i64).filter(|n| c.images.is_empty() && c.user_images.contains(n)) {
+        return Err(format!("\"id\" is a gallery image id, not the user's picture. For user image {n} write \"ref\":{n} instead of \"id\"."));
+    }
     let mut out = Map::from_iter([
         ("action".into(), json!("call")),
         ("tool".into(), json!(name)),
@@ -1095,6 +1124,14 @@ fn parse_generate(m: &Map<String, Value>, check: Vec<String>, c: &Check) -> Resu
             format!("Your prompt names <image1>, but \"refs\" is empty, so the image model never gets that picture. Add the field, for example {}.", example(*c.request_user_images.first().or(c.user_images.last()).unwrap_or(&1)))
         });
     }
+    if refs.is_empty() && c.refs_mode == "one" && !c.request_user_images.is_empty() && !c.nudged && POSE_CHANGE.is_match(c.ask) && !KEEP_POSE.is_match(c.ask) {
+        return Err(format!(
+            "The user attached image(s) {:?} to this request, but your JSON has no \"refs\". To change the pose, arms or hands of THEIR picture and keep everything else, \
+edit it: {{\"action\":\"call\",\"tool\":\"edit\",\"args\":{{\"ref\":{},\"instruction\":\"the one change in plain words\"}}}}. If you only take ideas from it, send the same JSON again without refs.",
+            c.request_user_images,
+            c.request_user_images[0]
+        ));
+    }
     if refs.is_empty() && !c.refs_mode.is_empty() && !c.request_user_images.is_empty() && !c.nudged {
         return Err(format!(
             "The user attached image(s) {:?} to this request, but your JSON has no \"refs\". If they want that picture changed, redrawn or combined (same person, pose or layout), \
@@ -1103,9 +1140,20 @@ put the field in the JSON itself, for example {}. If you only take ideas from it
             example(c.request_user_images[0])
         ));
     }
+    // 上一輪還用著使用者的圖，這輪拿掉 refs＝改成只照文字畫一張新的（另一個人、另一種畫風），之後怎麼修都洗不回去。
+    // 「附了圖沒用」的提醒只在第一輪；2026-10-29 使用者轉來回報：助手先畫一張結構差不多的 CG 人，再在它自己的圖上改姿勢
+    let last_refs: Vec<i64> = c.last.and_then(|l| l["refs"].as_array()).map(|a| a.iter().filter_map(Value::as_i64).collect()).unwrap_or_default();
+    // 新請求也算：「同一張，頭髮再短一點」不會再附圖，拿掉 refs 一樣會畫成別人（真的要新圖，照原樣再送一次就放行）
+    if refs.is_empty() && !c.refs_mode.is_empty() && !last_refs.is_empty() && !c.nudged {
+        return Err(format!(
+            "Your previous round built on user image(s) {last_refs:?}, but this JSON has no \"refs\", so the image model would draw a new picture from text only (another face and style that later rounds cannot remove). \
+Keep the user's picture as the base, for example {}. If this really should be a new picture from text, send the same JSON again.",
+            example(last_refs[0])
+        ));
+    }
     // 嘴上說用了 refs（say／changes），JSON 卻沒有：9B 常這樣，提醒到它補上或改口
     let said = format!("{} {}", tx(m.get("say").unwrap_or(&Value::Null)), tx(m.get("changes").unwrap_or(&Value::Null))).to_lowercase();
-    if refs.is_empty() && !c.refs_mode.is_empty() && !c.user_images.is_empty() && said.contains("refs") && !said.contains("no refs") && !said.contains("without refs") {
+    if refs.is_empty() && !c.refs_mode.is_empty() && !c.user_images.is_empty() && said.contains("refs") && !NO_REFS.is_match(&said) {
         return Err(format!(
             "You wrote that you use refs, but the JSON has no \"refs\" field. Add it as its own field, for example {}, or stop mentioning refs.",
             example(*c.request_user_images.first().or(c.user_images.last()).unwrap_or(&1))
@@ -1130,6 +1178,16 @@ put the field in the JSON itself, for example {}. If you only take ideas from it
                 ));
             }
             let d = m.get("denoise").and_then(crate::py::float).unwrap_or(0.7).clamp(0.2, 0.95);
+            // 換姿勢、手臂：圖生圖低重繪留著舊姿勢、高重繪變成另一個人（結構差不多的別人），改用 Qwen 2.1 照指令改圖。
+            // 不靠「提醒過一次」放行：那個旗標常被前一條提醒用掉（2026-10-29 真模型實測就是這樣漏的）；只修小地方（0.5 以下）照放
+            if d > POSE_REDRAW_MAX && POSE_CHANGE.is_match(c.ask) && !KEEP_POSE.is_match(c.ask) {
+                return Err(format!(
+                    "Redrawing cannot change only the pose: low denoise keeps the old pose and high denoise turns the picture into another person. \
+Edit the user's picture instead: {{\"action\":\"call\",\"tool\":\"edit\",\"args\":{{\"ref\":{},\"instruction\":\"the one change in plain words, keep the person, clothes, style and background unchanged\"}}}}. \
+If the pose should stay as it is and only small details change, use a denoise of {POSE_REDRAW_MAX} or lower.",
+                    refs[0]
+                ));
+            }
             denoise = json!((d * 100.0).round() / 100.0);
         } else {
             refs.truncate(MAX_USER_IMAGES);
@@ -1142,7 +1200,8 @@ put the field in the JSON itself, for example {}. If you only take ideas from it
             }
         }
     }
-    if let Some(last) = c.last {
+    // 只比這個請求裡的上一輪：新請求「再來一張」照抄上一份提示詞是對的（換種子）
+    if let Some(last) = c.last.filter(|_| !c.images.is_empty()) {
         if norm(&tx(&last["prompt"])) == norm(&prompt) && last["loras"] == json!(loras) && last.get("refs").cloned().unwrap_or(json!([])) == json!(refs)
             && last.get("denoise").cloned().unwrap_or(Value::Null) == denoise
         {
@@ -1502,10 +1561,11 @@ mod tests {
         let a = parse_action(p, &check(&cat, None, &[], false, 3)).unwrap();
         assert_eq!(a["loras"], json!([{"name": "qwen21\\snowglow_qwen21_2000.safetensors", "strength": 1.6}]));
         assert_eq!((a["width"].clone(), a["height"].clone()), (json!(832), json!(1248)));
-        // 提示詞沒改退回
+        // 提示詞沒改退回（同一個請求裡的上一輪才比；新請求「再來一張」照抄是對的）
         let last = Value::Object(a.clone());
-        let r = parse_action(p, &check(&cat, Some(&last), &[], false, 2));
+        let r = parse_action(p, &check(&cat, Some(&last), &[5], false, 2));
         assert!(r.unwrap_err().contains("identical"));
+        assert!(parse_action(p, &check(&cat, Some(&last), &[], false, 2)).is_ok());
         // 不認得的 LoRA 退回
         let r = parse_action(r#"{"action":"generate","prompt":"A woman standing in the rain at night","loras":[{"name":"nope"}]}"#, &check(&cat, None, &[], false, 3));
         assert!(r.unwrap_err().contains("Unknown LoRA"));
@@ -1598,6 +1658,10 @@ mod tests {
         ev2.push(json!({"kind": "user", "text": "再來一張側臉"}));
         assert_eq!(rounds_used(&ev2), 0);
         assert!(request_images(&ev2).is_empty());
+        // look 拿來看的圖不算這個請求畫的
+        let mut ev4 = ev2.clone();
+        ev4.push(json!({"kind": "result", "round": 1, "ids": [9], "tool": "look"}));
+        assert!(request_images(&ev4).is_empty());
         assert!(latest_result(&ev2).is_none());
     }
 
@@ -1767,6 +1831,54 @@ mod tests {
     }
 
     #[test]
+    fn keeps_building_on_the_users_picture() {
+        // 2026-10-29 回報：要「原圖不變只改手臂」，助手先畫一張新的 CG 人再改
+        let cat: Vec<LoraInfo> = vec![];
+        let ck = |ask: &'static str, last: Option<&'static Value>, images: &'static [i64], nudged: bool| Check {
+            family: ANIMA, rounds_left: 3, last, saw_images: false, images, catalog: &cat, fixed: &[],
+            allow_loras: true, nudged, user_images: &[1], request_user_images: &[], refs_mode: "one", ask, calls_left: 12,
+        };
+        // 換姿勢：圖生圖做不到，導去 edit ref；說了姿勢不變、或提醒過一次就放行
+        let g = r#"{"action":"generate","prompt":"masterpiece, best quality, 1girl, raising her right arm","refs":[1],"denoise":0.9}"#;
+        let e = parse_action(g, &ck("保持原圖不變，把她的手臂換個姿勢", None, &[], false)).unwrap_err();
+        assert!(e.starts_with("Redrawing cannot change only the pose") && e.contains("\"tool\":\"edit\"") && e.contains("\"ref\":1"), "{e}");
+        assert!(parse_action(g, &ck("姿勢不變，頭髮改成紅色", None, &[], false)).is_ok());
+        // 提醒過別的事（nudged）也照擋；只修小地方（重繪 0.5 以下）放行
+        assert!(parse_action(g, &ck("把手臂換個姿勢", None, &[], true)).is_err());
+        let small = r#"{"action":"generate","prompt":"masterpiece, best quality, 1girl, no tattoo on arm","refs":[1],"denoise":0.4}"#;
+        assert!(parse_action(small, &ck("把手臂上的刺青去掉", None, &[], false)).is_ok());
+        // 改圖工具把使用者的圖寫成 id：退回叫它用 ref；這個請求畫過圖之後的 id 照收
+        let edit_id = r#"{"action":"call","tool":"edit","args":{"id":1,"instruction":"右手比 V"}}"#;
+        let e = parse_action(edit_id, &ck("把手臂換個姿勢", None, &[], false)).unwrap_err();
+        assert!(e.contains("\"ref\":1"), "{e}");
+        assert!(parse_action(edit_id, &ck("把手臂換個姿勢", None, &[7], false)).is_ok());
+        assert!(parse_action(r#"{"action":"call","tool":"edit","args":{"ref":1,"instruction":"右手比 V"}}"#, &ck("把手臂換個姿勢", None, &[], false)).is_ok());
+        // 中文說「不帶 refs」不算說要用
+        let no = r#"{"action":"generate","prompt":"masterpiece, best quality, 1girl, red hair","say":"用文字重繪，不帶 refs。"}"#;
+        assert!(parse_action(no, &ck("頭髮改成紅色", None, &[], false)).is_ok());
+        assert!(parse_action(&no.replace("不帶 refs", "用 refs"), &ck("頭髮改成紅色", None, &[], false)).unwrap_err().starts_with("You wrote that you use refs"));
+        // refs 寫進提示詞字串又沒收好：拆回欄位
+        let leak = r#"{"action":"generate","check":[],"prompt":"masterpiece, best quality, 1girl, red hair, from front, refs:[1],"width":832,"height":1216,"loras":[],"denoise":0.85,"say":"改紅髮"}"#;
+        let a = parse_action(leak, &ck("頭髮改成紅色", None, &[], false)).unwrap();
+        assert_eq!((a["refs"].clone(), a["denoise"].clone()), (json!([1]), json!(0.85)));
+        assert!(!tx(&a["prompt"]).contains("refs"), "{a:?}");
+        // 上一輪用著使用者的圖，這輪拿掉 refs：提醒一次
+        static LAST: LazyLock<Value> = LazyLock::new(|| json!({"action": "generate", "prompt": "1girl", "refs": [1], "denoise": 0.5}));
+        let plain = r#"{"action":"generate","prompt":"masterpiece, best quality, 1girl, red hair","refs":[]}"#;
+        let e = parse_action(plain, &ck("頭髮改成紅色", Some(&LAST), &[7], false)).unwrap_err();
+        assert!(e.starts_with("Your previous round built on user image(s) [1]") && e.contains("\"refs\":[1]"), "{e}");
+        assert!(parse_action(plain, &ck("頭髮改成紅色", Some(&LAST), &[7], true)).is_ok());
+        // 上一輪是別的請求（「同一張，頭髮再短一點」不會再附圖）也提醒一次；真的要新圖就照原樣再送
+        assert!(parse_action(plain, &ck("同一張，頭髮再短一點", Some(&LAST), &[], false)).is_err());
+        assert!(parse_action(plain, &ck("畫一隻貓", Some(&LAST), &[], true)).is_ok());
+        // 說明裡有「從使用者的圖開始」和換姿勢改用 edit
+        let t = images_text("one");
+        assert!(t.contains("every try starts from the user's picture") && t.contains("call the edit tool with \"ref\":N"), "{t}");
+        assert!(images_text("multi").contains("every try starts from the user's picture"));
+        assert!(!images_text("").contains("every try"));
+    }
+
+    #[test]
     fn tool_events_reach_the_model() {
         let ev = vec![
             json!({"kind": "user", "text": "放大最後一張"}),
@@ -1877,6 +1989,7 @@ mod tests {
         let prev_v = Value::Object(prev);
         let mut c2 = ck("one");
         c2.last = Some(&prev_v);
+        c2.images = &[5];
         assert!(parse_action(r#"{"action":"generate","prompt":"1girl, long golden hair, sunset beach","refs":[1],"denoise":0.85}"#, &c2).is_ok());
         assert!(parse_action(r#"{"action":"generate","prompt":"1girl, long golden hair, sunset beach","refs":[1],"denoise":0.75}"#, &c2).is_err());
         assert!(with_images("A", "").ends_with("cannot feed them to the image model: describe in the prompt everything you need from them."));
@@ -1889,7 +2002,7 @@ mod tests {
         assert_eq!(pick_guide(QWEN21, 1, "把背景換成海邊"), "qwen_edit");
         assert_eq!(pick_guide(QWEN21, 3, "三個人合照"), "qwen_multiref");
         assert_eq!(pick_guide(ANIMA, 1, "照這張重畫"), "anima", "Anima 圖生圖照一般寫法");
-        assert_eq!(pick_guide(MOSS, 0, "寫一段影片：她轉頭微笑"), "ltx_video");
+        assert_eq!(pick_guide(MOSS, 0, "寫一段影片：她轉頭微笑"), "h3_video", "LTX 退場：影片一律照 H3 寫");
         assert_eq!(pick_guide(MOSS, 0, "幫我寫 H3 的提示詞"), "h3_video");
         assert_eq!(pick_guide("other", 0, "1girl"), "other");
         // 每一份寫法都有預設文字
@@ -1905,7 +2018,8 @@ mod tests {
     fn edits_and_videos_wait_for_their_guide() {
         let call = |tool: &str| json!({"action": "call", "tool": tool, "args": {}}).as_object().cloned().unwrap();
         assert_eq!(needed_guide(&call("edit"), ANIMA, "one"), Some("qwen_edit"));
-        assert_eq!(needed_guide(&call("video"), ANIMA, "one"), Some("ltx_video"));
+        assert_eq!(needed_guide(&call("video"), ANIMA, "one"), Some("h3_video"));
+        assert_eq!(guide_text_id("ltx_video"), None);
         assert_eq!(needed_guide(&call("upscale"), ANIMA, "one"), None);
         let gen = |refs: Value| json!({"action": "generate", "prompt": "x", "refs": refs}).as_object().cloned().unwrap();
         assert_eq!(needed_guide(&gen(json!([])), QWEN21, "multi"), None);
@@ -1914,7 +2028,7 @@ mod tests {
         assert_eq!(needed_guide(&gen(json!([1])), ANIMA, "one"), None);
         let ev = vec![json!({"kind": "tool", "tool": "guide", "ok": true, "args": {"name": "qwen_edit"}})];
         assert!(guide_read(&ev, "qwen_edit"));
-        assert!(!guide_read(&ev, "ltx_video"));
+        assert!(!guide_read(&ev, "h3_video"));
         let failed = vec![json!({"kind": "tool", "tool": "guide", "ok": false, "args": {"name": "qwen_edit"}})];
         assert!(!guide_read(&failed, "qwen_edit"));
     }

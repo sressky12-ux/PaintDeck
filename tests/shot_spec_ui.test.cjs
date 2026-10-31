@@ -151,12 +151,15 @@ test('text-to-video workflow does not require a still image or image model', asy
 
 test('first-frame engines require a frame or valid still-image model before creating project', async () => {
   const m = subject({ image: {} });
-  m.s.load({ engine: 'ltx23', segments: [{}] });
+  m.s.setWorkflows([{ id: 'mapped', info: { image: null }, media_slots: [{ kind: 'image', role: 'first' }] }]);
+  assert.equal(m.s.requiresFirstFrame('mapped'), true);
+  m.s.load({ engine: 'mapped', segments: [{}] });
   await m.s.applyTo();
   assert.equal(m.calls.some(([url]) => url === '/api/director/from_sheet'), false);
   assert.match(m.errors[0], /首幀/);
-  m.s.setWorkflows([{ id: 'mapped', info: { image: null }, media_slots: [{ kind: 'image', role: 'first' }] }]);
-  assert.equal(m.s.requiresFirstFrame('mapped'), true);
+  // 2026-10-30 LTX 退場：舊拍攝單的 ltx23 讀成 H3
+  m.s.load({ engine: 'ltx23', segments: [{}] });
+  assert.equal(m.s.current().engine, 'h3');
 });
 
 
