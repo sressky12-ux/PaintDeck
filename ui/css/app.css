@@ -651,6 +651,8 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .box { background: var(--case); border-radius: 8px; padding: 12px 14px; display: flex; flex-direction: column; gap: 7px;
   box-shadow: 0 1px 0 var(--case-hi) inset, 0 2px 0 var(--case-lo); }
 .box > label:first-child { font: 800 13px/1.3 var(--f-ui); }
+.st-steps { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 3px; line-height: 1.5; }
+#tavernUrl { align-self: center; padding: 3px 8px; border-radius: 4px; background: var(--case-3); user-select: all; }
 .danger-zone { box-shadow: 0 1px 0 var(--case-hi) inset, 0 2px 0 var(--case-lo), inset 4px 0 0 #c8412d; }
 .reset-parts { display: flex; flex-direction: column; gap: 2px; }
 .reset-parts .check { align-items: flex-start; }

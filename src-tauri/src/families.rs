@@ -353,6 +353,8 @@ struct Probe {
     // 影片模型（Wan 2.x、LTX-Video／LTX-2）：架構名稱跟 Anima（.blocks.）、Qwen（transformer_blocks）撞名，要先認出來排除
     wan: bool,
     ltx: bool,
+    /// MiniMax H3：blocks.N.attn.qkv_proj、video／audio_patch_proj（Anima 的注意力是分開的 q_proj／k_proj／v_proj）
+    h3: bool,
     /// transformer_blocks 底下有 attn1／attn2（LTX 的命名；Qwen-Image 是 attn、SD 的 UNet 才有 input_blocks 之類的結構）
     attn12: bool,
     /// Anima 自己才有的名稱（Cosmos predict2 的 adaln_modulation、llm_adapter）
@@ -501,6 +503,9 @@ impl Probe {
             || has(t, &["caption", "projection"])
             || has(t, &["audio", "to", "video"])
             || has(t, &["video", "to", "audio"]);
+        self.h3 |= has(t, &["attn", "qkv", "proj"])
+            || has(t, &["video", "patch", "proj"])
+            || has(t, &["audio", "patch", "proj"]);
         if find(t, &["transformer", "blocks"]).is_some() && (has(t, &["attn1"]) || has(t, &["attn2"])) {
             self.attn12 = true;
         }
@@ -508,7 +513,7 @@ impl Probe {
 
     /// 影片模型：不是 Anima 也不是 Qwen，也不是任何生圖家族
     fn is_video(&self) -> bool {
-        (self.wan && !self.anima_strong) || self.ltx || (self.attn12 && !self.unet_ctx && !self.depth2 && self.dit_family().is_none())
+        (self.wan && !self.anima_strong) || (self.h3 && !self.anima_strong) || self.ltx || (self.attn12 && !self.unet_ctx && !self.depth2 && self.dit_family().is_none())
     }
 
     /// 影片模型裡的 LTX（LTX-Video／LTX-2）：有 LTX 自己的名稱，或 transformer_blocks.N.attn1／attn2 又不是 Wan
@@ -1923,6 +1928,17 @@ mod tests {
         assert!(!is_ltx_keys(&s(&["transformer_blocks.0.attn.to_q.weight", "transformer_blocks.0.img_mlp.net.0.proj.weight"])));
         // SDXL 的 UNet 也有 attn1／attn2，但有 input_blocks
         assert!(!is_ltx_keys(&s(&["lora_unet_input_blocks_4_1_transformer_blocks_0_attn1_to_q.lora_down.weight", "lora_unet_label_emb_0_0.lora_down.weight"])));
+    }
+
+    /// MiniMax H3（影片）也用 blocks.N 開頭，不能被舊規則當成 Anima（酒館接口曾挑到 10Eros H3 去生圖而炸掉）
+    #[test]
+    fn minimax_h3_is_video_not_anima() {
+        // 真實檔頭 10Eros_Max_h3_TURBO-hybrid_beta5_w4a8_14gb_optimized（整顆模型）
+        assert_eq!(classify(&s(&["adaln_basis", "audio_patch_proj.weight", "blocks.0.adaln_proj.linear.weight", "blocks.0.attn.qkv_proj.weight",
+            "blocks.0.attn.out_proj.weight", "blocks.0.mlp.fc1.weight", "token_refiner.blocks.0.attn.qkv_proj.weight", "video_patch_proj.weight"])), OTHER);
+        // H3 LoRA（minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16）
+        assert_eq!(classify(&s(&["diffusion_model.blocks.0.attn.qkv_proj.lora_A.weight", "diffusion_model.blocks.0.attn.out_proj.lora_B.weight"])), OTHER);
+        assert!(!is_ltx_keys(&s(&["blocks.0.attn.qkv_proj.weight", "video_patch_proj.weight"])));
     }
 
     /// 影片模型的排除條件不能誤傷：Anima、Qwen、SDXL／SD1.5 的 UNet（也有 attn1／attn2）、SD3.5（transformer_blocks.N.attn2）照舊

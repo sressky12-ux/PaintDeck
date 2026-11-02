@@ -1,5 +1,5 @@
 // 設定：Civitai API key、成人預覽模糊、預設負面提示詞、AI 改寫、影片模型、模型與工作流（models.js）、匯出／匯入、恢復原廠（可救回）
-import { $, el, api, toast } from "./util.js";
+import { $, el, api, toast, copyText } from "./util.js";
 import { app } from "./state.js";
 import * as i18n from "./i18n.js";
 import { resetDock } from "./dock.js";
@@ -21,6 +21,23 @@ const DEFAULT_PARTS = ["gallery", "uploads", "presets"];
 // 這個瀏覽器記住的東西（localStorage 前綴 aw_）
 const BROWSER_KEYS = ["form", "pe", "recent", "snippets", "snippetsMoved", "libView", "theme", "galFilters", "notify"];  // 介面語言（lang）恢復原廠也保留
 
+// 設定頁「接 SillyTavern」：酒館要填的網址（就是繪匣自己的網址）、複製、檢查 A1111 相容接口（api_sdapi.rs）
+function mountTavern() {
+  const url = location.protocol === "http:" ? location.origin : "http://127.0.0.1:8190";
+  $("#tavernUrl").textContent = url;
+  $("#tavernCopy").onclick = async () => { await copyText(url); toast("網址複製好了，貼到酒館的 URL 欄", "ok"); };
+  $("#tavernTest").onclick = async () => {
+    const b = $("#tavernTest");
+    b.disabled = true;
+    try {
+      const list = await api("/sdapi/v1/sd-models", { timeout: 30000 });
+      if (!list?.length) toast("接口正常，但沒有能用的模型：酒館只會列 Anima、Qwen 2.1、MOSS 的模型", "err");
+      else toast(`接口正常，酒館看得到 ${list.length} 顆模型`, "ok");
+    } catch (e) { toast("接口沒有回應：" + e.message, "err"); }
+    finally { b.disabled = false; }
+  };
+}
+
 export function init() {
   updates.init();
   cache.init();
@@ -36,6 +53,7 @@ export function init() {
     resetDock();
     toast("版面都恢復成預設了", "ok");
   };
+  mountTavern();
   // 儲存失敗要講出來（不然按了沒反應，使用者以為存好了）
   $("#setKeySave").onclick = async () => {
     try {

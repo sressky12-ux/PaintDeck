@@ -1419,6 +1419,21 @@
       <label>工作節點（多張顯卡、遠端 ComfyUI）</label>
       <div id="nodesBox"></div>
     </section>
+    <section class="box" id="setTavern">
+      <label>接 SillyTavern（酒館）生圖</label>
+      <div class="muted sm">繪匣可以假裝成 Stable Diffusion WebUI（A1111），在酒館聊天時叫繪匣畫插圖。酒館要跟繪匣裝在同一台電腦（別台電腦連不進來）。</div>
+      <ol class="st-steps sm">
+        <li>繪匣保持開著。</li>
+        <li>酒館上方點拼圖圖示（Extensions），打開「Image Generation」。</li>
+        <li>Source 選「Stable Diffusion WebUI (AUTOMATIC1111)」。</li>
+        <li>URL 填下面的網址，按 Connect。</li>
+        <li>Model 下拉選一顆模型。只會列出 Anima、Qwen 2.1、MOSS 這三家，一定要自己選一顆。</li>
+        <li>步數和 CFG 要照模型改：Anima Turbo 用 8 步、CFG 1。酒館預設會送 20 步、CFG 7，Turbo 模型會畫得又慢又糊。Sampler、Scheduler 選 Automatic 就是照模型預設。</li>
+        <li>出圖：聊天欄打 <code translate="no">/sd 1girl, smile</code>，或從魔杖選單按「Generate Image」。</li>
+      </ol>
+      <div class="row gap"><code id="tavernUrl" translate="no"></code><button class="akey" id="tavernCopy" type="button">複製網址</button><button class="akey" id="tavernTest" type="button">檢查接口</button></div>
+      <div class="muted sm">提示詞裡寫 <code translate="no">&lt;lora:名稱:強度&gt;</code> 會換成繪匣的 LoRA，找不到的會略過。畫好的圖也會存進繪匣的圖庫。目前只能文生圖，酒館的圖生圖、放大用不了。</div>
+    </section>
     <section class="box">
       <label class="check"><input type="checkbox" id="setBlur"> Civitai 預覽圖的成人內容先模糊（滑過才顯示）</label>
     </section>
