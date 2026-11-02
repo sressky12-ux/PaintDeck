@@ -1720,3 +1720,27 @@ body.docking { cursor: grabbing; user-select: none; }
 .llm-keys { display: grid; gap: 6px; font-size: 13px; }
 .llm-st { color: var(--label-dim); } .llm-st.ok { color: var(--ok); }
 @media (max-width: 640px) { .llm-routes thead { display: none; } .llm-routes tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px 0; border-top: 1px solid var(--groove); } .llm-routes td { border: 0; padding: 0; } .llm-routes td:first-child { grid-column: 1 / -1; font-weight: 700; } }
+
+/* ---------------------------------------------------------------- 工作節點（nodes.js） */
+.nodes-sec { display: grid; gap: 4px; margin-top: 10px; }
+.nodes-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.nodes-gpu { font-weight: 700; min-width: 130px; }
+.nodes-row input[type=text] { width: auto; }
+.nodes-remote { display: flex; align-items: flex-end; gap: 8px; flex-wrap: wrap; background: var(--case-2); border-radius: 5px; padding: 8px 10px; box-shadow: inset 0 1px 2px var(--groove); }
+.nodes-f { display: inline-flex; flex-direction: column; gap: 2px; font-size: 12px; color: var(--label-dim); min-width: 160px; }
+.nodes-f-url { flex: 1 1 240px; }
+.nodes-f input { width: 100%; min-width: 0; }
+.nodes-status { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; color: var(--label-dim); flex: none; }
+.nodes-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--led-off); flex: none; }
+.nodes-dot.on { background: var(--ok); box-shadow: 0 0 4px var(--ok); }
+.nodes-bindf { display: inline-block; min-width: 84px; font-weight: 700; font-size: 12px; }
+.nodes-bindcell { margin-top: 0; }
+.nodes-tag { font: 700 11px/1.4 var(--f-ui); color: var(--label); background: var(--groove); border-radius: 3px; padding: 1px 6px; white-space: nowrap; }
+
+/* 生成頁「送到」下拉：包在生成鍵左邊，不動原本的按鈕版面 */
+.nodes-launch { display: flex; align-items: stretch; gap: 10px; min-width: 0; }
+.nodes-launch .bigkey { flex: 1; }
+#genNodeWrap { display: inline-flex; align-items: center; gap: 6px; }
+#genNodeWrap[hidden] { display: none; }
+#genNodeWrap .sub { margin: 0; }
+#genNode { width: auto; min-width: 150px; }

@@ -3,9 +3,11 @@ import { $, el, api, toast, debounce, store, modeName, fmtSecs } from "./util.js
 import { app } from "./state.js";
 import { play } from "./sfx.js";
 import { downloadForJob } from "./diagnostics.js";
+import { jobNodeLabel } from "./nodes.js";
 
 const F = (id) => $("#" + id);
 let jobs = [], running = null, avgFallback = null, queued = 0;
+let nodesCache = [], nodesAt = 0;  // GET /api/nodes 的節點清單（refresh 時順便更新，任務列要標「送到哪台」）
 const prog = new Map();     // job → { t0, v0, value, max, stage, t } 用來算這一段的速度
 let batchDone = [];          // 這一批畫好的圖（全部畫完時一起通知）
 const STATUS = { queued: "排隊中", running: "執行中", done: "完成", error: "失敗", cancelled: "已取消", lost: "遺失" };
@@ -55,6 +57,10 @@ export const refresh = debounce(async () => {
     running = r.running;
     if (r.progress && running) noteProgress(running, r.progress.value, r.progress.max);
     avgFallback = jobs.find((j) => j.avg_seconds)?.avg_seconds ?? null;
+    if (Date.now() - nodesAt > 10000) {  // 節點名稱不常變：最多 10 秒問一次
+      nodesAt = Date.now();
+      api("/api/nodes").then((n) => { nodesCache = n.nodes || []; render(); }).catch(() => { nodesCache = []; });
+    }
     render();
   } catch (e) {
     F("jobsList").innerHTML = "";
@@ -177,6 +183,8 @@ function render() {
 }
 const rank = (j) => ({ running: 0, queued: 1 }[j.status] ?? 2);
 
+const nodeTag = (j) => jobNodeLabel(j, nodesCache);
+
 function card(j, qpos) {
   const s = j.summary || {};
   const thumbs = (j.images || []).filter((x) => !x.deleted);
@@ -184,6 +192,7 @@ function card(j, qpos) {
     el("div", { class: "job-head" },
       el("span", { class: `badge st-${j.status}` }, STATUS[j.status] + (qpos ? ` 第 ${qpos} 個` : "")),
       el("span", { class: "muted sm" }, `${modeName[s.mode] || s.mode || ""}・${(s.model || "").replace(/\.safetensors$/, "")}・${s.width || "?"}×${s.height || "?"}`),
+      nodeTag(j) ? el("span", { class: "nodes-tag" }, nodeTag(j)) : null,
       el("span", { class: "grow" }),
       el("span", { class: "muted sm", title: new Date(j.created * 1000).toLocaleString(document.documentElement.lang) }, timeText(j))),
     el("div", { class: "job-prompt", title: s.prompt }, s.idea ? `💡 ${s.idea}` : s.prompt || "（沒有提示詞）"),

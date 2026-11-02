@@ -100,6 +100,8 @@ const DANGER = [
   // 2026-11-02 API 頁：助手那邊（agent_tools.rs 的 DANGER）同一天一起加
   [/^\/api\/llm\/(profile|preset|routes)(\/[a-z]+)?$/, "改 API 頁的大模型連線、指令預設或對照表，或送一次測試（會花一點點 token）"],
   [/^\/api\/hub\/rh_run$/, "在 RunningHub 跑工作流（照秒扣 RH 幣）"],
+  // 2026-11-02 工作節點：助手那邊（agent_tools.rs 的 DANGER）同一天一起加
+  [/^\/api\/nodes(\/test)?$/, "改工作節點（多張顯卡、遠端 ComfyUI）的設定，或連一台遠端 ComfyUI 測試"],
   [/^\/api\/(image|video)\/workflows/, "新增或改動匯入的工作流"],
   [/^\/api\/voices\/tts_workflow$/, "換掉或拿掉聲音庫的 TTS 工作流"],
 ];

@@ -954,17 +954,8 @@ pub(super) async fn wait_all(app: &Shared, pids: &[String], token: &Cancellation
     let mut pending: Vec<String> = pids.to_vec();
     while !pending.is_empty() {
         if token.is_cancelled() {
-            let running = app.comfy.live().running;
-            let queued: Vec<&String> = pending.iter().filter(|p| running.as_deref() != Some(p.as_str())).collect();
-            if !queued.is_empty() {
-                let _ = app.comfy.post("/queue", &json!({"delete": queued})).await;
-                for p in &queued {
-                    let _ = app.db.set_job(p, "cancelled", None);
-                }
-            }
-            if running.as_ref().is_some_and(|r| pending.contains(r)) {
-                let _ = app.comfy.post("/interrupt", &json!({})).await;
-            }
+            // 工作節點：每件找它所在的那台，正在跑的中斷、還在排的拿掉
+            app.pool.cancel(&pending).await;
             return Err("已停止".into());
         }
         let mut still = vec![];

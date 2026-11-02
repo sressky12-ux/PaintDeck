@@ -467,7 +467,10 @@
   </section>
 
   <div class="genrow" id="genRow">
-    <button class="bigkey" id="genBtn" type="button"><span class="led"></span>生成<small>CTRL + ENTER</small></button>
+    <div class="nodes-launch">
+      <span id="genNodeWrap" hidden><span class="sub">送到</span><select id="genNode"></select></span>
+      <button class="bigkey" id="genBtn" type="button"><span class="led"></span>生成<small>CTRL + ENTER</small></button>
+    </div>
     <div class="stepper"><span class="lbl">尺寸</span><span class="vfd g" id="sizeVfd">—</span><span class="lbl" id="sizeAspect"></span>
       <div class="row"><button class="minikey txt" id="stopBtn" type="button" title="停止目前這張">停</button><button class="minikey red txt" id="clearBtn" type="button" title="清空佇列並停止">全停</button></div></div>
   </div>
@@ -1411,6 +1414,10 @@
       <label>ComfyUI 啟動方式</label>
       <div class="muted sm">生圖站開 ComfyUI 時要不要多加參數、要不要自己開。A 卡的 ZLUDA 版、DirectML 版會自動照它們的方式開。</div>
       <div id="comfyOptsBox"></div>
+    </section>
+    <section class="box" id="setNodes">
+      <label>工作節點（多張顯卡、遠端 ComfyUI）</label>
+      <div id="nodesBox"></div>
     </section>
     <section class="box">
       <label class="check"><input type="checkbox" id="setBlur"> Civitai 預覽圖的成人內容先模糊（滑過才顯示）</label>

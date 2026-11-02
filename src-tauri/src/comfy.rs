@@ -41,9 +41,46 @@ pub struct Live {
     pub progress: Option<Value>,
 }
 
+/// 這台 ComfyUI 是哪個工作節點（nodes.rs）。主節點＝None
+pub struct NodeInfo {
+    pub id: String,
+    /// 存檔前綴標記（gpu1 → g1）
+    pub tag: String,
+    /// 遠端：輸入圖從哪裡上傳、成品抓回哪裡（本機的 ComfyUI input、output）
+    pub remote: Option<(std::path::PathBuf, std::path::PathBuf)>,
+}
+
+/// 這件工作是哪個節點的（送出時 params 記 _node；沒有＝主節點）
+pub fn owner_of(params: &Value) -> &str {
+    params.get("_node").and_then(Value::as_str).filter(|s| !s.is_empty()).unwrap_or(crate::nodes::MAIN)
+}
+
+/// 節點圖裡每個 combo 欄位（object_info 給的是選項清單）的值不在清單裡＝這台缺那個檔（模型、LoRA…）
+pub fn missing_in(nodes: &Value, info: &Value) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for n in nodes.as_object().into_iter().flat_map(|o| o.values()) {
+        let class = n["class_type"].as_str().unwrap_or("");
+        let spec = &info[class]["input"];
+        for (k, v) in n["inputs"].as_object().into_iter().flatten() {
+            let Some(val) = v.as_str() else { continue };
+            let opts = ["required", "optional"].iter().find_map(|g| spec[*g][k][0].as_array());
+            if let Some(opts) = opts.filter(|o| o.first().is_some_and(Value::is_string)) {
+                if !opts.iter().any(|o| o.as_str() == Some(val)) && !out.iter().any(|x| x == val) {
+                    out.push(val.to_string());
+                }
+            }
+        }
+    }
+    out
+}
+
 pub struct Comfy {
     url: String,
     ws_url: String,
+    client_id: String,
+    node: Option<NodeInfo>,
+    /// 節點從設定拿掉了：websocket 迴圈看到就結束
+    closed: std::sync::atomic::AtomicBool,
     http: reqwest::Client,
     db: Arc<Db>,
     hub: Hub,
@@ -58,17 +95,34 @@ impl Comfy {
     }
 
     pub fn new(url: &str, db: Arc<Db>, hub: Hub) -> Arc<Comfy> {
+        Comfy::new_node(url, db, hub, None, None)
+    }
+
+    /// 工作節點（nodes.rs）：client_id 加標記，免得幾台都用同一個 id 搶事件；token＝遠端要的 Bearer 金鑰
+    pub fn new_node(url: &str, db: Arc<Db>, hub: Hub, node: Option<NodeInfo>, token: Option<&str>) -> Arc<Comfy> {
         let url = url.trim_end_matches('/').to_string();
-        let ws_url = format!("{}/ws?clientId={}", url.replacen("http", "ws", 1), CLIENT_ID.as_str());
+        let client_id = match &node {
+            Some(n) => format!("{}-{}", CLIENT_ID.as_str(), n.tag),
+            None => CLIENT_ID.to_string(),
+        };
+        let ws_url = format!("{}/ws?clientId={client_id}", url.replacen("http", "ws", 1));
+        let mut headers = reqwest::header::HeaderMap::new();
+        if let Some(v) = token.filter(|t| !t.is_empty()).and_then(|t| reqwest::header::HeaderValue::from_str(&format!("Bearer {t}")).ok()) {
+            headers.insert(reqwest::header::AUTHORIZATION, v);
+        }
         // 本機的 ComfyUI 直連；雲端網址模式照代理設定（net.rs）
         let http = reqwest::Client::builder()
             .proxy(crate::net::proxy())
+            .default_headers(headers)
             .read_timeout(Duration::from_secs(600))
             .build()
             .expect("建立 HTTP client");
         Arc::new(Comfy {
             url,
             ws_url,
+            client_id,
+            node,
+            closed: std::sync::atomic::AtomicBool::new(false),
             http,
             db,
             hub,
@@ -84,6 +138,81 @@ impl Comfy {
     }
 
     pub fn attach_diagnostics(&self, store: Arc<crate::diagnostics::Store>) { let _ = self.diagnostics.set(store); }
+
+    /// 節點 id（主節點 main）
+    pub fn node_id(&self) -> &str {
+        self.node.as_ref().map(|n| n.id.as_str()).unwrap_or(crate::nodes::MAIN)
+    }
+    pub fn is_remote(&self) -> bool {
+        self.node.as_ref().is_some_and(|n| n.remote.is_some())
+    }
+    /// 這件工作歸不歸這台管（重連補收、標遺失只管自己的）
+    fn owns(&self, pid: &str) -> bool {
+        match self.db.job(pid) {
+            Ok(Some(j)) => owner_of(&j["params"]) == self.node_id(),
+            _ => self.node.is_none(),
+        }
+    }
+    /// 上線：主節點照舊送 comfy（狀態列）；其他節點送 node 事件，不蓋掉主節點的狀態
+    fn send_online(&self, online: bool) {
+        match &self.node {
+            None => self.hub.send(json!({"type": "comfy", "online": online})),
+            Some(n) => self.hub.send(json!({"type": "node", "id": n.id, "online": online})),
+        }
+    }
+
+    /// 這張節點圖這台缺哪些檔（模型、LoRA、文字編碼器…）
+    pub async fn missing_models(&self, nodes: &Value) -> Result<Vec<String>, ComfyError> {
+        let info = self.object_info_all().await?;
+        Ok(missing_in(nodes, &info))
+    }
+
+    /// 遠端節點：成品從那台的 /view 抓回本機 output 的同一個路徑（之後照一般流程收進圖庫）
+    async fn fetch_outputs(&self, output: &Value) -> Result<(), ComfyError> {
+        let Some((_, out_dir)) = self.node.as_ref().and_then(|n| n.remote.as_ref()) else { return Ok(()) };
+        for im in ["images", "gifs"].into_iter().flat_map(|k| output[k].as_array().into_iter().flatten()) {
+            if im.get("type").and_then(Value::as_str) != Some("output") {
+                continue;
+            }
+            let (Some(f), sub) = (im["filename"].as_str(), im.get("subfolder").and_then(Value::as_str).unwrap_or("")) else { continue };
+            let dest = out_dir.join(sub).join(f);
+            if dest.exists() {
+                continue;
+            }
+            let bytes = self.view(f, sub, "output").await?;
+            if let Some(d) = dest.parent() {
+                std::fs::create_dir_all(d).map_err(|e| ComfyError(format!("建立 {} 失敗：{e}", d.display())))?;
+            }
+            std::fs::write(&dest, bytes).map_err(|e| ComfyError(format!("存 {} 失敗：{e}", dest.display())))?;
+        }
+        Ok(())
+    }
+
+    /// 遠端節點：節點圖用到的輸入圖先傳過去（ComfyUI 的 /upload/image，同名覆蓋）
+    async fn upload_inputs(&self, nodes: &Value) -> Result<(), ComfyError> {
+        let Some((in_dir, _)) = self.node.as_ref().and_then(|n| n.remote.as_ref()) else { return Ok(()) };
+        for f in crate::nodes::input_files(nodes) {
+            let bytes = std::fs::read(in_dir.join(&f)).map_err(|e| ComfyError(format!("讀不到輸入圖 {f}：{e}")))?;
+            let (sub, name) = match f.rsplit_once('/') {
+                Some((s, n)) => (s.to_string(), n.to_string()),
+                None => (String::new(), f.clone()),
+            };
+            let boundary = format!("anima{:016x}", rand::random::<u64>());
+            let body = crate::runninghub::multipart(&boundary, &[("overwrite", "true"), ("type", "input"), ("subfolder", &sub)], "image", &name, &bytes);
+            let r = self
+                .http
+                .post(format!("{}/upload/image", self.url))
+                .header(reqwest::header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+                .body(body)
+                .send()
+                .await
+                .map_err(conn_err)?;
+            if !r.status().is_success() {
+                return Err(ComfyError(format!("輸入圖 {f} 傳不上節點（{}）", r.status())));
+            }
+        }
+        Ok(())
+    }
 
     pub fn live(&self) -> Live {
         self.live.lock().unwrap_or_else(|e| e.into_inner()).clone()
@@ -176,7 +305,13 @@ impl Comfy {
         let mut nodes = nodes.clone();
         fix_loaders(self, &mut nodes).await?;
         crate::diagnostics::snapshot("workflow_api", &nodes);
-        let payload = |n: &Value| json!({"prompt": n, "client_id": CLIENT_ID.as_str(), "extra_data": {"extra_pnginfo": extra_pnginfo}});
+        // 工作節點：存檔前綴加標記（兩台同秒存檔才不會撞名）、遠端先把輸入圖傳過去
+        if let Some(n) = &self.node {
+            crate::nodes::tag_prefixes(&mut nodes, &n.tag);
+        }
+        self.upload_inputs(&nodes).await?;
+        let cid = self.client_id.clone();
+        let payload = |n: &Value| json!({"prompt": n, "client_id": cid, "extra_data": {"extra_pnginfo": extra_pnginfo}});
         let (mut ok, mut r) = self.post_raw("/prompt", &payload(&nodes)).await?;
         // 模型檔名只差在斜線方向、子資料夾（別台電腦的工作流）：照 ComfyUI 附的清單換成同一個檔，再送一次
         if !ok && fix_listed_names(&mut nodes, &r) {
@@ -232,12 +367,29 @@ impl Comfy {
     }
 
     // ---------------------------------------------------------------- websocket
+    /// 測試用：不開 websocket，直接設在線與佇列數
+    #[doc(hidden)]
+    pub fn set_live_for_test(&self, online: bool, queue: i64) {
+        self.with_live(|l| {
+            l.online = online;
+            l.queue_remaining = queue;
+        });
+    }
+
+    /// 節點從設定拿掉：停掉背景連線（下次重連前就結束）
+    pub fn close(&self) {
+        self.closed.store(true, std::sync::atomic::Ordering::Relaxed);
+    }
+
     async fn ws_loop(self: Arc<Self>) {
         loop {
+            if self.closed.load(std::sync::atomic::Ordering::Relaxed) {
+                return;
+            }
             // 連不上＝ComfyUI 沒開或重啟中：等一下再試
             if let Ok((ws, _)) = tokio_tungstenite::connect_async(self.ws_url.as_str()).await {
                 self.with_live(|l| l.online = true);
-                self.hub.send(json!({"type": "comfy", "online": true}));
+                self.send_online(true);
                 self.recover().await;
                 let (_, mut rx) = ws.split();
                 while let Some(msg) = rx.next().await {
@@ -258,7 +410,7 @@ impl Comfy {
                 }
             }
             if self.with_live(|l| std::mem::replace(&mut l.online, false)) {
-                self.hub.send(json!({"type": "comfy", "online": false}));
+                self.send_online(false);
                 if let Some(store) = self.diagnostics.get() { store.disconnected(); }
             }
             tokio::time::sleep(Duration::from_secs(3)).await;
@@ -302,7 +454,10 @@ impl Comfy {
                     .as_i64()
                     .unwrap_or(0);
                 self.with_live(|l| l.queue_remaining = n);
-                self.hub.send(json!({"type": "queue", "remaining": n}));
+                match &self.node {
+                    None => self.hub.send(json!({"type": "queue", "remaining": n})),
+                    Some(nd) => self.hub.send(json!({"type": "node", "id": nd.id, "remaining": n})),
+                }
             }
             "execution_start" => {
                 self.with_live(|l| {
@@ -323,6 +478,10 @@ impl Comfy {
             }
             "executed" => {
                 let out = d.get("output").cloned().unwrap_or_else(|| json!({}));
+                if let Err(e) = self.fetch_outputs(&out).await {
+                    self.finish(pid.as_deref(), "error", Some(format!("從節點「{}」抓圖失敗：{}", self.node_id(), e.0)));
+                    return;
+                }
                 self.store(pid.as_deref(), &out);
             }
             "execution_success" => self.finish(pid.as_deref(), "done", None),
@@ -412,11 +571,15 @@ impl Comfy {
 
     /// 重新連上時，補收斷線期間完成的任務
     async fn recover(&self) {
-        for pid in self.db.open_jobs().unwrap_or_default() {
+        // 只管自己的工作：別台的工作在這台佇列裡本來就找不到，不能標成遺失
+        for pid in self.db.open_jobs().unwrap_or_default().into_iter().filter(|p| self.owns(p)) {
             let Ok(h) = self.get(&format!("/history/{pid}")).await else {
                 continue;
             };
-            if h.get(&pid).is_some() {
+            if let Some(entry) = h.get(&pid) {
+                for out in entry["outputs"].as_object().into_iter().flat_map(|o| o.values()) {
+                    let _ = self.fetch_outputs(out).await;
+                }
                 self.store_history(&pid, &h);
             } else if let Ok(q) = self.get("/queue").await {
                 let live: Vec<&str> = ["queue_running", "queue_pending"]
@@ -458,6 +621,9 @@ impl Comfy {
     /// websocket 的結果會比登記早到而被略過；登記完呼叫這個，從 /history 補收
     pub async fn sync_job(&self, pid: &str) {
         if let Ok(h) = self.get(&format!("/history/{pid}")).await {
+            for out in h[pid]["outputs"].as_object().into_iter().flat_map(|o| o.values()) {
+                let _ = self.fetch_outputs(out).await;
+            }
             self.store_history(pid, &h);
         }
     }
@@ -836,5 +1002,35 @@ mod tests {
             let e = explain(&v);
             assert!(e.contains("ComfyUI Manager") && e.contains(name), "{e}");
         }
+    }
+}
+
+#[cfg(test)]
+mod node_tests {
+    use super::*;
+
+    #[test]
+    fn missing_models_from_object_info() {
+        let info = json!({
+            "UNETLoader": {"input": {"required": {"unet_name": [["anima.safetensors", "qwen.safetensors"]], "weight_dtype": [["default", "fp8"]]}}},
+            "LoraLoaderModelOnly": {"input": {"required": {"lora_name": [["a.safetensors"]], "strength_model": ["FLOAT", {"default": 1.0}]}}},
+            "CLIPTextEncode": {"input": {"required": {"text": ["STRING", {"multiline": true}]}}}
+        });
+        let nodes = json!({
+            "1": {"class_type": "UNETLoader", "inputs": {"unet_name": "anima.safetensors", "weight_dtype": "default"}},
+            "2": {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": "missing.safetensors", "strength_model": 0.8, "model": ["1", 0]}},
+            "3": {"class_type": "CLIPTextEncode", "inputs": {"text": "missing.safetensors? no, just text"}},
+            "4": {"class_type": "LoraLoaderModelOnly", "inputs": {"lora_name": "missing.safetensors"}}
+        });
+        assert_eq!(missing_in(&nodes, &info), vec!["missing.safetensors"]);
+        // 這台根本沒有這個節點：不算缺檔（ComfyUI 會自己報缺節點）
+        assert!(missing_in(&json!({"1": {"class_type": "Nope", "inputs": {"x": "y"}}}), &info).is_empty());
+    }
+
+    #[test]
+    fn owner_defaults_to_main() {
+        assert_eq!(owner_of(&json!({})), "main");
+        assert_eq!(owner_of(&json!({"_node": ""})), "main");
+        assert_eq!(owner_of(&json!({"_node": "gpu1"})), "gpu1");
     }
 }

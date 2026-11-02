@@ -19,6 +19,7 @@ import * as models from "./models.js";
 import * as drawer from "./assetdrawer.js";
 import * as lk from "./lockedchips.js";
 import * as imgmeta from "./imgmeta.js";
+import { refreshGenNode } from "./nodes.js";
 
 const SIZES = [
   ["直 1024×1536", 1024, 1536], ["直 832×1216", 832, 1216], ["直 896×1152", 896, 1152], ["方 1024×1024", 1024, 1024],
@@ -278,6 +279,10 @@ export function init() {
   F("page-gen").addEventListener("change", debounce(save, 100));
   restore();
   seedRecent();
+
+  // 多節點「送到」下拉：開頁先填一次，之後每 15 秒（看得到頁面時）跟按生成前各更新一次排隊數
+  refreshGenNode();
+  setInterval(() => { if (document.visibilityState === "visible") refreshGenNode(); }, 15000);
 }
 
 // 換模型：卡匣插槽的卡帶退出再插入（動畫在 motion.css 第 11 段）
@@ -1266,6 +1271,7 @@ function paramsToForm(p) {
 
 // ---------------------------------------------------------------- 生成
 async function generate() {
+  refreshGenNode();  // 排隊數隨時在變：按生成前先更新一次（不用等）
   if (!app.state) await app.refreshState();  // 剛打開網頁、狀態還沒讀到
   if (!app.state?.online) return toast("ComfyUI 沒有連線：點狀態列的系統狀態，按「重開 ComfyUI」", "err");
   if (F("genBtn").disabled) return;
@@ -1321,6 +1327,9 @@ async function generate() {
   try {
     for (const line of lines) {
       const q = batch ? { ...p, prompt: full(line), idea: undefined, pe_prompt: undefined } : { ...p, prompt: full(p.prompt) };
+      // 「送到」下拉在看的節點（顯示中才有值）：沒給＝後端自動分配
+      const nodeWrap = F("genNodeWrap");
+      if (nodeWrap && !nodeWrap.hidden && F("genNode").value) q.node = F("genNode").value;
       const r = await api("/api/generate", { json: { params: q, count } });
       for (const j of r.jobs) S.pending.set(j.job, { seed: j.seed });
       S.lastSeed = r.jobs[0]?.seed;

@@ -99,7 +99,7 @@ fn failure_text(log_tail: &str, gpu: &str) -> (String, String) {
 
 /// 盯著自己開的 ComfyUI：還沒開好就結束、或開好之後自己關掉（不是生圖站關的），把原因記到 NOTE。
 /// backend＝gpu::comfy_backend（PyTorch 是 NVIDIA 版、AMD 版、Intel 版還是 ZLUDA，驅動提示才講得對）
-fn watch(child: Arc<Mutex<Option<Child>>>, log: PathBuf, backend: Option<&'static str>, diagnostics: Arc<Mutex<Option<std::sync::Weak<crate::diagnostics::Store>>>>) {
+fn watch(who: String, child: Arc<Mutex<Option<Child>>>, log: PathBuf, backend: Option<&'static str>, diagnostics: Arc<Mutex<Option<std::sync::Weak<crate::diagnostics::Store>>>>) {
     std::thread::spawn(move || loop {
         std::thread::sleep(Duration::from_secs(3));
         let (pid,code) = {
@@ -124,7 +124,7 @@ fn watch(child: Arc<Mutex<Option<Child>>>, log: PathBuf, backend: Option<&'stati
         let (hint, last) = failure_text(&tail, gpu);
         let code = code.map(|c| format!("（結束代碼 {c}）")).unwrap_or_default();
         let last = if last.is_empty() { String::new() } else { format!("。最後的錯誤：{last}") };
-        set_note(Some(format!("ComfyUI 關掉了{code}：{hint}{last}。完整紀錄在 {}", log.display())));
+        set_note(Some(format!("{who} 關掉了{code}：{hint}{last}。完整紀錄在 {}", log.display())));
         return;
     });
 }
@@ -254,6 +254,15 @@ const ZLUDA_ARGS: &[&str] = &["--use-quad-cross-attention", "--reserve-vram", "0
 /// 要另外加的環境變數（名稱, 值）
 type Env = Vec<(String, String)>;
 
+static PCI_ORDER: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+/// 設定裡有開本機別張卡的節點：主節點的 ComfyUI 也照 nvidia-smi 的卡號順序開（main.rs 開 ComfyUI 之前設）
+pub fn set_pci_order(on: bool) {
+    PCI_ORDER.store(on, std::sync::atomic::Ordering::Relaxed);
+}
+fn pci_order() -> bool {
+    PCI_ORDER.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// 從 ZLUDA 的 bat 帶過來的環境變數（其他的不碰）
 const ZLUDA_ENV: &[&str] = &[
     "ZLUDA_COMGR_LOG_LEVEL",
@@ -349,6 +358,27 @@ struct Launch {
 /// 照 ComfyUI 的擺法、comfy.json 的設定、PyTorch 的種類（backend＝gpu::comfy_backend）組出啟動指令。
 /// zluda＝ZLUDA 版的 zluda.exe。extra_yaml＝生圖站的外部模型資料夾設定、desktop_yaml＝官方桌面版的模型路徑設定。
 /// N 卡、沒改設定時跟以前一模一樣
+/// 別張卡的 ComfyUI 用自己的資料庫：拿掉原本的 --database-url（使用者全域參數裡的那個＝主節點的），換成 db
+fn with_node_db(args: Vec<OsString>, db: &Path) -> Vec<OsString> {
+    let mut out = vec![];
+    let mut it = args.into_iter();
+    while let Some(a) = it.next() {
+        let t = a.to_string_lossy();
+        if t == "--database-url" {
+            it.next();
+            continue;
+        }
+        if t.starts_with("--database-url=") {
+            continue;
+        }
+        out.push(a);
+    }
+    out.push("--database-url".into());
+    out.push(format!("sqlite:///{}", db.to_string_lossy().replace('\\', "/")).into());
+    out
+}
+
+#[cfg(test)]
 fn launch(
     layout: &ComfyLayout,
     port: u16,
@@ -357,6 +387,22 @@ fn launch(
     zluda: Option<&Path>,
     extra_yaml: Option<&Path>,
     desktop_yaml: Option<&Path>,
+) -> Result<Launch, String> {
+    launch_node(layout, port, prefs, backend, zluda, extra_yaml, desktop_yaml, None)
+}
+
+/// 同 launch；node＝(卡號, 這個節點的額外參數)＝本機另一張卡的 ComfyUI（設定 → 工作節點）：
+/// 加 --cuda-device 卡號、節點的參數排在使用者全域參數後面（同組的以節點為準），卡號照 nvidia-smi 的順序（CUDA_DEVICE_ORDER=PCI_BUS_ID）
+#[allow(clippy::too_many_arguments)]
+fn launch_node(
+    layout: &ComfyLayout,
+    port: u16,
+    prefs: &Prefs,
+    backend: Option<&str>,
+    zluda: Option<&Path>,
+    extra_yaml: Option<&Path>,
+    desktop_yaml: Option<&Path>,
+    node: Option<(u32, &str)>,
 ) -> Result<Launch, String> {
     let mut args: Vec<OsString> = vec!["-s".into(), layout.main.clone().into()];
     // 免安裝版照官方 run_nvidia_gpu.bat 加這個；其他照一般方式開。
@@ -377,9 +423,22 @@ fn launch(
     if let Some(y) = extra_yaml {
         args.extend(["--extra-model-paths-config".into(), y.into()]);
     }
-    let user = crate::gpu::extra_args(&prefs.extra_args)?;
-    let mut auto: Vec<String> = vec![];
+    let mut user = crate::gpu::extra_args(&prefs.extra_args)?;
     let mut env = vec![];
+    if let Some((gpu, node_args)) = node {
+        if prefs.cpu || !matches!(backend, None | Some("cuda")) {
+            return Err("一台電腦開好幾張卡只支援 NVIDIA 顯示卡（PyTorch 的 CUDA 版）".into());
+        }
+        let own = crate::gpu::extra_args(node_args)?;
+        if own.iter().any(|a| a.starts_with("--cuda-d")) {
+            return Err("卡號由「工作節點」的設定決定，不能放在額外參數裡".into());
+        }
+        let mut n = vec!["--cuda-device".to_string(), gpu.to_string()];
+        n.extend(own);
+        user = merge_args(&user, &n);
+        env.push(("CUDA_DEVICE_ORDER".to_string(), "PCI_BUS_ID".to_string()));
+    }
+    let mut auto: Vec<String> = vec![];
     if prefs.cpu {
         auto.push("--cpu".into()); // 沒有能用的顯示卡（精靈裝的是 CPU 版）
     }
@@ -417,6 +476,16 @@ impl ComfyProc {
         log_dir: &Path,
         port: u16,
     ) -> Result<Option<ComfyProc>, String> {
+        Self::spawn(comfy_dir, log_dir, port, None)
+    }
+
+    /// 本機另一張卡的 ComfyUI（設定 → 工作節點）：同一份 ComfyUI、另一個 port、--cuda-device 卡號；紀錄檔 comfyui_gpu卡號.log。
+    /// 那個 port 已經有 ComfyUI＝None（直接用它）
+    pub fn start_extra(comfy_dir: &Path, log_dir: &Path, port: u16, gpu: u32, args: &str) -> Result<Option<ComfyProc>, String> {
+        Self::spawn(comfy_dir, log_dir, port, Some((gpu, args)))
+    }
+
+    fn spawn(comfy_dir: &Path, log_dir: &Path, port: u16, node: Option<(u32, &str)>) -> Result<Option<ComfyProc>, String> {
         if port_open(port) {
             return if comfy_running(port) {
                 Ok(None)
@@ -448,10 +517,25 @@ impl ComfyProc {
             .filter(|y| y.is_file());
         let extra = Some(crate::model_dirs::yaml_path(&layout.root)).filter(|y| y.is_file());
         let zluda = crate::gpu::zluda_exe(&layout);
-        let l = launch(&layout, port, &prefs, backend, zluda.as_deref(), extra.as_deref(), desktop_yaml.as_deref())?;
+        let mut l = launch_node(&layout, port, &prefs, backend, zluda.as_deref(), extra.as_deref(), desktop_yaml.as_deref(), node)?;
+        if let Some((g, _)) = node {
+            // 同一份 ComfyUI 的 user\comfyui.db 只准一台開（第二台會 ASSETS_STARTUP_FAILED: in_use 直接結束）：每張卡自己一個
+            let dir = log_dir.parent().unwrap_or(log_dir).join("comfy_nodes");
+            std::fs::create_dir_all(&dir).map_err(|e| format!("建立 {} 失敗：{e}", dir.display()))?;
+            l.args = with_node_db(l.args, &dir.join(format!("gpu{g}.db")));
+        }
+        // 有開別張卡：主節點也照 nvidia-smi 的順序（不然 PyTorch 的 0 號＝最快那張，可能跟別的節點搶同一張）
+        if node.is_none() && pci_order() {
+            l.env.push(("CUDA_DEVICE_ORDER".into(), "PCI_BUS_ID".into()));
+            l.env.retain(|(k, _)| std::env::var_os(k).is_none());
+        }
+        let log_name = match node {
+            Some((g, _)) => format!("comfyui_gpu{g}.log"),
+            None => "comfyui.log".into(),
+        };
         std::fs::create_dir_all(log_dir)
             .map_err(|e| format!("建立 {} 失敗：{e}", log_dir.display()))?;
-        let log = File::create(log_dir.join("comfyui.log"))
+        let log = File::create(log_dir.join(&log_name))
             .map_err(|e| format!("建立 ComfyUI 紀錄檔失敗：{e}"))?;
         let err = log.try_clone().map_err(|e| e.to_string())?;
         let mut cmd = Command::new(&l.program);
@@ -471,7 +555,7 @@ impl ComfyProc {
         set_note(None);
         let child = Arc::new(Mutex::new(Some(child)));
         let diagnostics=Arc::new(Mutex::new(None));
-        watch(child.clone(), log_dir.join("comfyui.log"), backend,diagnostics.clone());
+        watch(match node { Some((g, _)) => format!("第 {g} 號卡的 ComfyUI"), None => "ComfyUI".into() }, child.clone(), log_dir.join(&log_name), backend,diagnostics.clone());
         Ok(Some(ComfyProc { child,diagnostics }))
     }
 
@@ -608,6 +692,37 @@ mod tests {
 
     fn os(v: &[&str]) -> Vec<OsString> {
         v.iter().map(OsString::from).collect()
+    }
+
+    /// 另一張卡的 ComfyUI：主節點的指令＋--cuda-device＋節點自己的參數（同組的以節點為準），卡號照 nvidia-smi 的順序
+    #[test]
+    fn extra_args_include_cuda_device() {
+        let d = std::env::temp_dir().join(format!("anima_launch_node_{}", std::process::id()));
+        let lay = ComfyLayout {
+            root: d.join("ComfyUI"),
+            main: d.join("ComfyUI").join("main.py"),
+            python: d.join("python_embeded").join("python.exe"),
+            portable: true,
+            desktop: false,
+            cwd: d.clone(),
+        };
+        let p = Prefs { extra_args: "--highvram --fast".into(), ..Default::default() };
+        let l = launch_node(&lay, 8199, &p, Some("cuda"), None, None, None, Some((1, "--lowvram"))).unwrap();
+        let a: Vec<String> = l.args.iter().map(|x| x.to_string_lossy().to_string()).collect();
+        assert_eq!(a[a.len() - 4..], ["--fast", "--cuda-device", "1", "--lowvram"], "--highvram 被節點的 --lowvram 換掉");
+        assert!(a.windows(2).any(|w| w == ["--port", "8199"]));
+        if std::env::var_os("CUDA_DEVICE_ORDER").is_none() {
+            assert!(l.env.contains(&("CUDA_DEVICE_ORDER".into(), "PCI_BUS_ID".into())));
+        }
+        assert!(launch_node(&lay, 8199, &p, Some("cuda"), None, None, None, Some((1, "--cuda-device 0"))).is_err(), "卡號只能從節點設定給");
+        assert!(launch_node(&lay, 8199, &p, Some("directml"), None, None, None, Some((1, ""))).is_err(), "只有 N 卡能指定卡號");
+        let cpu = Prefs { cpu: true, ..Default::default() };
+        assert!(launch_node(&lay, 8199, &cpu, Some("cuda"), None, None, None, Some((1, ""))).is_err());
+        // 每張卡自己的資料庫（同一份 ComfyUI 的 comfyui.db 只准一台開）
+        let a = with_node_db(os(&["--fast", "--database-url", "sqlite:///x.db", "--database-url=y"]), Path::new(r"D:\data\comfy_nodes\gpu1.db"));
+        assert_eq!(a, os(&["--fast", "--database-url", "sqlite:///D:/data/comfy_nodes/gpu1.db"]));
+        // 主節點不變
+        assert_eq!(launch_node(&lay, 8188, &Prefs::default(), Some("cuda"), None, None, None, None).unwrap(), launch(&lay, 8188, &Prefs::default(), Some("cuda"), None, None, None).unwrap());
     }
 
     /// 啟動指令：N 卡沒改設定時跟以前一模一樣；CPU、DirectML、額外參數、ZLUDA

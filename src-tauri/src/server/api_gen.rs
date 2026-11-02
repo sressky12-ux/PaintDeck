@@ -1,6 +1,5 @@
 //! 狀態、設定、生成、任務面板、系統狀態（對照舊版 server.py 同名的函式）。
 use super::{api_bundle, api_wf, bad, blocking, internal, not_found, ok, ApiResult, Body, Shared, VERSION};
-use crate::comfy::ComfyError;
 use crate::families::{self, ANIMA, FAMILY_NAMES};
 use crate::graphs;
 use crate::py::{self, now, truthy};
@@ -535,7 +534,8 @@ pub async fn submit_jobs(
     if p.get("mode").and_then(Value::as_str) == Some("video") && video_engine(&app.paths, &p) == video_wf::BUILTIN {
         return super::api_h3::submit_from_gen(app, &p, count).await;
     }
-    if !app.comfy.live().online {
+    // 工作節點：任何一台在線就能送（只有主節點時＝主節點在線）
+    if !app.pool.loads().iter().any(|l| l.online) {
         return Err(bad("ComfyUI 沒有連線。解法：重新開啟「繪匣 PaintDeck」。"));
     }
     // 站剛開、還沒問過 ComfyUI 模型放哪些資料夾（每分鐘問一次）就找不到模型檔：先問一次再判斷家族（第一百九十一筆）
@@ -568,13 +568,8 @@ pub async fn submit_jobs(
             Ok(j) => jobs.push(j),
             Err(e) => {
                 // 送到一半失敗：前面已經排進 ComfyUI 的幾張也收回，免得網頁說失敗、背景卻還在畫（使用者再按一次就重複了）
-                for j in &jobs {
-                    let Some(pid) = j["job"].as_str() else { continue };
-                    let _ = app.comfy.post("/queue", &json!({"delete": [pid]})).await;
-                    let _ = app.db.set_job(pid, "cancelled", None);
-                    app.hub
-                        .send(json!({"type": "finish", "job": pid, "status": "cancelled"}));
-                }
+                let pids: Vec<String> = jobs.iter().filter_map(|j| j["job"].as_str().map(str::to_owned)).collect();
+                app.pool.cancel(&pids).await;
                 return Err(e);
             }
         }
@@ -627,15 +622,20 @@ async fn submit_one(
         let mut params = p.clone();
         params["seed"] = info["seed"].clone();
         params["prompt_resolved"] = info["prompt"].clone();
-        let pid = app
-            .comfy
-            .submit(&Value::Object(nodes), &json!({"anima_params": params}))
+        // 工作節點：挑一台送（網頁「丟哪台」＝params.node；只有主節點時跟以前一樣）
+        let manual = p.get("node").and_then(Value::as_str).map(str::to_owned);
+        let (pid, node) = app
+            .pool
+            .submit(&Value::Object(nodes), &json!({"anima_params": params}), fam, manual.as_deref(), video)
             .await
-            .map_err(|e: ComfyError| bad(e.0))?;
+            .map_err(bad)?;
+        if node != crate::nodes::MAIN {
+            params["_node"] = json!(node);
+        }
         app.db.add_job(&pid, &params, &info)?;
-        app.comfy.sync_job(&pid).await;
+        app.pool.sync_job(&pid).await;
         *app.last_family.lock().unwrap_or_else(|e| e.into_inner()) = fam.to_string();
-        Ok(json!({"job": pid, "seed": info["seed"]}))
+        Ok(if node == crate::nodes::MAIN { json!({"job": pid, "seed": info["seed"]}) } else { json!({"job": pid, "seed": info["seed"], "node": node}) })
     }
 }
 
@@ -755,20 +755,20 @@ pub async fn jobs_clear(State(app): State<Shared>) -> ApiResult {
 }
 
 pub async fn interrupt(State(app): State<Shared>) -> ApiResult {
-    app.comfy
-        .post("/interrupt", &json!({}))
+    app.pool
+        .broadcast("/interrupt", &json!({}))
         .await
         .map_err(internal)?;
     ok(json!({"ok": true}))
 }
 
 pub async fn clear_queue(State(app): State<Shared>) -> ApiResult {
-    app.comfy
-        .post("/queue", &json!({"clear": true}))
+    app.pool
+        .broadcast("/queue", &json!({"clear": true}))
         .await
         .map_err(internal)?;
-    app.comfy
-        .post("/interrupt", &json!({}))
+    app.pool
+        .broadcast("/interrupt", &json!({}))
         .await
         .map_err(internal)?;
     // 把資料庫裡還沒結束的任務也收掉；不然它們永遠停在 queued，恢復原廠會一直被擋、導演台／助手的等待也不會停
@@ -786,16 +786,12 @@ pub async fn cancel(State(app): State<Shared>, Body(body): Body) -> ApiResult {
         .and_then(Value::as_str)
         .ok_or_else(|| bad("缺少 job"))?
         .to_string();
-    if app.comfy.live().running.as_deref() == Some(job.as_str()) {
-        app.comfy
-            .post("/interrupt", &json!({}))
-            .await
-            .map_err(internal)?;
+    // 找這件工作所在的那台（工作節點）
+    let c = app.pool.for_job(&job);
+    if c.live().running.as_deref() == Some(job.as_str()) {
+        c.post("/interrupt", &json!({})).await.map_err(internal)?;
     } else {
-        app.comfy
-            .post("/queue", &json!({"delete": [job]}))
-            .await
-            .map_err(internal)?;
+        c.post("/queue", &json!({"delete": [job]})).await.map_err(internal)?;
         app.db.set_job(&job, "cancelled", None)?;
         app.hub
             .send(json!({"type": "finish", "job": job, "status": "cancelled"}));

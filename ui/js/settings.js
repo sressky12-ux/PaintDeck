@@ -7,6 +7,7 @@ import { H3_NAME } from "./gen.js";
 import * as models from "./models.js";
 import { mountNet } from "./net.js";
 import { mountComfyOpts } from "./comfyopts.js";
+import { mountNodes } from "./nodes.js";
 import { mountSkills } from "./skills.js";
 import { applyStrip } from "./feature.js";
 import { openAi } from "./studio.js";
@@ -388,6 +389,7 @@ export function show() {
   loadReset(); loadVideo(); models.show(); if (!PROMPTS.length) loadPrompts();
   if (!netShown) { netShown = true; mountNet($("#netBox")); } // 網路（代理、下載來源）：第一次打開設定頁才讀
   mountComfyOpts($("#comfyOptsBox")); // ComfyUI 啟動方式：每次打開都重讀（安裝與修復可能改過）
+  mountNodes($("#nodesBox")); // 工作節點（多張顯卡、遠端 ComfyUI）：每次打開都重讀（可能自己改過設定）
   mountSkills($("#setSkills")); // 外掛寫法：每次打開都重讀（可能自己放了資料夾進去）
   mountFeatures(); // 外掛功能（內容補丁）：每次打開都重讀
   api("/api/hub/modelscope").then((r) => paintMs(r.has_key)).catch(() => {});

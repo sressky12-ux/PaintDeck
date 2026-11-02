@@ -299,6 +299,17 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 各功能的內建指令在設定頁「自訂系統提示詞」改（`/api/pe/prompts`，改壞了可還原）。
 - 閉源模型（GPT、Claude、Gemini）碰到成人內容常會拒絕；繪匣不另外處理，模型回什麼就是什麼。
 
+## 工作節點：多張顯卡、遠端 ComfyUI 一起分工（2026-11-02）
+
+設定頁「工作節點」。一台 ComfyUI 一次只畫一張；有第二張 N 卡、或區網／租的電腦開著 ComfyUI，就加成節點，每件工作自動送到比較閒的那台（同一張圖不會拆給兩台算）。
+
+- 總覽：`GET /api/nodes` → `{nodes:[{id,name,kind:main|local|remote,url,gpu,enabled,args,has_token,online,queue,running}], gpus:[{index,name,vram_mb}], ram_gb, ram_guard_gb, bind, ram_guard, main_port, can_restart}`。`main`＝生圖站原本的 ComfyUI。
+- 存：`POST /api/nodes {nodes?, bind?, ram_guard?}`，`nodes` 是完整清單（不含 main）：本機 `{kind:"local", gpu, enabled, args, name?}`（id＝`gpu<卡號>`、port＝主節點＋20＋卡號，後端決定）；遠端 `{kind:"remote", id?, name, url, enabled, token?, clear_token?}`（token 沒送＝保留）。回 `restart_needed`＝本機節點改了，要 `POST /api/models/restart_comfy` 才會開／關那張卡。遠端馬上生效。
+- 測一台：`POST /api/nodes/test {url, token?, id?}` → `{comfy, gpu, vram_gb, ram_gb}`。
+- 指定節點：`/api/generate` 的 `params.node`＝節點 id（不給＝自動）。挑法：手動 → 家族綁定（`bind: {anima|qwen21|other|video: [節點 id]}`）→ 影片不送遠端 → 記憶體不到 64GB 時 Qwen 2.1／影片同時只跑一件（`ram_guard`）→ 佇列短的、同家族已載入的、主節點優先。缺模型檔的節點自動跳過。
+- 工作記在哪台：job 的 `params._node`（沒有＝main）。停止／取消／重試照這個打對台；「全停」打全部。非主節點的存檔前綴加標記（`AnimaWeb/txt2img_g1_…`、遠端 `_r…`），遠端的成品用 `/view` 抓回本機 output 再進圖庫，輸入圖會先傳上去。
+- 本機多卡只支援 N 卡；卡號照 nvidia-smi 順序（開多卡時設 `CUDA_DEVICE_ORDER=PCI_BUS_ID`），每張卡用自己的 ComfyUI 資料庫（`data\comfy_nodes\gpu<卡號>.db`），紀錄檔 `data\logs\comfyui_gpu<卡號>.log`。
+
 ## 系統、設定、雲端
 
 - `GET /api/system`：版本、顯示卡、顯存、記憶體、硬碟。`GET /api/state`：`anima_status` 的原始資料。

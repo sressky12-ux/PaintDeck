@@ -689,12 +689,8 @@ pub async fn write(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 pub(super) async fn wait_job(app: &Shared, pid: &str, token: &CancellationToken) -> Step {
     loop {
         if token.is_cancelled() {
-            if app.comfy.live().running.as_deref() == Some(pid) {
-                let _ = app.comfy.post("/interrupt", &json!({})).await;
-            } else {
-                let _ = app.comfy.post("/queue", &json!({"delete": [pid]})).await;
-                let _ = app.db.set_job(pid, "cancelled", None);
-            }
+            // 工作節點：找這件所在的那台
+            app.pool.cancel(&[pid.to_string()]).await;
             return Err("已停止".into());
         }
         let job = app.db.job(pid).map_err(|e| e.to_string())?;

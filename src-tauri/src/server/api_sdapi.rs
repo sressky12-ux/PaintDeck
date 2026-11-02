@@ -327,16 +327,9 @@ pub async fn progress(State(app): State<Shared>) -> ApiResult {
 
 pub async fn interrupt(State(app): State<Shared>) -> ApiResult {
     let pids = std::mem::take(&mut *lock(&ACTIVE));
-    let running = app.comfy.live().running;
-    for pid in pids.iter().filter(|p| open(&app, p)) {
-        if running.as_deref() == Some(pid.as_str()) {
-            let _ = app.comfy.post("/interrupt", &json!({})).await;
-        } else {
-            let _ = app.comfy.post("/queue", &json!({"delete": [pid]})).await;
-            let _ = app.db.set_job(pid, "cancelled", None);
-            app.hub.send(json!({"type": "finish", "job": pid, "status": "cancelled"}));
-        }
-    }
+    // 工作節點：每件找它所在的那台
+    let live: Vec<String> = pids.iter().filter(|p| open(&app, p)).cloned().collect();
+    app.pool.cancel(&live).await;
     ok(Value::Null)
 }
 

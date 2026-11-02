@@ -20,6 +20,7 @@ mod api_shotsheet;
 mod api_skills;
 mod api_lib;
 mod api_llm;
+mod api_nodes;
 mod api_hub;
 mod api_misc;
 mod api_pe;
@@ -70,6 +71,8 @@ pub struct App {
     pub db: Arc<Db>,
     pub hub: Hub,
     pub comfy: Arc<Comfy>,
+    /// 工作節點：主節點（上面的 comfy）＋其他顯卡、遠端 ComfyUI（nodes.rs）
+    pub pool: Arc<crate::nodes::Pool>,
     pub civitai: Arc<Civitai>,
     /// AI 改寫（llama-server）
     pub pe: Arc<crate::pe::Service>,
@@ -573,6 +576,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/llm/preset/delete", post(api_llm::preset_delete))
         .route("/api/llm/preset/import", post(api_llm::preset_import).layer(DefaultBodyLimit::max(4 * 1024 * 1024)))
         .route("/api/llm/routes", post(api_llm::routes_save))
+        .route("/api/nodes", get(api_nodes::overview).post(api_nodes::save))
+        .route("/api/nodes/test", post(api_nodes::test))
         // H3 影片台（導演頁的「H3 影片」分頁）
         .route("/api/h3/info", get(api_h3::info))
         // 素材用 base64 包在 JSON 裡送（影片 15 秒以內、網頁擋 150MB 的檔，base64 多三分之一）：放寬全站 64MB 的限制。再大要改成串流上傳（大 JSON 很吃記憶體）
@@ -775,6 +780,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
     let data_dir = paths.data.clone();
     let studio = crate::studio::Studio::new(&paths.res, &paths.data);
     let agent = api_agent::Agent::new(&data_dir);
+    let pool = Arc::new(crate::nodes::Pool::new(comfy.clone(), db.clone(), hub.clone(), &data_dir, &paths.input, &paths.output));
     // 要比 App 早建：第一次開站會把 cloud.json 裡舊的單組外接 API 搬進 llm_profiles.json
     let brains = Arc::new(crate::brains::Brains::new(&data_dir, &agent.cloud.cfg_snapshot()));
     let app = Arc::new(App {
@@ -786,6 +792,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
         db,
         hub,
         comfy,
+        pool,
         civitai,
         pe,
         tagger,

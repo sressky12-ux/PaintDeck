@@ -120,6 +120,8 @@ static DANGER: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         // 2026-11-02 API 頁：MCP 那邊（anima-tools.js 的 DANGER）同一天一起加
         (r"^/api/llm/(profile|preset|routes)(/[a-z]+)?$", "改 API 頁的大模型連線、指令預設或對照表，或送一次測試（會花一點點 token）"),
         (r"^/api/hub/rh_run$", "在 RunningHub 跑工作流（照秒扣 RH 幣）"),
+        // 2026-11-02 工作節點：MCP 那邊（anima-tools.js 的 DANGER）同一天一起加
+        (r"^/api/nodes(/test)?$", "改工作節點（多張顯卡、遠端 ComfyUI）的設定，或連一台遠端 ComfyUI 測試"),
         (r"^/api/(image|video)/workflows","新增或改動匯入的工作流"),
         (r"^/api/voices/tts_workflow$", "換掉或拿掉聲音庫的 TTS 工作流"),
     ]
@@ -447,6 +449,9 @@ mod tests {
         assert_ne!(lv("POST", "/api/llm/preset/import", json!({})), Level::Normal);
         assert_ne!(lv("POST", "/api/llm/routes", json!({})), Level::Normal);
         assert_eq!(lv("GET", "/api/llm", json!({})), Level::Normal);
+        assert_eq!(lv("POST", "/api/nodes", json!({})), Level::Confirm);
+        assert_eq!(lv("POST", "/api/nodes/test", json!({})), Level::Confirm);
+        assert_eq!(lv("GET", "/api/nodes", json!({})), Level::Normal);
         assert_eq!(lv("POST", "/api/reset", json!({})), Level::Forbidden);
         assert_eq!(lv("GET", "/api/reset/undo", json!({})), Level::Forbidden);
         assert_eq!(lv("POST", "/api/images/batch", json!({"action":"purge"})), Level::Forbidden);

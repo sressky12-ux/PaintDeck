@@ -24,6 +24,38 @@ const TITLE: &str = "繪匣 PaintDeck";
 
 /// 這個程式開的 ComfyUI（結束時要關）
 struct Comfy(Mutex<Option<ComfyProc>>);
+/// 這個程式開的別張卡的 ComfyUI（設定 → 工作節點，本機的）
+struct Extras(Mutex<Vec<ComfyProc>>);
+
+/// 關掉自己開的別張卡的 ComfyUI
+fn stop_extras(h: &AppHandle) {
+    for p in std::mem::take(&mut *h.state::<Extras>().0.lock().unwrap_or_else(|e| e.into_inner())) {
+        p.stop();
+    }
+}
+
+/// nodes.json 裡啟用的本機節點：每張卡開一個 ComfyUI（同一份 ComfyUI、port＝網址上的，沒寫＝主節點＋20＋卡號）。
+/// 開不起來的記到提示（生成頁會顯示），其他照開
+fn start_extras(h: &AppHandle, dir: &std::path::Path, logs: &std::path::Path, data: &std::path::Path, main_port: u16) {
+    let cfg = anima_app::nodes::Cfg::load(data);
+    for n in cfg.nodes.iter().filter(|n| n.enabled && n.kind == "local") {
+        let Some(gpu) = n.gpu else { continue };
+        let port = anima_app::nodes::port_of(&n.url).unwrap_or_else(|| anima_app::nodes::local_port(main_port, gpu));
+        match ComfyProc::start_extra(dir, logs, port, gpu, &n.args) {
+            Ok(Some(p)) => h.state::<Extras>().0.lock().unwrap_or_else(|e| e.into_inner()).push(p),
+            Ok(None) => eprintln!("{}：連接埠 {port} 已經有 ComfyUI，直接用", n.name),
+            Err(e) => {
+                eprintln!("{} 沒開起來：{e}", n.name);
+                anima_app::launcher::set_note(Some(format!("「{}」（第 {gpu} 號卡）沒開起來：{e}", n.name)));
+            }
+        }
+    }
+}
+
+/// 有沒有啟用的本機別張卡節點（有的話主節點也要照 nvidia-smi 的卡號順序開）
+fn has_local_extras(data: &std::path::Path) -> bool {
+    anima_app::nodes::Cfg::load(data).nodes.iter().any(|n| n.enabled && n.kind == "local" && n.gpu.is_some())
+}
 
 fn main() {
     // 解除安裝時 NSIS 叫的（nsis\hooks.nsh）：問要不要連資料一起刪，做完就結束，不搶 port、不開視窗
@@ -45,6 +77,7 @@ fn main() {
         .invoke_handler(tauri::generate_handler![hide_window, quit_app, open_assistant])
         .setup(move |app| {
             app.manage(Comfy(Mutex::new(None)));
+            app.manage(Extras(Mutex::new(vec![])));
             let web = env_path("ANIMA_WEB")
                 .map(Ok)
                 .unwrap_or_else(|| bundled(app, "ui"))
@@ -154,6 +187,7 @@ fn main() {
             {
                 p.stop();
             }
+            stop_extras(app);
         }
     });
 }
@@ -316,6 +350,7 @@ async fn start_main(
     let h = handle.clone();
     shared.updates.bind(handle.clone(), move || {
         if let Some(p) = h.state::<Comfy>().0.lock().unwrap_or_else(|e| e.into_inner()).take() { p.stop(); }
+        stop_extras(&h);
     });
     anima_app::server::attach_setup(&shared, wizard.clone());
     let weak = Arc::downgrade(&shared);
@@ -357,7 +392,9 @@ async fn start_main(
     // 設定頁「重開 ComfyUI」（外部模型資料夾改了要重開才讀得到）：關掉自己開的那個，等 port 放掉再開
     let (h, d, l) = (handle.clone(), dir.clone(), logs.clone());
     let restart_diagnostics=shared.diagnostics.clone();
+    let data = paths.data.clone();
     let _ = shared.restart_comfy.set(Box::new(move || {
+        stop_extras(&h);
         let old = h
             .state::<Comfy>()
             .0
@@ -370,9 +407,10 @@ async fn start_main(
             None if !anima_app::launcher::port_open(comfy_port) => {}
             None => return Err("這個 ComfyUI 不是生圖站開的（或還沒開好）：請自己把 ComfyUI 關掉再開一次".into()),
         }
-        let (h, d, l) = (h.clone(), d.clone(), l.clone());
+        let (h, d, l, data) = (h.clone(), d.clone(), l.clone(), data.clone());
         let diagnostics=restart_diagnostics.clone();
         std::thread::spawn(move || {
+            anima_app::launcher::set_pci_order(has_local_extras(&data));
             for _ in 0..60 {
                 if !anima_app::launcher::port_open(comfy_port) {
                     break;
@@ -390,22 +428,29 @@ async fn start_main(
                     anima_app::launcher::set_note(Some(format!("重開 ComfyUI 失敗：{e}")));
                 }
             }
+            // 別張卡的 port 也等它放掉再開
+            std::thread::sleep(Duration::from_secs(2));
+            start_extras(&h, &d, &l, &data, comfy_port);
         });
         Ok(())
     }));
     // 安裝與修復換 A 卡的 PyTorch 時：先關掉生圖站開的 ComfyUI（DLL 不能被占用），裝完再開
-    let (h1, h2, d, l) = (handle.clone(), handle.clone(), dir.clone(), logs.clone());
+    let (h1, h2, d, l, data) = (handle.clone(), handle.clone(), dir.clone(), logs.clone(), paths.data.clone());
     let hook_diagnostics=shared.diagnostics.clone();
     wizard.set_comfy_hooks(
         move || {
             if let Some(p) = h1.state::<Comfy>().0.lock().unwrap_or_else(|e| e.into_inner()).take() {
                 p.stop();
             }
+            stop_extras(&h1); // 別張卡的 ComfyUI 也占著同一份 PyTorch 的 DLL
         },
-        move || match ComfyProc::start_if_needed(&d, &l, comfy_port) {
-            Ok(Some(p)) => {p.attach_diagnostics(hook_diagnostics.clone()); *h2.state::<Comfy>().0.lock().unwrap_or_else(|e| e.into_inner()) = Some(p)},
-            Ok(None) => {}
-            Err(e) => anima_app::launcher::set_note(Some(format!("ComfyUI 沒開起來：{e}"))),
+        move || {
+            match ComfyProc::start_if_needed(&d, &l, comfy_port) {
+                Ok(Some(p)) => {p.attach_diagnostics(hook_diagnostics.clone()); *h2.state::<Comfy>().0.lock().unwrap_or_else(|e| e.into_inner()) = Some(p)},
+                Ok(None) => {}
+                Err(e) => anima_app::launcher::set_note(Some(format!("ComfyUI 沒開起來：{e}"))),
+            }
+            start_extras(&h2, &d, &l, &data, comfy_port);
         },
     );
     let setup_router = setup::router(wizard, &web)
@@ -420,7 +465,9 @@ async fn start_main(
         }
     });
     let res = paths.res.clone();
+    let data = paths.data.clone();
     std::thread::spawn(move || {
+        anima_app::launcher::set_pci_order(has_local_extras(&data));
         // 官方免安裝版還比 COMFY_VERSION 舊：開 ComfyUI 之前自動升級（2026-10-31 使用者：「要確保他們升級後都能很直接地簡單的，
         // 能享受到跟我一樣」）。ComfyUI 已經開著、「我自己開 ComfyUI」的不動；失敗（例如沒網路）照舊用舊版開
         if !anima_app::launcher::port_open(comfy_port) && !anima_app::gpu::prefs().external {
@@ -461,6 +508,8 @@ async fn start_main(
                 anima_app::launcher::set_note(Some(format!("ComfyUI 沒開起來：{e}")));
             }
         }
+        // 別張卡（設定 → 工作節點）：主節點開好之後再開，同一份 ComfyUI 不要同時第一次載入
+        start_extras(&handle, &dir, &logs, &data, comfy_port);
     });
 }
 

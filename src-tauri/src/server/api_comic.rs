@@ -224,17 +224,8 @@ pub async fn stop(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 
 /// 一次送出的其他張（還在佇列或正在跑）：停止或失敗時一起拿掉，不然會留在 ComfyUI 繼續跑，結果也不會記到作品
 async fn cancel_jobs(app: &Shared, pids: &[String]) {
-    let running = app.comfy.live().running;
-    let (now_running, queued): (Vec<&String>, Vec<&String>) = pids.iter().partition(|p| running.as_deref() == Some(p.as_str()));
-    if !now_running.is_empty() {
-        let _ = app.comfy.post("/interrupt", &json!({})).await;
-    }
-    if !queued.is_empty() {
-        let _ = app.comfy.post("/queue", &json!({"delete": queued})).await;
-        for pid in queued {
-            let _ = app.db.set_job(pid, "cancelled", None);
-        }
-    }
+    // 工作節點：每件找它所在的那台，正在跑的中斷、還在排的拿掉
+    app.pool.cancel(pids).await;
 }
 
 /// 結果清單：最新的放最前面，最多留 60 筆

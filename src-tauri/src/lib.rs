@@ -30,6 +30,7 @@ pub mod modelhub;
 pub mod maint;
 pub mod model_dirs;
 pub mod net;
+pub mod nodes;
 pub mod paths;
 pub mod pe;
 pub mod poses;
