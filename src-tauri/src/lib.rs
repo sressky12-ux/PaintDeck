@@ -1,6 +1,7 @@
 //! 繪匣 PaintDeck 2.0 的核心（給 main.rs 和測試共用）
 pub mod agent;
 pub mod agent_tools;
+pub mod brains;
 pub mod cache;
 pub mod charsheet;
 pub mod charspec;

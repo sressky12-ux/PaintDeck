@@ -494,10 +494,76 @@ pub fn caption_hint(tags: &[String]) -> String {
 }
 
 /// 雲端腦袋：OpenAI 相容的網址（不含 /v1）、金鑰（自己架的走 SSH 通道，沒有）、模型名稱
+/// api＝外接 API（DeepSeek、GLM…）：只送標準欄位、走系統代理
+#[derive(Clone)]
 pub struct Remote {
     pub base: String,
     pub key: Option<String>,
     pub model: String,
+    pub api: bool,
+}
+
+/// AI 改寫這一次走哪裡（API 頁的總機選的）：remote＝外接 API 或雲端（None＝本機），preset＝指令預設。
+/// 掛在改寫的背景工作上（task-local），chat() 和 ensure() 看到就改道，改寫、成人體位、中文對照三條路都吃得到
+#[derive(Clone, Default)]
+pub struct Via {
+    pub remote: Option<Remote>,
+    pub preset: Option<crate::brains::Preset>,
+}
+
+impl Via {
+    pub fn is_default(&self) -> bool {
+        self.remote.is_none() && self.preset.is_none()
+    }
+    /// 快取鍵要多加的欄位：走本機又沒套預設時一個都不加（鍵跟以前一樣、照舊跟 Python 版共用快取）
+    pub fn cache_parts(&self) -> Vec<(&'static str, Value)> {
+        let mut v = vec![];
+        if let Some(r) = &self.remote {
+            v.push(("brain", json!(format!("{}|{}", r.base, r.model))));
+        }
+        if let Some(p) = &self.preset {
+            v.push(("preset", json!(sha256_hex(serde_json::to_string(p).unwrap_or_default().as_bytes()))));
+        }
+        v
+    }
+}
+
+tokio::task_local! {
+    static VIA: std::sync::Arc<Via>;
+}
+
+fn via() -> Option<std::sync::Arc<Via>> {
+    VIA.try_with(|v| v.clone()).ok()
+}
+
+/// 網址 → chat completions 的完整路徑。GLM 的版本號不是 /v1（.../api/paas/v4），有寫版本號就照它的，沒寫才補 /v1
+pub fn chat_url(base: &str) -> String {
+    let base = base.trim().trim_end_matches('/');
+    if base.ends_with("/chat/completions") {
+        return base.to_string();
+    }
+    // 網址路徑裡任何一段像版本號（v1、v4、v1beta）就照它的；Gemini 是 /v1beta/openai，版本號不在最後
+    let path = base.split_once("://").map_or(base, |(_, r)| r).split_once('/').map_or("", |(_, p)| p);
+    let is_ver = |seg: &str| {
+        let d: String = seg.strip_prefix('v').unwrap_or("").chars().take_while(char::is_ascii_digit).collect();
+        !d.is_empty() && seg[1 + d.len()..].chars().all(|c| c.is_ascii_lowercase())
+    };
+    let versioned = path.split('/').any(is_ver);
+    if versioned {
+        format!("{base}/chat/completions")
+    } else {
+        format!("{base}/v1/chat/completions")
+    }
+}
+
+/// 外接 API 的請求：只放各家都認得的欄位（seed、top_k、min_p、logit_bias 是 llama.cpp 的；GLM 的 temperature 上限 1）。
+/// max_tokens 留寬一點：GLM 5.3 一定會先想，想的字也算在裡面
+pub fn api_body(model: &str, messages: &Value, temperature: f64, max_tokens: i64, think: bool) -> Value {
+    json!({
+        "model": model, "messages": messages, "stream": true,
+        "temperature": temperature.clamp(0.0, 1.0), "top_p": 0.95, "max_tokens": max_tokens.max(8192),
+        "thinking": {"type": if think { "enabled" } else { "disabled" }},
+    })
 }
 
 /// 助手要的 llama-server 種類：adult_vision 加上指定的腦袋（model_files 看 @ 後面選模型，不看設定頁的 pe_general）
@@ -2100,6 +2166,8 @@ pub struct Service {
     /// 升級換模型（拿掉官方 PE、換新 9B，server\api_pe.rs retire_old_models）做到哪：{phase, msg, pct}；沒在做＝null
     retire: Mutex<Value>,
     http: reqwest::Client,
+    /// 外接 API 用（要走使用者設的代理；上面那個只連本機）
+    ext: reqwest::Client,
     /// 姿勢大彙整（成人改寫用）
     pub poses: Arc<crate::poses::Poses>,
     /// 外掛寫法挑段用的意思座標（CPU 的 Qwen3-Embedding，另一顆 llama-server）
@@ -2135,6 +2203,12 @@ impl Service {
             .read_timeout(Duration::from_secs(900))
             .build()
             .expect("建立 HTTP client");
+        let ext = reqwest::Client::builder()
+            .proxy(crate::net::proxy())
+            .connect_timeout(Duration::from_secs(15))
+            .read_timeout(Duration::from_secs(300))
+            .build()
+            .expect("建立 HTTP client");
         Arc::new(Service {
             error,
             input_dir: input_dir.to_path_buf(),
@@ -2147,6 +2221,7 @@ impl Service {
             last: Mutex::new(Value::Null),
             retire: Mutex::new(Value::Null),
             http,
+            ext,
             poses: Arc::new(crate::poses::Poses::load(res)),
             embed: crate::embed::Embedder::new(core.clone()),
             core,
@@ -2155,7 +2230,7 @@ impl Service {
 
     // ---------------------------------------------------------------- 自訂系統提示詞（設定頁）
     /// 網頁上列出來可以改的系統提示詞：(編號, 名稱, 說明, 一定要保留的佔位符)
-    const EDITABLE: [(&'static str, &'static str, &'static str, &'static [&'static str]); 23] = [
+    const EDITABLE: [(&'static str, &'static str, &'static str, &'static [&'static str]); 25] = [
         ("t2i", "文生圖改寫（MOSS-Image）", "想法 → Qwen-Image 官方格式的英文長段落（MOSS 也吃這種寫法）。模型要回 JSON：{\"rewritten_prompt\": ..., \"wh_ratio\": ...}，改格式會讀不出來。", &[]),
         ("i2i", "改圖改寫（會讀參考圖）", "改圖、局部重繪、多圖參考用（Qwen 2.1）。一樣要回 JSON（rewritten_prompt、wh_ratio）。", &[]),
         ("anima", "Anima 改寫", "寫成 Danbooru tag＋英文句子。一樣要回 JSON（rewritten_prompt）。", &[]),
@@ -2179,6 +2254,8 @@ impl Service {
         ("agent_h3_ref", "H3 影片台：AI 幫我寫（多素材參考）", "H3 影片台按「AI 幫我寫」時用（多素材參考、關鍵幀、換角色、特效、換畫風、動作控制）。素材依序叫 <Picture N>、<Video N>、<Audio N>。", &[]),
         ("agent_h3_board", "H3 影片台：AI 幫我寫滿分鏡（素材板）", "H3 影片台素材板按「AI 幫我寫滿分鏡」時用。照素材板的用途寫，回 JSON 分鏡（每一鏡從第幾秒、鏡頭、畫面、台詞、聲音），網頁再組成官方格式。", &[]),
         ("agent_h3_sheet", "影片台：拍攝單 AI 潤飾", "影片台拍攝單按「AI 潤飾」時用。把程式組好的那段提示詞改得更好演：部位＋位置、補看得到的結果，時間戳、<d> 台詞、<Picture N> 一字不改；要回兩個 ```text 區塊（提示詞、另一種語言的對照）。", &[]),
+        ("translate", "中英對照：AI 翻句子", "提示詞框「中英對照」裡對照表翻不了的句子交給 AI 翻成繁體中文。模型要一行一段、照編號回「1. 翻譯」，改格式會對不上。", &[]),
+        ("director_describe", "導演台：看圖寫角色外觀", "導演台加角色時看參考圖寫外觀說明（只寫固定外觀，不寫姿勢、表情、背景）。", &[]),
     ];
 
     /// 自訂系統提示詞的字數上限（prompt_save 和設定檔匯入共用）
@@ -2465,7 +2542,37 @@ impl Service {
         em: &Emitter,
         zh: bool,
     ) -> Result<(String, String, Value), Fail> {
-        self.chat_at(&core.url(), None, body, em, zh).await
+        let Some(v) = via() else {
+            return self.chat_at(&core.url(), None, body, em, zh).await;
+        };
+        let mut b = body.clone();
+        if v.preset.is_some() {
+            b["messages"] = crate::brains::apply(v.preset.as_ref(), &body["messages"]);
+        }
+        let params = v.preset.as_ref().map(|p| p.params.clone()).unwrap_or_default();
+        match &v.remote {
+            Some(r) if r.api => {
+                let t = b["temperature"].as_f64().unwrap_or(0.7);
+                let mt = b["max_tokens"].as_i64().unwrap_or(4096);
+                let mut ab = api_body(&r.model, &b["messages"], t, mt, false);
+                crate::brains::apply_params(&mut ab, &params, true);
+                self.send_api(r, ab, em, zh).await
+            }
+            Some(r) => {
+                crate::brains::apply_params(&mut b, &params, false);
+                b["model"] = json!(r.model);
+                if let Some(m) = b.as_object_mut().filter(|_| r.key.is_some() || r.model != "remote-a3b") {
+                    for k in ["timings_per_token", "repeat_penalty", "thinking_budget_tokens", "logit_bias"] {
+                        m.remove(k);
+                    }
+                }
+                self.chat_at(&r.base, r.key.as_deref(), &b, em, zh).await
+            }
+            None => {
+                crate::brains::apply_params(&mut b, &params, false);
+                self.chat_at(&core.url(), None, &b, em, zh).await
+            }
+        }
     }
 
     /// 同 chat，送到指定的 OpenAI 相容網址（雲端助手：SSH 通道的 llama-server，或使用者填的網址＋金鑰）
@@ -2477,11 +2584,23 @@ impl Service {
         em: &Emitter,
         zh: bool,
     ) -> Result<(String, String, Value), Fail> {
+        self.chat_via(&self.http, base, key, body, em, zh).await
+    }
+
+    async fn chat_via(
+        &self,
+        http: &reqwest::Client,
+        base: &str,
+        key: Option<&str>,
+        body: &Value,
+        em: &Emitter,
+        zh: bool,
+    ) -> Result<(String, String, Value), Fail> {
         if let Some(run)=crate::diagnostics::current() {
             crate::diagnostics::remember_secret(&run.store,key);
             run.snapshot("llm_request",body);
         }
-        let mut req = self.http.post(format!("{base}/v1/chat/completions")).json(body);
+        let mut req = http.post(chat_url(base)).json(body);
         if let Some(k) = key.filter(|k| !k.is_empty()) {
             req = req.bearer_auth(k);
         }
@@ -2591,6 +2710,10 @@ impl Service {
         ngl: i64,
         em: &Emitter,
     ) -> Result<f64, Fail> {
+        // 這次改寫走外接 API／雲端：不用載本機模型
+        if via().is_some_and(|v| v.remote.is_some()) {
+            return Ok(0.0);
+        }
         if ngl > 0 {
             let mut notified = false;
             loop {
@@ -2926,6 +3049,9 @@ impl Service {
         .filter(|t| !t.is_empty());
         if let Some(t) = &skill_note {
             parts.push(("skill", json!(sha256_hex(t.as_bytes()))));
+        }
+        if let Some(v) = via() {
+            parts.extend(v.cache_parts());
         }
         let key = core.cache_key(&parts, Some(&images));
         let use_cache = truthy(Some(&body.get("cache").cloned().unwrap_or(json!(true))));
@@ -3432,6 +3558,22 @@ impl Service {
         temperature: f64,
         model: Option<&str>,
     ) -> Result<String, String> {
+        self.general_chat_local(rid, system, user, images, max_tokens, temperature, model, None).await
+    }
+
+    /// 本機那條，可以套指令預設（API 頁）
+    #[allow(clippy::too_many_arguments)]
+    async fn general_chat_local(
+        self: &Arc<Self>,
+        rid: &str,
+        system: &str,
+        user: &str,
+        images: &[String],
+        max_tokens: i64,
+        temperature: f64,
+        model: Option<&str>,
+        preset: Option<&crate::brains::Preset>,
+    ) -> Result<String, String> {
         let core = self
             .core
             .clone()
@@ -3460,17 +3602,89 @@ impl Service {
                 parts.push(json!({"type": "text", "text": user}));
                 Value::Array(parts)
             };
-            let msgs = json!([{"role": "system", "content": system}, {"role": "user", "content": content}]);
+            let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]));
             crate::diagnostics::snapshot("general_chat_request",&json!({"rid":rid,"messages":msgs,"max_tokens":max_tokens,"temperature":temperature,"kind":kind,"model":model_name}));
             let _g = self.acquire(&em).await?;
             self.ensure(&core, kind, self.ngl(), &em).await?;
             em.emit("status", json!({"phase": "generating", "msg": "撰寫中…"})).await?;
             core.set_busy(1);
             let seed = (now() * 1000.0) as i64;
-            let out = self
-                .chat(&core, &tune_for(&model_name, payload(&msgs, temperature, seed, false, Some(max_tokens), true)), &em, false)
-                .await;
+            let mut b = tune_for(&model_name, payload(&msgs, temperature, seed, false, Some(max_tokens), true));
+            if let Some(p) = preset {
+                crate::brains::apply_params(&mut b, &p.params, false);
+            }
+            let out = self.chat(&core, &b, &em, false).await;
             core.set_busy(0);
+            let (raw, _, _) = out?;
+            Ok(clean_reply(&raw))
+        })
+        .await
+    }
+
+    /// 照 API 頁的總機選好的腦袋做一次對話（翻譯、導演台…）。brain＝brains::resolve 的結果；
+    /// Cloud 時 cloud＝呼叫端解好的雲端 Remote。Local("")＝照設定頁的 pe_general
+    #[allow(clippy::too_many_arguments)]
+    pub async fn general_chat_with(
+        self: &Arc<Self>,
+        rid: &str,
+        system: &str,
+        user: &str,
+        images: &[String],
+        max_tokens: i64,
+        temperature: f64,
+        brain: &crate::brains::Brain,
+        cloud: Option<&Remote>,
+        preset: Option<&crate::brains::Preset>,
+    ) -> Result<String, String> {
+        use crate::brains::Brain;
+        let (remote, api) = match brain {
+            Brain::Local(m) => {
+                let m = Some(m.as_str()).filter(|m| !m.is_empty() && *m != "auto" && *m != "page");
+                return self.general_chat_local(rid, system, user, images, max_tokens, temperature, m, preset).await;
+            }
+            Brain::Cloud => (cloud.ok_or("雲端斷線了：到「雲端」那裡看狀態")?, false),
+            Brain::Api { remote, .. } => (remote, true),
+        };
+        // 看不到圖的 API 模型不送圖（呼叫端要自己給文字說明）
+        let send_images = !matches!(brain, Brain::Api { vision: Some(false), .. });
+        let core = self.core.clone().ok_or_else(|| self.error.clone().unwrap_or_default())?;
+        let imgs = if images.is_empty() || !send_images {
+            vec![]
+        } else {
+            let (dir, names) = (self.input_dir.clone(), images.to_vec());
+            run_blocking(move || Service::load_images(&dir, &names)).await.map_err(|e| e.0)?
+        };
+        let content = if imgs.is_empty() {
+            json!(user)
+        } else {
+            let mut parts: Vec<Value> = imgs.iter().map(|b| image_part(b)).collect();
+            parts.push(json!({"type": "text", "text": user}));
+            Value::Array(parts)
+        };
+        let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]));
+        crate::diagnostics::snapshot("general_chat_request", &json!({"rid": rid, "messages": msgs, "max_tokens": max_tokens, "temperature": temperature, "api": api, "model": remote.model}));
+        self.hub_chat(&core, rid, "director_llm", false, |em| async move {
+            em.emit("status", json!({"phase": "generating", "msg": "撰寫中…"})).await?;
+            let out = if api {
+                let mut b = api_body(&remote.model, &msgs, temperature, max_tokens, false);
+                if let Some(p) = preset {
+                    crate::brains::apply_params(&mut b, &p.params, true);
+                }
+                self.send_api(remote, b, &em, false).await
+            } else {
+                let seed = (now() * 1000.0) as i64;
+                let mut b = payload(&msgs, temperature, seed, false, Some(max_tokens), true);
+                if let Some(p) = preset {
+                    crate::brains::apply_params(&mut b, &p.params, false);
+                }
+                b["model"] = json!(remote.model);
+                if let Some(m) = b.as_object_mut().filter(|_| remote.key.is_some() || remote.model != "remote-a3b") {
+                    for k in ["timings_per_token", "repeat_penalty", "thinking_budget_tokens", "logit_bias"] {
+                        m.remove(k);
+                    }
+                }
+                self.chat_at(&remote.base, remote.key.as_deref(), &b, &em, false).await
+            };
             let (raw, _, _) = out?;
             Ok(clean_reply(&raw))
         })
@@ -3491,7 +3705,16 @@ impl Service {
         think: Option<i64>,
         brain: &str,
         remote: Option<&Remote>,
+        preset: Option<&crate::brains::Preset>,
     ) -> Result<(String, String), String> {
+        // 指令預設（API 頁）：第一則 system 當內建指令，前後照預設加段、最後加預填；取樣參數有填的蓋過去
+        let assembled = crate::brains::apply(preset, messages);
+        let messages = &assembled;
+        let tune = |b: &mut Value, api: bool| {
+            if let Some(p) = preset {
+                crate::brains::apply_params(b, &p.params, api);
+            }
+        };
         crate::diagnostics::snapshot("assistant_request", &json!({"rid":rid,"messages":messages,"max_tokens":max_tokens,"temperature":temperature,"think":think,"brain":brain,"remote":remote.is_some()}));
         let core = self
             .core
@@ -3504,10 +3727,17 @@ impl Service {
             let body = |model: &str| tune_for(model, ban_soft_words(with_think_budget(payload(messages, temperature, seed, think.is_some(), Some(max_tokens), true), think)));
             let busy = if think.is_some() { "思考中…" } else { "撰寫中…" };
             let out = match remote {
+                Some(r) if r.api => {
+                    em.emit("status", json!({"phase": "generating", "msg": busy})).await?;
+                    let mut b = api_body(&r.model, messages, temperature, max_tokens, think.is_some());
+                    tune(&mut b, true);
+                    self.send_api(r, b, &em, false).await
+                }
                 Some(r) => {
                     em.emit("status", json!({"phase": "generating", "msg": busy})).await?;
                     // 自己架的雲端一律是 35B-A3B（MoE，模型名稱 remote-a3b）；網址模式用使用者填的名稱
                     let mut b = body(&r.model);
+                    tune(&mut b, false);
                     b["model"] = json!(r.model);
                     if r.key.is_some() || r.model != "remote-a3b" {
                         // 別家伺服器（vLLM、OpenRouter…）不一定認得 llama.cpp 專用的欄位
@@ -3527,7 +3757,9 @@ impl Service {
                     self.ensure(&core, &kind, self.ngl(), &em).await?;
                     em.emit("status", json!({"phase": "generating", "msg": busy})).await?;
                     core.set_busy(1);
-                    let out = self.chat(&core, &body(&model_name), &em, false).await;
+                    let mut b = body(&model_name);
+                    tune(&mut b, false);
+                    let out = self.chat(&core, &b, &em, false).await;
                     core.set_busy(0);
                     out
                 }
@@ -3536,6 +3768,22 @@ impl Service {
             Ok((clean_reply(&raw), reasoning))
         })
         .await
+    }
+
+    /// 外接 API 送一次（走使用者代理的 ext client）。有的模型不准關思考（GLM 5.3）或不認得 thinking 欄位：400 時拿掉再送一次
+    async fn send_api(&self, r: &Remote, mut b: Value, em: &Emitter, zh: bool) -> Result<(String, String, Value), Fail> {
+        let first = self.chat_via(&self.ext, &r.base, r.key.as_deref(), &b, em, zh).await;
+        let out = match first {
+            Err(Fail::Error(e)) if e.contains("回應 400") => {
+                b.as_object_mut().map(|m| m.remove("thinking"));
+                self.chat_via(&self.ext, &r.base, r.key.as_deref(), &b, em, zh).await
+            }
+            other => other,
+        };
+        out.map_err(|f| match f {
+            Fail::Error(e) => Fail::Error(e.replace("llama-server", "外接 API")),
+            other => other,
+        })
     }
 
     /// 背景對話共用：登記取消、把 SSE 事件轉成 hub 訊息 {"type": event, rid, msg}（狀態原文照送，思考／內容只報字數，一秒最多一次），
@@ -3623,6 +3871,11 @@ impl Service {
 
     /// POST /api/pe/rewrite：SSE 串流 status／reasoning／content／zh_delta／result／error／cancelled 事件
     pub fn rewrite_sse(self: &Arc<Self>, body: Value) -> axum::response::Response {
+        self.rewrite_sse_with(body, Via::default())
+    }
+
+    /// 同上，via＝API 頁總機選的腦袋與指令預設（預設值＝本機、不套預設，跟以前一模一樣）
+    pub fn rewrite_sse_with(self: &Arc<Self>, body: Value, via: Via) -> axum::response::Response {
         use axum::http::header;
         use axum::response::IntoResponse;
         let rid = str_of(py::or(body.get("rid"), None).unwrap_or(&json!(now())));
@@ -3637,7 +3890,8 @@ impl Service {
             let em = Emitter { tx, cancel };
             let r = match &me.core {
                 None => Err(Fail::Error(me.error.clone().unwrap_or_default())),
-                Some(core) => me.rewrite(core, &body, &em).await,
+                Some(core) if via.is_default() => me.rewrite(core, &body, &em).await,
+                Some(core) => VIA.scope(std::sync::Arc::new(via), me.rewrite(core, &body, &em)).await,
             };
             let r = match r {
                 Ok(res) => em.emit("result", res).await,
@@ -4015,6 +4269,56 @@ mod tests {
     fn sentences_split_only_before_capitals() {
         assert_eq!(split_sentences("A b. C d. e f."), vec!["A b.", "C d. e f."]);
         assert_eq!(split_sentences(""), vec![""]);
+    }
+
+    #[test]
+    fn via_cache_parts_empty_by_default() {
+        assert!(Via::default().cache_parts().is_empty(), "本機不套預設：快取鍵跟以前一樣");
+        assert!(Via::default().is_default());
+        let r = Remote { base: "https://api.deepseek.com/v1".into(), key: Some("k".into()), model: "m".into(), api: true };
+        let v = Via { remote: Some(r), preset: Some(crate::brains::Preset::new_default("p")) };
+        let parts = v.cache_parts();
+        assert_eq!(parts[0], ("brain", json!("https://api.deepseek.com/v1|m")));
+        assert_eq!(parts[1].0, "preset");
+        assert!(!serde_json::to_string(&json!(parts.iter().map(|p| p.1.clone()).collect::<Vec<_>>())).unwrap().contains("\"k\""), "金鑰不進快取鍵");
+        let mut p2 = crate::brains::Preset::new_default("p");
+        p2.prefill = "x".into();
+        let v2 = Via { remote: None, preset: Some(p2) };
+        assert_ne!(v2.cache_parts()[0].1, parts[1].1, "預設內容不同，鍵不同");
+    }
+
+    #[test]
+    fn editable_has_translate_and_describe() {
+        for id in ["translate", "director_describe"] {
+            assert!(Service::EDITABLE.iter().any(|e| e.0 == id), "{id} 要能在設定頁改");
+        }
+        assert_eq!(crate::agent::default_text("translate"), Some(crate::agent::TRANSLATE_SYSTEM.trim()));
+        assert!(crate::agent::TRANSLATE_SYSTEM.contains("formatted `N. translation`"));
+    }
+
+    #[test]
+    fn chat_url_keeps_vendor_versions() {
+        assert_eq!(chat_url("http://127.0.0.1:8199"), "http://127.0.0.1:8199/v1/chat/completions");
+        assert_eq!(chat_url("https://api.deepseek.com/v1/"), "https://api.deepseek.com/v1/chat/completions");
+        assert_eq!(chat_url("https://open.bigmodel.cn/api/paas/v4"), "https://open.bigmodel.cn/api/paas/v4/chat/completions");
+        assert_eq!(chat_url("https://x.ai/api/chat/completions"), "https://x.ai/api/chat/completions");
+        assert_eq!(chat_url("https://vendor.com/api"), "https://vendor.com/api/v1/chat/completions");
+        assert_eq!(chat_url("https://vendor.com/video"), "https://vendor.com/video/v1/chat/completions");
+        // Gemini 的 OpenAI 相容接口：版本號在中間（/v1beta/openai），不能再補 /v1
+        assert_eq!(chat_url("https://generativelanguage.googleapis.com/v1beta/openai"), "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
+        assert_eq!(chat_url("https://dashscope.aliyuncs.com/compatible-mode/v1"), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+    }
+
+    #[test]
+    fn api_body_only_standard_fields() {
+        let b = api_body("m", &json!([]), 1.5, 2048, false);
+        for k in ["seed", "top_k", "min_p", "logit_bias", "repeat_penalty", "chat_template_kwargs", "timings_per_token"] {
+            assert!(b.get(k).is_none(), "{k}");
+        }
+        assert_eq!(b["temperature"], json!(1.0));
+        assert_eq!(b["max_tokens"], json!(8192));
+        assert_eq!(b["thinking"]["type"], "disabled");
+        assert_eq!(api_body("m", &json!([]), 0.7, 2048, true)["thinking"]["type"], "enabled");
     }
 
     #[test]

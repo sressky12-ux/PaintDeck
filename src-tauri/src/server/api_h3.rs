@@ -253,7 +253,7 @@ pub fn media_names(p: &Value) -> Vec<String> {
             }
         }
     };
-    for k in ["first", "last", "source", "prev"] {
+    for k in ["first", "last", "source", "prev", "control2"] {
         add(&p[k]);
     }
     for k in ["images", "videos", "audios"] {
@@ -784,14 +784,27 @@ pub fn board_plan_of(s: &str) -> Option<Value> {
 }
 
 /// {idea, mode, seconds, media: [{label, role, name?}], brain: 9b|35b|cloud, path?, plan?} → {prompt}；素材板（mode board）→ {plan} 或 {prompt}
-/// 「AI 幫我寫」用哪顆腦袋：b.brain 是 9b／35b／cloud；雲端的話要開好、而且有裝助手的腦袋（拍攝單 AI 潤飾也用）
-pub(super) fn brain_of(app: &Shared, b: &Value) -> Result<(String, Option<crate::pe::Remote>), super::ApiError> {
-    let brain = match tx(&b["brain"]).as_str() {
-        "35b" => "35b",
-        "cloud" => "cloud",
-        _ => "9b",
+/// 頁面送來的腦袋：9b／35b／cloud／api（預設連線）／api:<連線 id>；其他當 9b
+pub(super) fn page_brain(b: &Value) -> String {
+    match tx(&b["brain"]).as_str() {
+        "35b" => "35b".into(),
+        "cloud" => "cloud".into(),
+        "api" => "api".into(),
+        x if x.strip_prefix("api:").is_some_and(|i| !i.is_empty()) => x.into(),
+        _ => "9b".into(),
     }
-    .to_string();
+}
+
+/// 「AI 幫我寫」用哪顆腦袋：頁面的 b.brain 再照 API 頁對照表的 feature 那列決定（H3 寫手、拍攝單和其他寫手頁共用）；
+/// 雲端的話要開好、而且有裝助手的腦袋。回 (9b|35b|cloud|api, 遠端, 指令預設)
+pub(super) fn brain_of(app: &Shared, b: &Value, feature: &str) -> Result<(String, Option<crate::pe::Remote>, Option<crate::brains::Preset>), super::ApiError> {
+    use crate::brains::Brain;
+    let (sel, preset, _) = app.brains.resolve(feature, &page_brain(b)).map_err(bad)?;
+    let brain = match sel {
+        Brain::Api { remote, .. } => return Ok(("api".into(), Some(remote), preset)),
+        Brain::Cloud => "cloud".to_string(),
+        Brain::Local(m) => if m == "35b" { "35b" } else { "9b" }.to_string(),
+    };
     let remote = if brain == "cloud" {
         if app.agent.cloud.live_packs().is_some_and(|p| !p.agent) {
             return Err(bad("雲端這台沒裝助手的腦袋：改用本機的 9B／35B，或雲端勾「生圖助手」"));
@@ -800,7 +813,7 @@ pub(super) fn brain_of(app: &Shared, b: &Value) -> Result<(String, Option<crate:
     } else {
         None
     };
-    Ok((brain, remote))
+    Ok((brain, remote, preset))
 }
 
 pub async fn write(State(app): State<Shared>, Body(b): Body) -> ApiResult {
@@ -840,9 +853,9 @@ pub async fn write(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         }
     }
     let msgs = json!([{"role": "system", "content": system}, {"role": "user", "content": parts}]);
-    let (brain, remote) = brain_of(&app, &b)?;
+    let (brain, remote, preset) = brain_of(&app, &b, "h3writer")?;
     let rid = format!("h3w-{:x}", super::api_director::random_seed());
-    let (content, _) = app.pe.agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref()).await.map_err(bad)?;
+    let (content, _) = app.pe.agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref()).await.map_err(bad)?;
     if mode == "board" {
         if let Some(plan) = board_plan_of(&content) {
             return ok(json!({"plan": plan}));

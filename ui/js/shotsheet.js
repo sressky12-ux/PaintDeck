@@ -15,7 +15,7 @@ const LANG_ALIAS = { Chinese: ["zh", "cn", "chinese", "中文", "國語", "普�
   English: ["en", "english", "英文", "英語"], Korean: ["ko", "kr", "korean", "韓文", "韓語"], Cantonese: ["yue", "cantonese", "粵語", "廣東話"] };
 const normLang = (v) => { const c = String(v || "").trim().toLowerCase(); return Object.keys(LANG_ALIAS).find((k) => LANG_ALIAS[k].includes(c)) || ""; };
 const LAYOUT = [["top", "上方"], ["bottom", "下方"], ["left", "左邊"], ["right", "右邊"], ["fg", "前景"], ["mid", "中景"], ["bg", "遠景"], ["light", "光線"]];
-const BRAINS = [["9b", "9B（快）"], ["35b", "35B（準）"], ["cloud", "雲端"]];
+const BRAINS = [["9b", "9B（快）"], ["35b", "35B（準）"], ["cloud", "雲端"], ["api", "外接 API"]];
 // /api/shotsheet/meta 回來前先用這組（跟 shotsheet.rs 的常數一樣）
 const LIM = { tail: 1.6, handover: 0.7, early: 1, min_secs: 5, max_secs: 15, max_segs: 30, max_cast: 4, max_refs: 8 };
 

@@ -341,7 +341,9 @@ fn legacy_plan(p: &Value, mode: &str, length: i64) -> R<Plan> {
         pl.refs.images.extend(keys.iter().map(|(img, _)| img.clone()));
         pl.pins = keys;
     }
-    pl.uses_refs = matches!(mode, "ref2v" | "keys" | "swap" | "vfx" | "style" | "live" | "control");
+    // 動作控制：有首幀、沒參考素材 → 圖生影片＋控制（預演台）；其餘照舊走參考生影片
+    let control_i2v = mode == "control" && !first.is_empty() && pl.refs.images.is_empty() && pl.refs.videos.is_empty();
+    pl.uses_refs = matches!(mode, "ref2v" | "keys" | "swap" | "vfx" | "style" | "live") || (mode == "control" && !control_i2v);
     pl.first = first.to_string();
     pl.last = if mode == "fl2v" { last.to_string() } else { String::new() };
     if mode == "continue" {
@@ -509,12 +511,26 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
         let comp = g.add("GetVideoComponents", json!({"video": src}));
         // 截到要做的長度：前處理（SDPose）不用白跑整段
         let cut = g.add("ImageFromBatch", json!({"image": G::out(&comp, 0), "batch_index": 0, "length": length}));
-        let ctl = control_video(&mut g, p, cut);
+        let ctl = control_video(&mut g, s(p, "control_type"), cut);
         let strength = num(p, "control_strength").unwrap_or(1.0);
         model = g.add(
             "MiniMaxH3FunControlNetApply",
-            json!({"model": model, "model_patch": patch, "vae": vae, "strength": strength, "start_percent": 0.0, "end_percent": 1.0, "control_video": ctl}),
+            json!({"model": model, "model_patch": patch.clone(), "vae": vae, "strength": strength, "start_percent": 0.0, "end_percent": 1.0, "control_video": ctl}),
         );
+        // 第二支控制影片（預演台：深度＋骨架），串在後面、共用同一個 patch
+        let second = s(p, "control2");
+        if !second.is_empty() {
+            let src = g.add("LoadVideo", json!({"file": second}));
+            let comp = g.add("GetVideoComponents", json!({"video": src}));
+            let cut = g.add("ImageFromBatch", json!({"image": G::out(&comp, 0), "batch_index": 0, "length": length}));
+            let kind = match s(p, "control2_type") { "" => "none", k => k };
+            let ctl = control_video(&mut g, kind, cut);
+            let strength = num(p, "control2_strength").unwrap_or(0.7);
+            model = g.add(
+                "MiniMaxH3FunControlNetApply",
+                json!({"model": model, "model_patch": patch.clone(), "vae": vae, "strength": strength, "start_percent": 0.0, "end_percent": 1.0, "control_video": ctl}),
+            );
+        }
     }
 
     // 條件＋空白潛空間
@@ -654,8 +670,8 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
 
 /// 動作控制的前處理：pose（SDPose＋RT-DETR，照官方 video_minimax_h3_fun_controlnet_union 範本）、canny（核心 Canny 節點）、
 /// none（直接用，例如已經是骨架或深度影片）。欄位名照 comfy_extras 的 nodes_sdpose.py、nodes_rtdetr.py、nodes_canny.py
-fn control_video(g: &mut G, p: &Value, frames: Value) -> Value {
-    match s(p, "control_type") {
+fn control_video(g: &mut G, kind: &str, frames: Value) -> Value {
+    match kind {
         "canny" => g.add("Canny", json!({"image": frames, "low_threshold": 0.4, "high_threshold": 0.8})),
         "none" => frames,
         _ => {
@@ -1082,5 +1098,39 @@ mod tests {
         let guider = by_class(&n, "BasicGuider")[0];
         assert_eq!(node(&n, &guider["inputs"]["model"])["class_type"], "MiniMaxH3FunControlNetApply");
         assert_eq!(by_class(&n, "ModelPatchLoader")[0]["inputs"]["name"], CONTROL_PATCH);
+    }
+
+    #[test]
+    fn control_with_first_uses_i2v() {
+        // 預演台：首幀＋深度控制走圖生影片（2026-10-31 PB／PD 實測就是這樣接的）；沒首幀照舊走參考生影片
+        let d = std::env::temp_dir().join(format!("h3_ctl_first_{}", std::process::id()));
+        std::fs::create_dir_all(&d).unwrap();
+        image::RgbImage::new(96, 64).save(d.join("h3_first.png")).unwrap();
+        let p = json!({"h3_mode": "control", "prompt": "x", "first": "h3_first.png", "source": "d.mp4", "control_type": "none"});
+        let (n, _) = build(&p, &d, 0).unwrap();
+        let i2v = by_class(&n, "MiniMaxH3ImageToVideo");
+        assert_eq!(i2v.len(), 1);
+        assert_eq!(node(&n, &i2v[0]["inputs"]["first_frame"])["inputs"]["image"], "h3_first.png");
+        assert!(by_class(&n, "MiniMaxH3ReferenceToVideo").is_empty());
+        assert_eq!(by_class(&n, "MiniMaxH3FunControlNetApply").len(), 1);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn control_chains_second_video() {
+        // 預演台：深度 0.3＋骨架 0.7 兩支控制影片串接，共用同一個 patch
+        let p = json!({"h3_mode": "control", "prompt": "x", "source": "d.mp4", "control_type": "none", "control_strength": 0.3,
+                       "control2": "p.mp4", "control2_strength": 0.7});
+        let (n, _) = build(&p, &dir(), 0).unwrap();
+        let c = by_class(&n, "MiniMaxH3FunControlNetApply");
+        assert_eq!(c.len(), 2);
+        assert_eq!(by_class(&n, "ModelPatchLoader").len(), 1);
+        let (a, b) = if node(&n, &c[1]["inputs"]["model"])["class_type"] == "MiniMaxH3FunControlNetApply" { (c[0], c[1]) } else { (c[1], c[0]) };
+        assert_eq!(a["inputs"]["strength"], 0.3);
+        assert_eq!(b["inputs"]["strength"], 0.7);
+        assert_eq!(node(&n, &b["inputs"]["model"]), a);
+        assert_eq!(node(&n, &b["inputs"]["control_video"])["class_type"], "ImageFromBatch");
+        let guider = by_class(&n, "BasicGuider")[0];
+        assert_eq!(node(&n, &guider["inputs"]["model"]), b);
     }
 }

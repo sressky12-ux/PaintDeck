@@ -327,9 +327,7 @@ pub async fn describe(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     if img.is_empty() || !app.paths.input.join(&img).exists() {
         return Err(bad("先選一張角色圖"));
     }
-    let r = app
-        .pe
-        .general_chat("director-describe", d::SYSTEM_DESCRIBE, "Describe this character.", &[img], 800, 0.3)
+    let r = super::api_llm::chat(&app, "director", "page", "director-describe", &app.pe.agent_text("director_describe"), "Describe this character.", &[img], 800, 0.3)
         .await
         .map_err(bad)?;
     let m = d::json_in(&r);
@@ -584,7 +582,7 @@ fn frame_reference_list(family: &str, p: &Value, chars: &[Value], seg: &Value) -
 async fn ask(app: &Shared, id: &str, sys: &str, user: &str, max_tokens: i64, parse: impl Fn(&str) -> bool) -> Result<String, String> {
     let mut last = String::new();
     for attempt in 0..2 {
-        let r = app.pe.general_chat(&rid(id), sys, user, &[], max_tokens, if attempt == 0 { 0.7 } else { 0.9 }).await?;
+        let r = super::api_llm::chat(app, "director", "page", &rid(id), sys, user, &[], max_tokens, if attempt == 0 { 0.7 } else { 0.9 }).await?;
         if parse(&r) {
             return Ok(r);
         }

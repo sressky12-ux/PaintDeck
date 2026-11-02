@@ -8,6 +8,7 @@ use super::api_cloud;
 use super::api_gallery::file_of;
 use super::api_gen::submit_jobs;
 use super::{bad, blocking, internal, not_found, ok, ApiError, ApiResult, Body, Shared};
+use crate::brains::Brain;
 use crate::agent::{self as ag, LoraInfo, Store};
 use crate::agent_tools as at;
 use crate::director::tx;
@@ -24,6 +25,8 @@ use tokio_util::sync::CancellationToken;
 
 /// 「選了 35B、實際用 9B」那則提示的開頭（拿來判斷這段對話講過了沒）
 const NO_35B: &str = "腦袋選了 35B，但";
+/// 外接 API 的模型看不到圖（同一段對話只講一次）
+const NO_VISION: &str = "這個 API 模型看不到圖：";
 
 pub struct Agent {
     pub store: Store,
@@ -34,6 +37,8 @@ pub struct Agent {
     /// 「認識 LoRA」背景工作（同時只跑一個）
     learn: Mutex<Option<CancellationToken>>,
     pub cloud: api_cloud::Cloud,
+    /// 外接 API 看不到圖時反推過的結果（同一張圖每一輪都要給，反推在 CPU 跑一張要幾秒）：路徑＋修改時間 → 文字
+    tagged: Mutex<HashMap<String, Value>>,
 }
 
 impl Agent {
@@ -44,6 +49,7 @@ impl Agent {
             runs: Mutex::new(HashMap::new()),
             learn: Mutex::new(None),
             cloud: api_cloud::Cloud::new(&data.join("agent").join("cloud")),
+            tagged: Mutex::new(HashMap::new()),
         }
     }
     fn running(&self, id: &str) -> bool {
@@ -234,6 +240,8 @@ pub async fn say(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     if cloud && !words && families::family_of(&app.paths.unet_roots(), &tx(&st["base"]["model"])) != MOSS {
         return Err(bad("雲端目前只裝 MOSS-Image：生成頁請換成 MOSS 模型再按「用生成頁目前的設定」"));
     }
+    // API 頁的總機：頁面選 API（或對照表指到 API）卻沒有能用的連線，先講
+    app.brains.resolve("agent", &tx(&st["brain"])).map_err(bad)?;
     if !words && !cloud && !app.comfy.live().online {
         return Err(bad("ComfyUI 沒有連線"));
     }
@@ -533,8 +541,34 @@ fn reject_zh(fb: &str) -> &'static str {
     }
 }
 
+/// 給模型看的一張圖：看得到＝image_url；看不到（外接 API）＝反推的 tag
+fn image_part(app: &Shared, path: &Path, blind: bool) -> Result<Value, String> {
+    if !blind {
+        return crate::pe::image_url_jpeg(path, 768);
+    }
+    let stamp = std::fs::metadata(path).and_then(|m| m.modified()).ok();
+    let key = format!("{}|{stamp:?}", path.display());
+    if let Some(p) = app.agent.tagged.lock().unwrap_or_else(|e| e.into_inner()).get(&key) {
+        return Ok(p.clone());
+    }
+    if !app.tagger.available() {
+        return Err("反推模型還沒下載".into());
+    }
+    let v = app.tagger.tag(path, 0.35, 0.85)?;
+    let names = |k: &str| -> Vec<String> {
+        v[k].as_array().into_iter().flatten().take(80).filter_map(|p| p[0].as_str()).map(|t| t.replace("\\(", "(").replace("\\)", ")")).collect()
+    };
+    let part = ag::tag_part(&names("character"), &names("general"));
+    let mut seen = app.agent.tagged.lock().unwrap_or_else(|e| e.into_inner());
+    if seen.len() > 200 {
+        seen.clear();
+    }
+    seen.insert(key, part.clone());
+    Ok(part)
+}
+
 /// 使用者附的圖裡最新的幾張（給模型看）：(第幾張, image_url)
-async fn user_parts(app: &Shared, all: &[Value]) -> Vec<(i64, Value)> {
+async fn user_parts(app: &Shared, all: &[Value], blind: bool) -> Vec<(i64, Value)> {
     let pick: Vec<(i64, String)> = all
         .iter()
         .rev()
@@ -542,10 +576,11 @@ async fn user_parts(app: &Shared, all: &[Value]) -> Vec<(i64, Value)> {
         .filter_map(|i| Some((i["n"].as_i64()?, tx(&i["name"]))))
         .collect();
     let input = app.paths.input.clone();
+    let a = app.clone();
     blocking(move || {
         pick.into_iter()
             .rev()
-            .filter_map(|(n, name)| match crate::pe::image_url_jpeg(&input.join(&name), 768) {
+            .filter_map(|(n, name)| match image_part(&a, &input.join(&name), blind) {
                 Ok(part) => Some((n, part)),
                 Err(e) => {
                     eprintln!("生圖助手看使用者的圖：{e}");
@@ -558,13 +593,13 @@ async fn user_parts(app: &Shared, all: &[Value]) -> Vec<(i64, Value)> {
 }
 
 /// 這次要給它看的圖（最新一輪）：(圖庫編號, image_url)
-async fn look_images(app: &Shared, ids: Vec<i64>) -> Vec<(i64, Value)> {
+async fn look_images(app: &Shared, ids: Vec<i64>, blind: bool) -> Vec<(i64, Value)> {
     let a = app.clone();
     blocking(move || {
         ids.into_iter()
             .filter_map(|i| {
                 let row = a.db.image(i).ok().flatten()?;
-                match crate::pe::image_url_jpeg(&file_of(&a.paths, &row), 768) {
+                match image_part(&a, &file_of(&a.paths, &row), blind) {
                     Ok(part) => Some((i, part)),
                     Err(e) => {
                         eprintln!("生圖助手看圖：{e}");
@@ -611,15 +646,37 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
             guide += &app.pe.embed.agent_block(&s, ag::family_guide(family), &ask).await;
         }
         let system = ag::system_prompt(&app.pe.agent_text("agent"), &guide, family, &ag::loras_text(&cat, &fixed, allow));
+        // 哪顆腦袋、套哪組指令預設：照 API 頁的對照表（「照頁面」＝助手頁上選的）
+        let (sel, preset, hint) = app.brains.resolve("agent", &tx(&st["brain"]))?;
+        if let Some(h) = hint.filter(|h| !events.iter().any(|e| ag::ev_kind(e) == "note" && tx(&e["text"]) == *h)) {
+            note(app, id, h).await;
+        }
+        // 外接 API：第一次用這個模型先試它看不看得到圖（結果記著，換模型才重試）；看不到就用反推的 tag 代替
+        let blind = match &sel {
+            Brain::Api { profile_id, .. } => {
+                let p = app.brains.profiles.get(profile_id).ok_or(crate::brains::NO_API)?;
+                !super::api_llm::vision(app, &p).await?
+            }
+            _ => false,
+        };
+        let brain = match &sel {
+            Brain::Local(m) => m.clone(),
+            Brain::Cloud => "cloud".to_string(),
+            Brain::Api { .. } => "api".to_string(),
+        };
+        let system = if blind { format!("{system}\n\n{}", ag::BLIND_NOTE) } else { system };
+        if blind && !events.iter().any(|e| ag::ev_kind(e) == "note" && tx(&e["text"]).starts_with(NO_VISION)) {
+            let how = if app.tagger.available() { "畫完改用反推模型讀 tag 來驗收，數量、左右手這類細節看不出來。" } else { "反推模型也還沒下載，所以這次不會看圖驗收；到「反推」頁下載後就能用。" };
+            note(app, id, format!("{NO_VISION}{how}")).await;
+        }
         let (rounds, count) = (st["rounds"].as_i64().unwrap_or(3), st["count"].as_i64().unwrap_or(2));
         let left = ag::rounds_left(&events, rounds, truthy(st.get("auto")));
         let shown: Vec<i64> = ag::latest_result(&events)
             .map(|e| e["ids"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect())
             .unwrap_or_default();
-        let look = look_images(app, shown).await;
+        let look = look_images(app, shown, blind).await;
         let images = ag::request_images(&events);
         let last = ag::last_generate(&events).cloned();
-        let brain = tx(&st["brain"]);
         let think = ag::think_level(&st["think"]);
         // 使用者附的圖：模型看得到最新幾張；本機的 Qwen 2.1（多圖參考）／Anima、MOSS（圖生圖一張）還能把圖餵給生圖模型（雲端只畫文字）
         let uall = ag::user_images(&events);
@@ -634,11 +691,11 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         let system = if uall.is_empty() { system } else { ag::with_images(&system, refs_mode) };
         // 用 look 看的圖不是它畫的：不要求逐項打勾、可以直接回話
         let looked_only = ag::latest_result(&events).is_some_and(|e| e["tool"] == "look");
-        let uparts = user_parts(app, &uall).await;
-        let remote = if brain == "cloud" {
-            Some(app.agent.cloud.endpoints().ok_or("雲端斷線了：到「雲端」那裡看狀態")?.remote())
-        } else {
-            None
+        let uparts = user_parts(app, &uall, blind).await;
+        let remote = match sel {
+            Brain::Cloud => Some(app.agent.cloud.endpoints().ok_or("雲端斷線了：到「雲端」那裡看狀態")?.remote()),
+            Brain::Api { remote, .. } => Some(remote),
+            Brain::Local(_) => None,
         };
         // 選了 35B 但機器上只有 9B：model_files 會默默用 9B，這裡講出來（同一段對話只講一次）
         if remote.is_none() && !events.iter().any(|e| ag::ev_kind(e) == "note" && tx(&e["text"]).starts_with(NO_35B)) {
@@ -672,7 +729,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
             app.agent.cloud.touch();
             let (content, reasoning) = app
                 .pe
-                .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref())
+                .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref())
                 .await?;
             app.agent.cloud.touch();
             let secs = t0.elapsed().as_secs_f64();
@@ -714,7 +771,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         app.agent.cloud.touch();
         let (content, reasoning) = app
             .pe
-            .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref())
+            .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref())
             .await?;
         app.agent.cloud.touch();
         let secs = t0.elapsed().as_secs_f64();
@@ -1059,7 +1116,7 @@ async fn learn_run(
         emit_learn(app, "progress", format!("讀線索：{}", l.stem()), done, total);
         let msgs = json!([{"role": "system", "content": ag::SYSTEM_LORA_META},
                           {"role": "user", "content": ag::lora_clues_text(l, &note_of(l), &tags_of(l), c)}]);
-        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None).await?;
+        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None).await?;
         match ag::parse_lora_desc(&r, "meta") {
             Some(d) => save_desc(app, &l.name, d, None)?,
             None => eprintln!("認識 LoRA {}：讀不出說明：{}", l.name, r.chars().take(200).collect::<String>()),
@@ -1122,7 +1179,7 @@ async fn learn_run(
             {"type": "text", "text": ag::lora_clues_text(l, &note_of(l), &tags_of(l), c)},
         ]);
         let msgs = json!([{"role": "system", "content": ag::SYSTEM_LORA_PROBE}, {"role": "user", "content": content}]);
-        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None).await?;
+        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None).await?;
         match ag::parse_lora_desc(&r, "probe") {
             Some(d) => {
                 let (a2, l2, f2) = (app.clone(), l.clone(), b_file.clone());

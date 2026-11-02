@@ -345,7 +345,7 @@ fn random_seed() -> i64 {
 }
 
 /// 種子：沒給、空白、-1 都是隨機；其他要是整數
-fn resolve_seed(p: &mut Map<String, Value>) -> Result<(), super::ApiError> {
+pub(super) fn resolve_seed(p: &mut Map<String, Value>) -> Result<(), super::ApiError> {
     let seed = p.get("seed").cloned().unwrap_or(Value::Null);
     let random = match &seed {
         Value::Null => true,

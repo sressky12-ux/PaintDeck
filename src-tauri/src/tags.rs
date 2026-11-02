@@ -122,10 +122,84 @@ impl TagIndex {
             ("hand_on_own_hip", "單手叉腰"), ("hands_on_own_hips", "雙手叉腰"), ("upper_teeth_only", "只露上排牙齒"),
             ("puff_of_air", "噴氣（生氣或嘆氣）"), ("stuffed_rabbit", "兔子布偶"), ("shoulder_boards", "肩章"),
             ("art_tools_in_frame", "畫具入鏡"), ("pink_halo", "粉紅光環"), ("tarot_(medium)", "塔羅牌風格"),
+            ("dress", "洋裝"), ("closed_mouth", "閉著嘴"), ("school_uniform", "制服"),
+            ("grey_hair", "灰髮"), ("short_sleeves", "短袖"), ("sidelocks", "耳前側髮"),
+            ("cowboy_shot", "七分身（大腿以上）"), ("pantyhose", "褲襪"), ("nude", "裸體"),
+            ("open_clothes", "衣服敞開"), ("parted_lips", "微張的嘴唇"), ("censored", "打碼的"),
+            ("collared_shirt", "有領襯衫"), ("japanese_clothes", "日式服裝"), ("medium_hair", "中長髮"),
+            ("puffy_sleeves", "泡泡袖"), ("fate_(series)", "Fate（系列）"), ("fang", "虎牙"),
+            ("blunt_bangs", "齊瀏海"), ("stomach", "肚子"), ("speech_bubble", "對話框"),
+            ("sex", "性愛"), ("white_dress", "白色洋裝"), ("on_back", "仰躺"),
+            ("blue_archive", "蔚藍檔案"), ("fate/grand_order", "Fate/Grand Order（FGO）"), ("orange_hair", "橘髮"),
+            ("star_(symbol)", "星形"), ("black_dress", "黑色洋裝"), ("blurry", "模糊的"),
+            ("from_side", "從側面看"), ("white_thighhighs", "白色大腿襪"), ("arm_up", "抬起一隻手臂"),
+            ("clothes_lift", "掀起衣服"), ("leotard", "緊身連身衣"), ("black_pantyhose", "黑色褲襪"),
+            ("bracelet", "手環"), ("arms_up", "舉起雙手"), ("two_side_up", "兩側綁髮"),
+            ("orange_eyes", "橘眼"), ("covered_nipples", "遮住乳頭"), ("clothing_cutout", "服裝鏤空"),
+            ("wrist_cuffs", "腕套"), ("bar_censor", "條狀打碼"), ("sleeveless_dress", "無袖洋裝"),
+            ("torn_clothes", "破損的衣服"), ("short_shorts", "熱褲"), ("buttons", "鈕扣"),
+            ("gradient_background", "漸層背景"), ("ascot", "領巾"), ("gradient_hair", "漸層頭髮"),
+            ("one-piece_swimsuit", "連身泳衣"), ("tattoo", "刺青"), ("uncensored", "無碼"),
+            ("hoodie", "連帽T"), ("profile", "側臉"), ("floating_hair", "飄浮的頭髮"),
+            ("double_bun", "雙丸子頭"), ("dress_shirt", "襯衫"), ("bodysuit", "緊身連身衣"),
+            ("blue_dress", "藍洋裝"), ("swept_bangs", "掃瀏海"), ("dutch_angle", "傾斜鏡頭"),
+            ("bell", "鈴鐺"), ("open_shirt", "敞開的襯衫"), ("hair_intakes", "頭頂兩撮翹髮"),
+            ("watermark", "浮水印"), ("one_side_up", "單側綁髮"), ("facial_mark", "臉部印記"),
+            ("side-tie_bikini_bottom", "側綁帶比基尼泳褲"), ("black_socks", "黑色襪子"), ("sunglasses", "墨鏡"),
+            ("bob_cut", "鮑伯頭"), ("no_shoes", "沒穿鞋"), ("frilled_dress", "花邊洋裝"),
+            ("short_dress", "短洋裝"), ("red_dress", "紅洋裝"), ("fire_emblem", "聖火降魔錄"),
+            ("drill_hair", "鑽頭捲髮"), ("thigh_boots", "過膝長靴"), ("flying_sweatdrops", "飛出的汗珠"),
+            ("traditional_media", "傳統媒材"), ("arms_behind_back", "雙手背後"), ("stuffed_toy", "絨毛玩偶"),
+            ("crossed_arms", "雙手交叉抱胸"), ("cleavage_cutout", "乳溝鏤空"), ("garter_straps", "吊襪帶"),
+            ("animated", "動圖"), ("obi", "和服腰帶"), ("portrait", "肖像"),
+            ("shirt_lift", "掀起上衣"), ("oral", "口交"), ("final_fantasy", "Final Fantasy（太空戰士）"),
+            ("tank_top", "背心（細肩帶）"), ("scrunchie", "大腸髮圈"), ("crossed_legs", "翹二郎腿"),
+            ("colored_inner_hair", "內層染髮"), ("partial_commentary", "部分註解"), ("backpack", "背包"),
+            ("mob_cap", "軟布帽"), ("blazer", "西裝外套"), ("yaoi", "BL（耽美）"),
+            ("spiked_hair", "尖刺髮"), ("single_hair_bun", "單丸子頭"), ("black_leotard", "黑色緊身連身衣"),
+            ("juliet_sleeves", "茱麗葉袖"), ("light_blush", "淡淡臉紅"), ("slit_pupils", "豎瞳"),
+            ("underwear_only", "只穿內衣褲"), ("hat_ribbon", "帽子緞帶"), ("grey_shirt", "灰色襯衫"),
+            ("sisters", "姊妹"), ("crossover", "跨界合作"), ("breasts_out", "露出乳房"),
+            ("polka_dot", "圓點"), ("fishnets", "網襪"), ("bandaid", "OK繃"),
+            ("pink_dress", "粉色洋裝"), ("black_bra", "黑胸罩"), ("skin_fang", "露出的虎牙"),
+            ("tan", "曬黑"), ("hat_bow", "帽子蝴蝶結"), ("crossed_bangs", "交叉瀏海"),
+            ("letterboxed", "上下黑邊（寬螢幕）"), ("otoko_no_ko", "偽娘（男の娘）"), ("hair_bobbles", "髮圈"),
+            ("cherry_blossoms", "櫻花"), ("armband", "臂章"), ("revealing_clothes", "暴露衣著"),
+            ("surprised", "驚訝"), ("remilia_scarlet", "蕾米莉亞·斯卡蕾特"), ("flandre_scarlet", "芙蘭朵露·斯卡蕾特"),
+            ("meme", "迷因"), ("anal", "肛交"), ("low_ponytail", "低馬尾"),
+            ("danganronpa_(series)", "槍彈辯駁（系列）"), ("strapless_dress", "無肩帶洋裝"), ("bike_shorts", "單車褲"),
+            ("pelvic_curtain", "腰間布簾"), ("holding_phone", "拿著手機"), ("white_pantyhose", "白色褲襪"),
+            ("large_pectorals", "大胸肌"), ("waist_apron", "半身圍裙"), ("purple_dress", "紫洋裝"),
+            ("gundam", "鋼彈"),
         ];
-        let key = tag.replace("\\(", "(").replace("\\)", ")").replace(' ', "_").to_lowercase();
+        // Anima 提示詞開頭常見的品質、分級、年代詞：對照表沒有，或照 Danbooru 原意翻錯（safe 會變成保險箱）
+        const META: &[(&str, &str)] = &[
+            ("masterpiece", "傑作（品質詞）"), ("best_quality", "最高品質"), ("high_quality", "高品質"),
+            ("good_quality", "好品質"), ("normal_quality", "普通品質"), ("low_quality", "低品質"),
+            ("worst_quality", "最差品質"), ("amazing_quality", "極佳品質"),
+            ("very_aesthetic", "非常好看（美感詞）"), ("aesthetic", "好看（美感詞）"),
+            ("displeasing", "難看（美感詞）"), ("very_displeasing", "非常難看（美感詞）"),
+            ("safe", "分級：全年齡"), ("general", "分級：全年齡"), ("sensitive", "分級：輕微性感"),
+            ("questionable", "分級：擦邊"), ("nsfw", "成人內容"), ("explicit", "分級：露骨成人"),
+            ("newest", "年代：最新"), ("recent", "年代：近年"), ("mid", "年代：中期"),
+            ("early", "年代：早期"), ("old", "年代：老圖"),
+        ];
+        let key = tag.trim().replace("\\(", "(").replace("\\)", ")").replace(' ', "_").to_lowercase();
         if key.len() == 4 && key.chars().all(|c| c.is_ascii_digit()) {
             return Some("年份".into());
+        }
+        if let Some((_, z)) = META.iter().find(|(k, _)| *k == key) {
+            return Some(z.to_string());
+        }
+        // year_2025、score_9、score_7_up
+        if let Some(y) = key.strip_prefix("year_").filter(|y| y.len() == 4 && y.chars().all(|c| c.is_ascii_digit())) {
+            return Some(format!("{y} 年"));
+        }
+        if let Some(s) = key.strip_prefix("score_") {
+            let (n, up) = s.strip_suffix("_up").map_or((s, false), |n| (n, true));
+            if !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()) {
+                return Some(format!("評分 {n}{}", if up { " 以上" } else { "" }));
+            }
         }
         if let Some((_, z)) = ZH_FIX.iter().find(|(k, _)| *k == key) {
             return Some(z.to_string());
@@ -326,6 +400,36 @@ mod tests {
                 old[..old.len().min(new.len())],
                 "{q}"
             );
+        }
+    }
+
+    #[test]
+    fn zh_of_meta_and_dictionary() {
+        let ix = index();
+        assert_eq!(ix.zh_of("masterpiece").as_deref(), Some("傑作（品質詞）"));
+        assert_eq!(ix.zh_of("Best Quality").as_deref(), Some("最高品質"));
+        assert_eq!(ix.zh_of("safe").as_deref(), Some("分級：全年齡"));
+        assert_eq!(ix.zh_of("year 2025").as_deref(), Some("2025 年"));
+        assert_eq!(ix.zh_of("score_7_up").as_deref(), Some("評分 7 以上"));
+        assert_eq!(ix.zh_of("score_9").as_deref(), Some("評分 9"));
+        assert!(ix.zh_of("score_x").is_none());
+        // 對照表本來就有的照舊；空白、底線、跳脫括號都算同一個
+        assert!(ix.zh_of("long hair").is_some_and(|z| z.contains('髮')));
+        assert_eq!(ix.zh_of("1girl"), ix.zh_of("1girl "));
+        assert!(ix.zh_of("a woman sitting on a bench at sunset").is_none());
+    }
+
+    #[test]
+    fn zh_fix_taiwan_terms() {
+        let ix = index();
+        assert_eq!(ix.zh_of("orange_hair").as_deref(), Some("橘髮"));
+        for (tag, zh) in [
+            ("cowboy_shot", "七分身（大腿以上）"),
+            ("oral", "口交"),
+            ("large_pectorals", "大胸肌"),
+            ("blue_archive", "蔚藍檔案"),
+        ] {
+            assert_eq!(ix.zh_of(tag).as_deref(), Some(zh), "{tag}");
         }
     }
 }

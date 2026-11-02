@@ -7,6 +7,7 @@ import * as loras from "./loras.js";
 import * as hub from "./hub.js";
 import * as feature from "./feature.js";
 import * as settings from "./settings.js";
+import * as llm from "./llm.js";
 import * as pe from "./pe.js";
 import * as queue from "./queue.js";
 import * as system from "./system.js";
@@ -37,11 +38,14 @@ function showPage(p) {
   if (p === "loras") loras.showPage();
   if (p === "civitai") hub.show();
   if (p === "settings") settings.show();
+  if (p === "api") llm.show();
   if (p === "director") { director.show(); studio.show(); }
   if (p === "comic") { comic.show(); colorbook.show(); }
   if (p === "agent") agent.show();
 }
 $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-page]"); if (b && !b.disabled) showPage(b.dataset.page); });
+// 頁面裡「到 API 頁」這種跳頁按鈕：data-go＝頁名
+document.addEventListener("click", (e) => { const b = e.target.closest("button[data-go]"); if (b) showPage(b.dataset.go); });
 app.showPage = showPage;
 
 // 好幾個地方會同時要求重讀（換設定、ComfyUI 上線、重新連線）：只收最後一次的結果，晚回的舊狀態不能蓋掉新的
@@ -186,6 +190,7 @@ loras.init();
 hub.init();
 feature.initFeatures();
 settings.init();
+llm.init();
 queue.init();
 director.init();
 studio.init();
@@ -202,7 +207,7 @@ connect();
 // 網址的 #gallery、#loras、#civitai、#settings、#director、#comic、#agent 直接打開那一頁；#jobs 打開任務面板、#help 打開說明（系統列選單也用這個）
 function fromHash() {
   const h = location.hash.slice(1);
-  if (["gen", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent"].includes(h)) showPage(h);
+  if (["gen", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent", "api"].includes(h)) showPage(h);
   else if (h === "jobs") queue.toggle();
   else if (h === "help") system.openHelp();
 }

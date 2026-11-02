@@ -114,6 +114,9 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 **MOSS**：英文描述；要畫的字用引號寫出來；版面用 `layout` 框。
 
 **AI 改寫（不想自己寫時）**：`POST /api/pe/rewrite {text, …}` 是 SSE 串流（事件 status、reasoning、content、zh_delta、result、error），用 `anima_api` 呼叫會拿到整段串流文字，取最後的 result。改寫用本機 llama-server 的通用模型（9B／35B，設定 `pe_general`），第一次要載入幾十秒。官方 PE 改寫模型 2026-10-30 起整個拿掉（沒有 `pe_engine` 設定了；升級後開站會把舊的 PE 檔刪掉、自動補下載通用 9B，進度在 `GET /api/pe/status` 的 `retire`）。`GET /api/pe/status` 看狀態、`POST /api/pe/stop` 關掉讓出顯存。
+**中英對照（看提示詞每段的中文）**：`POST /api/tags/zh {tags:[...]}` 查 tag 對照表，回 `{zh:{原字串:中文}}`（立刻回、不用模型，查不到的不放；品質詞、分級、年代、`score_N`、`year 2025` 也認得）。對照表翻不了的句子、片語用 `POST /api/pe/translate {texts:[...], rid?}`：交給上面同一顆通用模型翻成繁中，回 `{zh:[中文或 null, …]}` 跟 texts 一一對應，一次最多 40 段、4000 字，第一次要等模型載入，`POST /api/pe/cancel {rid}` 停。
+
+句子翻譯用哪顆腦袋照 API 頁對照表的「中英對照」那列（`brain` 可帶 `9b`／`35b`／`cloud`／`api`／`api:<連線 id>`，沒帶＝照頁面＝設定頁的通用模型）；翻譯指示可在設定頁「自訂系統提示詞」改（編號 `translate`）。
 `GET /api/poses`：成人體位彙整（110 筆，含驗證過的 tag 和英文幾何描述），寫雙人體位先查這裡。
 **外掛寫法（使用者自備的提示詞 skill）**：`GET /api/skills`（已裝的、綁定 `bind`、可以綁的寫法 `guides`）、`GET /api/skills/{id}`（目錄 `toc`、每段 `part_list`）、`POST /api/skills/install {url}`（GitHub 網址，確認）、`POST /api/skills/bind {guide, skill}`（skill 空字串＝拿掉，確認）、`POST /api/skills/remove {id}`（搬到待刪除，確認）、`POST /api/skills/open`。綁好後助手、AI 改寫（要帶 `family`）、只寫詞寫那個模型時，會照需求挑幾段接在寫法後面；助手還能用 `guide {"name":"moss","part":N}` 讀別段。`GET /api/skills` 的 `pick.semantic`＝true 時照意思挑段（CPU 的 Qwen3-Embedding，裝「AI 改寫、生圖助手」包會下載；每段座標存在 skill 資料夾的 `.vectors.json`），false 時照關鍵字挑。
 
@@ -209,7 +212,9 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 - `POST /api/agent/say {id?, text, images?:[{name, width, height}], settings?}`：沒有 id 就開新對話；正在跑時是插話。
 - `GET /api/agent/sessions`、`GET /api/agent/session/<id>`（對話和每輪的圖）、`POST /api/agent/stop {id}`。
-- 設定：`POST /api/agent/session/settings {id, …}`（腦袋 9b／35b／雲端、輪數、每輪張數、自動重畫、讓它挑 LoRA、`think:"off"|"low"|"high"`（off＝不思考、low＝最多 1024 tokens、high＝最多 3072；舊的 true 當 high、mid 當 low、max 當 high）、`show`（讓我看＝true、後台做＝false）、`mode:"tools"|"prompt"`（動手做／只寫詞）、`target:"auto"|寫法名稱`（只寫詞照哪份寫法））。
+- 外接 API 當腦袋（2026-11-01，`brain:"api"`）：DeepSeek、GLM 或任何 OpenAI 相容服務負責想，生圖照樣走本機 ComfyUI、任何模型家族都能用。設定：`GET /api/agent/llm_api` → `{provider, url, model, has_key, vision}`；`POST /api/agent/llm_api {provider, url, model, key?}`（金鑰只存不回；沒帶＝不動，空字串＝清掉）；`POST /api/agent/llm_api/test` → 同上加 `msg`（花一點 token，順便重測看不看得到圖）。`vision:false` 的模型看不到圖，助手改用反推的 tag 驗收；`null`＝還沒測，第一次跑助手時自動測。
+  2026-11-02 起連線可以有很多組，存在 API 頁（見「## API 頁」）；這三支舊 API 讀寫的是 id `default` 那組。
+- 設定：`POST /api/agent/session/settings {id, …}`（腦袋 9b／35b／雲端／api、輪數、每輪張數、自動重畫、讓它挑 LoRA、`think:"off"|"low"|"high"`（off＝不思考、low＝最多 1024 tokens、high＝最多 3072；舊的 true 當 high、mid 當 low、max 當 high）、`show`（讓我看＝true、後台做＝false）、`mode:"tools"|"prompt"`（動手做／只寫詞）、`target:"auto"|寫法名稱`（只寫詞照哪份寫法））。
 - 只寫詞（2026-10-27，`mode:"prompt"`）：不需要先選繪圖模型或連上 ComfyUI，助手只回 `{"action":"prompt", prompt, negative, width?, height?, note, guide}`（提示詞卡）或 `{"action":"reply", message}`。`target:"auto"` 會看生成頁的模型家族、使用者附幾張圖（Qwen 一張＝改圖、兩張以上＝多圖參考）、有沒有講影片（講 H3 就是 H3）自動挑寫法；沒有模型時用 Anima。明確指定 target 時，尺寸也跟著指定的寫法家族。指定畫面文字若被漏掉或翻譯，會退回請模型原樣補齊；這不保證每項構圖都正確。卡片的「填入生成頁」＝`POST /api/agent/fill {prompt, negative?, width?, height?}`，hub 送 `{"type":"agent_ui", op:"fill", page:"gen", fill}`，主視窗只填這幾欄、其他設定不動。
 - 寫法庫（`resources\agent\guide_*.txt`，設定頁可以自訂）：`anima`、`qwen`（Qwen 2.1 文生圖）、`qwen_edit`（改一張圖）、`qwen_multiref`（`<image1>`…多圖參考）、`moss`、`other`（SDXL 系）、`h3_video`（2026-10-30 起講到影片、`video` 工具都用這份）。動手做模式的系統提示詞放目前家族的那份；`guide {name}` 工具讀任何一份。改圖、做影片、Qwen 用附圖畫之前，這段對話還沒讀過對應寫法的話，伺服器先自動把寫法當工具結果給它，叫它照著重寫。
 - 助手全功能（2026-10-27）：除了畫圖，助手可以回 `{"action":"call","tool":…,"args":…}` 用工具：`models`、`set_model`（換它畫圖用的模型，家族預設跟著換）、`gallery`、`image_info`、`look`（下一輪看 1～4 張圖庫的圖）、`edit`（Qwen 2.1 照指令改圖）、`upscale`、`remove_bg`、`fix`（修臉修手）、`outpaint`、`video`、`character_sheet`（Qwen 2.1 轉身三視圖／臉部特寫／正面特寫；Anima／MOSS 用圖生圖轉不了角度，會被擋下來改走這個）、`comic`（開漫畫作品、AI 排分鏡、畫整頁）、`assets`、`trash`、`guide`（讀寫法）、`docs`、`api`（任何 API）、`open_page`。工具在程式裡直接呼叫自己的 API（`server\api_agent_tools.rs`），清單與分級在 `agent_tools.rs`。一個請求最多 12 次工具。
@@ -282,6 +287,18 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 5. 接回：`POST /api/studio/frames/<拆幀編號>/build` → 新影片進圖庫（原本的聲音、同樣 fps）。
 改之前先說要改哪幾幀、為什麼；改完用 sheet 再看一次。
 
+## API 頁：大模型連線、誰用哪顆腦袋、指令預設（2026-11-02）
+
+左邊選單「API」。腦袋只負責寫字或回功能要的小 JSON，畫圖照舊由繪匣後端組節點圖送本機 ComfyUI，大模型不碰 ComfyUI 工作流。跟 MCP 的差別：MCP 是腦袋在外面（你這種 agent）操作繪匣；API 是腦袋接進繪匣，在繪匣自己的頁面打字。
+
+- 總覽：`GET /api/llm` → `{profiles:[{id,name,provider,url,model,has_key,vision,ready}], default, presets:[{id,name}], routes:{功能:{brain,preset}}, features:[{id,name}], providers:[{id,name,url}]}`。金鑰只說有沒有填。
+- 連線：`POST /api/llm/profile {id?, name, provider, url, model, key?}`（沒 id＝新增；key 沒帶＝不動、空字串＝清掉）；`POST /api/llm/profile/delete {id}`；`POST /api/llm/profile/test {id}`（花一點 token，回 `vision`＋`msg`）；`POST /api/llm/profile/models {id}` → `{models:[...]}`（OpenAI 相容的 GET /models）。服務商預設：DeepSeek、智譜 GLM、Z.ai、OpenAI、Anthropic、Gemini、Kimi、通義千問、OpenRouter、自訂。
+- 對照表：功能 id＝`agent`（生圖助手）、`rewrite`（AI 改寫）、`translate`（中英對照）、`shotsheet`（拍攝單 AI 潤飾）、`h3writer`（H3 AI 幫我寫）、`director`（導演台）。`POST /api/llm/routes {功能: {brain, preset}}`，brain＝`page`（照頁面上的選擇，舊行為）／`9b`／`35b`／`cloud`／`api:<連線 id>`，preset＝預設 id 或空。指到的連線或預設被刪掉時，退回頁面的選擇／不套預設。
+- 指令預設（學 SillyTavern）：`POST /api/llm/preset/get {id}`、`POST /api/llm/preset`（整組存）、`POST /api/llm/preset/delete {id}`、`POST /api/llm/preset/import {json: SillyTavern 對話預設（物件或字串）, name: 檔名}` → `{preset, report:[略過或改動的事]}`。格式：`{id, name, blocks:[{id,name,role,content,enabled,kind}], params:{temperature,top_p,top_k,frequency_penalty,presence_penalty,max_tokens}, prefill, squash_system, user_name, char_name}`；kind＝`text`／`builtin`（功能內建指令放這）／`request`（功能本來要送的對話放這），後兩個一定會送。送出順序照 blocks；`prefill` 接在最後當 assistant 訊息；`squash_system` 把相鄰 system 併成一則；`{{user}}`／`{{char}}` 換成名字。params 沒填的照功能原本的值；外接 API 不送 top_k、溫度上限 1。本機 llama-server 會把預填連同回覆一起回，外接 API 只回後面。
+- 匯入 SillyTavern：段落順序取 `prompt_order` 的 character_id 100001（沒有就 100000、再沒有就第一組）；`chatHistory`→request；角色卡、世界書、範例對話這些佔位略過；照深度插入的段改放在對話後面；模型、網址、代理等設定不匯入（都列在 report）。
+- 各功能的內建指令在設定頁「自訂系統提示詞」改（`/api/pe/prompts`，改壞了可還原）。
+- 閉源模型（GPT、Claude、Gemini）碰到成人內容常會拒絕；繪匣不另外處理，模型回什麼就是什麼。
+
 ## 系統、設定、雲端
 
 - `GET /api/system`：版本、顯示卡、顯存、記憶體、硬碟。`GET /api/state`：`anima_status` 的原始資料。
@@ -291,6 +308,20 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 雲端（給生圖助手和 H3 用）：`GET /api/agent/cloud`。開機、關機、改設定都要確認。
 - 雲端選卡：`GET /api/agent/cloud` 的 `gpus` 是能選的卡（推薦三張＋RunPod 目錄自動抓的 48GB 以上 NVIDIA 卡；`stock` High／Medium／Low，空字串＝現在租光；`preset:false` 的還沒實測）。`GET /api/agent/cloud/gpus` 馬上重抓（平常每 10 分鐘自動）。開機帶 `{confirm:true, gpu:<key>}`。
 - websocket `ws://…/ws` 會推送進度（type：image、finish、progress、queue、director、comic、h3、agent…）；MCP 不需要，輪詢 API 就好。
+
+## Stable Diffusion WebUI（A1111）相容 API（給 SillyTavern 這類程式）
+
+只會接 AUTOMATIC1111 的程式（SillyTavern 的「圖片生成 → Stable Diffusion WebUI (AUTOMATIC1111)」）把網址填 `http://127.0.0.1:8190` 就能用繪匣出圖。txt2img 走繪匣自己的生成：家族判斷、LoRA 篩選、模型預設照舊，圖也會進圖庫。
+
+- `GET /sdapi/v1/options`：`sd_model_checkpoint`＝目前的模型（也是 ping）。`POST /sdapi/v1/options {sd_model_checkpoint}` 換模型，只記在記憶體、重開站回預設（Anima，Turbo 優先），不改設定。
+- `GET /sdapi/v1/sd-models`：只列 Anima、Qwen 2.1、MOSS（其他家族內建流程畫不了）。`title` 就是 ComfyUI 的檔名，帶「 [雜湊]」也認。
+- `GET /sdapi/v1/samplers`｜`schedulers`：ComfyUI 的名稱，第一個 `Automatic`＝照模型預設。A1111 的名稱（`Euler a`、`DPM++ 2M Karras`、`Uniform`）也認得。
+- `GET /sdapi/v1/upscalers`：None＋放大模型（`enable_hr` 高解析修復用）。`latent-upscale-modes`、`sd-vae`、`sd-modules` 回空清單。
+- `GET /sdapi/v1/progress`、`POST /sdapi/v1/interrupt`（只停從這裡送出的任務，網頁送的不動）。
+- `POST /sdapi/v1/txt2img {prompt, negative_prompt?, width?, height?, steps?, cfg_scale?, sampler_name?, scheduler?, seed?, batch_size?, n_iter?, enable_hr?, hr_scale?, denoising_strength?, hr_upscaler?, override_settings?:{sd_model_checkpoint}}` → `{images:[base64 PNG], parameters, info}`（info 是 JSON 字串，含 seed、all_seeds、實際用的參數、jobs、warnings）。等到畫完才回（最多 30 分鐘）。
+  - 沒給或給 0 的寬高＝1024、步數／CFG／取樣器／排程／負面詞＝模型預設（跟助手的家族預設一樣），不會變成 256 寬、0 步。有給的照用，所以 SillyTavern 那邊的步數、CFG 要配合模型設（Anima Turbo：8 步、CFG 1）。
+  - 提示詞裡的 `<lora:名稱:強度>` 會拿掉、換成繪匣的 LoRA（檔名、不含資料夾、不含副檔名都認）；找不到、家族不合的寫在 info 的 warnings。
+  - 一次最多 8 張（batch_size × n_iter）。
 
 ## 診斷紀錄（本機，不會自動上傳）
 

@@ -236,6 +236,11 @@ async function loadPrompts(keep) {
   if (PROMPTS.some((p) => p.id === want)) sel.value = want;
   showPrompt();
 }
+/** 別頁（API 頁的「改內建指令」）叫：打開自訂系統提示詞、選到這一份 */
+export async function openPrompt(id) {
+  await loadPrompts(id);
+  $("#setPrompts")?.scrollIntoView({ block: "start" });
+}
 function showPrompt() {
   const p = PROMPTS.find((x) => x.id === $("#setPrSel").value);
   if (!p) return;

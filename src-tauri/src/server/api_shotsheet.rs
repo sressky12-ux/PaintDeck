@@ -182,7 +182,7 @@ pub async fn polish(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         p => p,
     };
     let draft = sh::strip_locked(&draft, &head);
-    let (brain, remote) = super::api_h3::brain_of(&app, &b)?;
+    let (brain, remote, preset) = super::api_h3::brain_of(&app, &b, "shotsheet")?;
     let mut part = s.clone();
     let mut locked_names = Vec::new();
     let gone = sh::absent(&s, i);
@@ -232,7 +232,7 @@ pub async fn polish(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let rid = format!("h3s-{:x}", super::api_director::random_seed());
     let (content, _) = app
         .pe
-        .agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref())
+        .agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref())
         .await
         .map_err(bad)?;
     let blocks = text_blocks(&content);

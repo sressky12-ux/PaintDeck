@@ -56,9 +56,10 @@
       <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">07</span><span class="led"></span>漫畫</button>
       <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">08</span><span class="led"></span>助手</button>
       <button class="pkey" data-page="train" data-ic="punch" type="button" disabled title="訓練之後的版本才有"><span class="n">09</span><span class="led"></span>訓練</button>
+      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">10</span><span class="led"></span>API</button>
       <span class="sp"></span>
-      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">10</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
-      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">11</span><span class="led"></span>設定</button>
+      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">11</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
+      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">12</span><span class="led"></span>設定</button>
     </nav>
 
     <div class="pages">
@@ -158,7 +159,8 @@
       <div id="lkRow" class="row wrap lk-row" hidden></div>
       <div class="scr prompt-scr">
         <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="6" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div>
-        <div class="foot"><span id="promptStats"></span><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></div>
+        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
+        <div class="pzh" id="promptZh" hidden></div>
       </div>
       <div class="warn-line sm" id="promptWarn" hidden></div>
       <label class="check inline batch-row" title="提示詞框每一行當成一句提示詞，各送一次（每句畫「張數」那麼多張）；開著時不跑「生成時自動改寫」"><input type="checkbox" id="batchLines"> 批次：每行一句提示詞，各畫一組</label>
@@ -224,6 +226,8 @@
       </details>
       <details class="fold" id="negDetails"><summary>負面提示詞</summary>
         <div class="ac-wrap"><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
+        <div class="foot"><span class="foot-r"><button class="pzh-toggle" id="negZhBtn" type="button" aria-pressed="false" title="在負面提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button></span></div>
+        <div class="pzh" id="negZh" hidden></div>
       </details>
     </section>
   </div>
@@ -870,7 +874,7 @@
           <div id="h3Assets" class="adr-slot"></div>
           <textarea id="h3Idea" rows="3" placeholder="例：小克推門進咖啡廳，跟店員點一杯不加糖的拿鐵，店員笑著回她「馬上好」。溫暖午後、日系動畫。"></textarea>
           <div class="row gap wrap">
-            <select id="h3Brain" autocomplete="off" class="sm" aria-label="用哪顆腦袋寫"><option value="9b">本機 9B（快）</option><option value="35b">本機 35B（寫得比較好）</option><option value="cloud">雲端的腦袋（要勾生圖助手）</option></select>
+            <select id="h3Brain" autocomplete="off" class="sm" aria-label="用哪顆腦袋寫"><option value="9b">本機 9B（快）</option><option value="35b">本機 35B（寫得比較好）</option><option value="cloud">雲端的腦袋（要勾生圖助手）</option><option value="api">外接 API（API 頁的預設連線）</option></select>
             <button class="akey sm go" id="h3Write" type="button">AI 幫我寫滿分鏡</button>
           </div>
           <div class="muted sm">AI 會照素材板的用途寫，已經寫的分鏡會留著再補滿；寫完每一格都能改。放好的圖會一起給它看。</div>
@@ -1231,8 +1235,9 @@
       <div class="ag-strip" id="agStrip" aria-label="每一輪的結果"></div>
       <div class="ag-controls">
         <div class="ag-ctl"><span class="lbl">腦袋</span>
-          <div class="rocker ag-brain" role="radiogroup" aria-label="腦袋" id="agBrain"><span class="cap"></span><button type="button" role="radio" data-b="9b" aria-checked="true">9B</button><button type="button" role="radio" data-b="35b" aria-checked="false">35B 精細</button><button type="button" role="radio" data-b="cloud" aria-checked="false">雲端</button></div>
+          <div class="rocker ag-brain" role="radiogroup" aria-label="腦袋" id="agBrain"><span class="cap"></span><button type="button" role="radio" data-b="9b" aria-checked="true">9B</button><button type="button" role="radio" data-b="35b" aria-checked="false">35B 精細</button><button type="button" role="radio" data-b="cloud" aria-checked="false">雲端</button><button type="button" role="radio" data-b="api" aria-checked="false">API</button></div>
           <span class="muted sm" id="agBrainNote"></span>
+          <button class="akey sm" id="agApiCfg" type="button" hidden>API 設定…</button>
         </div>
         <div class="knob" data-for="agRounds" data-label="最多幾輪"></div>
         <div class="knob" data-for="agCount" data-label="每輪張數"></div>
@@ -1308,6 +1313,76 @@
 </main>
 
 <!-- ======================= 設定 ======================= -->
+<main id="page-api" class="page">
+  <section class="panel lib screws">
+  <div class="lib-scroll">
+  <div class="settings llm-page">
+    <section class="box">
+      <label>大模型連線</label>
+      <div class="muted sm">把 DeepSeek、智譜 GLM、OpenAI（GPT）、Anthropic（Claude）、Google Gemini、Kimi、通義千問、OpenRouter 這些大模型接進來當腦袋（OpenAI 相容接口都能接）。在繪匣自己的頁面打字就好，不用另外開 agent 程式（那是 MCP 的用法）。腦袋只負責寫字，畫圖照樣由繪匣送本機 ComfyUI。金鑰加密存在這台電腦。注意：GPT、Claude、Gemini 這類閉源模型碰到成人內容常會拒絕。</div>
+      <div id="llmProfiles" class="llm-cards"></div>
+      <div class="row gap"><button class="akey go" id="llmAdd" type="button">＋新增連線</button></div>
+      <div class="llm-form" id="llmForm" hidden>
+        <input type="hidden" id="lfId">
+        <div class="row gap wrap"><label class="llm-f">服務商<select id="lfProvider" class="sm"></select></label><label class="llm-f">名稱<input id="lfName" class="sm" placeholder="例如：DeepSeek 主力"></label></div>
+        <label class="llm-f wide">網址<input id="lfUrl" class="sm" spellcheck="false" placeholder="https://…/v1"></label>
+        <label class="llm-f wide">模型<input id="lfModel" class="sm" spellcheck="false" list="lfModels" placeholder="按「抓模型清單」挑，或自己打"></label>
+        <datalist id="lfModels"></datalist>
+        <label class="llm-f wide">金鑰<input id="lfKey" type="password" class="sm" autocomplete="off" spellcheck="false"></label>
+        <div class="row gap wrap"><button class="akey sm go" id="lfSave" type="button">儲存</button><button class="akey sm" id="lfFetch" type="button" title="先儲存，再向服務商要模型清單">抓模型清單</button><button class="akey sm" id="lfTest" type="button" title="先儲存，再送一次測試：連得上、金鑰對、模型存在、看不看得到圖（會花一點點 token）">測試</button><button class="akey sm warn" id="lfClearKey" type="button">清掉金鑰</button><span class="sp"></span><button class="akey sm" id="lfClose" type="button">收起來</button></div>
+        <div class="muted sm" id="lfMsg"></div>
+      </div>
+    </section>
+    <section class="box">
+      <label>誰用哪顆腦袋</label>
+      <div class="muted sm">每個功能用哪顆腦袋、套哪組指令預設。「照頁面上的選擇」＝跟以前一樣，看那個功能頁面上選的。這裡選了別的就以這裡為準。</div>
+      <table class="llm-routes"><thead><tr><th>功能</th><th>腦袋</th><th>指令預設</th><th>內建指令</th></tr></thead><tbody id="llmRoutes"></tbody></table>
+    </section>
+    <section class="box">
+      <label>指令預設</label>
+      <div class="muted sm">學 SillyTavern 的對話預設：在功能自己的指令前後加段落（破限、角色設定…）、調溫度這些參數、加<b>預填</b>（先替模型寫好回覆的開頭，讓它接著寫，閉源模型比較肯配合）。灰底的兩段是功能本身的指令和請求，一定會送、可以搬位置。可以直接匯入 SillyTavern 的預設 JSON。</div>
+      <div class="row gap wrap"><select id="lpSel" class="sm" aria-label="選一組預設"></select><button class="akey sm" id="lpNew" type="button">新增</button><button class="akey sm" id="lpImport" type="button">匯入 SillyTavern 預設…</button><input type="file" id="lpFile" accept=".json,application/json" hidden></div>
+      <div class="muted sm llm-report" id="lpReport" hidden></div>
+      <div id="lpEditor" hidden>
+        <label class="llm-f wide">名稱<input id="lpName" class="sm"></label>
+        <div id="lpBlocks" class="llm-blocks"></div>
+        <div class="row gap"><button class="akey sm" id="lpAddBlock" type="button">＋加一段</button></div>
+        <label class="llm-f wide">預填（送出時接在最後，讓模型接著寫；空著＝不用）<textarea id="lpPrefill" rows="2" spellcheck="false"></textarea></label>
+        <div class="muted sm">本機的模型回覆會連預填一起回；外接 API 只回後面接著寫的部分。</div>
+        <div class="llm-params" id="lpParams"></div>
+        <div class="row gap wrap"><label class="check inline"><input type="checkbox" id="lpSquash"> 相鄰的 system 段併成一則（有的服務只收一則）</label></div>
+        <div class="row gap wrap"><label class="llm-f">{{user}} 換成<input id="lpUser" class="sm"></label><label class="llm-f">{{char}} 換成<input id="lpChar" class="sm"></label></div>
+        <div class="row gap"><button class="akey sm go" id="lpSave" type="button">儲存預設</button><button class="akey sm warn" id="lpDelete" type="button">刪除這組</button></div>
+      </div>
+    </section>
+    <section class="box">
+      <label>其他金鑰</label>
+      <div class="muted sm">雲端顯卡、RunningHub 的金鑰跟它們的其他設定放在一起，這裡看狀態、按按鈕過去改。</div>
+      <div class="llm-keys">
+        <div>RunPod 金鑰：<span class="llm-st" id="lkRunpod">…</span></div>
+        <div>雲端腦袋金鑰：<span class="llm-st" id="lkCloudLlm">…</span></div>
+        <div class="row gap"><button class="akey sm" id="lkCloudGo" type="button">打開雲端設定</button></div>
+        <div>RunningHub API Key：<span class="llm-st" id="lkRh">…</span></div>
+        <div class="row gap"><button class="akey sm" id="lkRhGo" type="button">到 H3 影片台</button></div>
+      </div>
+    </section>
+    <section class="box">
+      <label for="setKey">Civitai API key</label>
+      <div class="muted sm">部分模型需要登入 Civitai 才能下載。到 civitai.com → 帳號設定 → API Keys 建立一組，貼在這裡（只存在你這台電腦）。</div>
+      <div class="row gap"><input type="password" id="setKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setKeySave" type="button">儲存</button></div>
+      <div class="muted sm" id="setKeyState"></div>
+    </section>
+    <section class="box" id="setMsBox">
+      <label for="setMsKey">魔塔（ModelScope）Access Token</label>
+      <div class="muted sm">下載中心搜、下載魔塔的公開模型不用填；私有或要授權的模型才要。到 modelscope.cn → 個人中心 → 訪問令牌，整串複製貼在這裡（加密存在這台電腦）。</div>
+      <div class="row gap"><input type="password" id="setMsKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setMsSave" type="button">儲存</button><button class="akey" id="setMsTest" type="button">測試</button><button class="akey warn" id="setMsClear" type="button">清除</button></div>
+      <div class="muted sm" id="setMsState"></div>
+    </section>
+  </div>
+  </div>
+  </section>
+</main>
+
 <main id="page-settings" class="page">
   <section class="panel lib screws">
   <div class="lib-scroll">
@@ -1323,16 +1398,9 @@
       <div class="row gap"><button class="akey" id="dockReset" type="button">恢復全部版面</button></div>
     </section>
     <section class="box">
-      <label for="setKey">Civitai API key</label>
-      <div class="muted sm">部分模型需要登入 Civitai 才能下載。到 civitai.com → 帳號設定 → API Keys 建立一組，貼在這裡（只存在你這台電腦）。</div>
-      <div class="row gap"><input type="password" id="setKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setKeySave" type="button">儲存</button></div>
-      <div class="muted sm" id="setKeyState"></div>
-    </section>
-    <section class="box" id="setMsBox">
-      <label for="setMsKey">魔塔（ModelScope）Access Token</label>
-      <div class="muted sm">下載中心搜、下載魔塔的公開模型不用填；私有或要授權的模型才要。到 modelscope.cn → 個人中心 → 訪問令牌，整串複製貼在這裡（加密存在這台電腦）。</div>
-      <div class="row gap"><input type="password" id="setMsKey" placeholder="未設定" autocomplete="off"><button class="akey" id="setMsSave" type="button">儲存</button><button class="akey" id="setMsTest" type="button">測試</button><button class="akey warn" id="setMsClear" type="button">清除</button></div>
-      <div class="muted sm" id="setMsState"></div>
+      <label>金鑰</label>
+      <div class="muted sm">Civitai、魔塔的金鑰，還有大模型 API（DeepSeek、GLM、GPT…）的連線，都搬到左邊的「API」頁了。</div>
+      <div class="row gap"><button class="akey" type="button" data-go="api">到 API 頁</button></div>
     </section>
     <section class="box" id="setNet">
       <label>網路（代理、下載來源）</label>
@@ -2038,6 +2106,24 @@
 </aside>
 
 <div class="popover" id="sysPop" hidden role="dialog" aria-label="系統狀態"></div>
+
+<!-- 外接 API（生圖助手的「API」腦袋）：DeepSeek、GLM、任何 OpenAI 相容服務。後端 src-tauri\src\server\api_cloud.rs、js/agent.js -->
+<div class="modal" id="agApiModal" hidden>
+  <div class="dialog">
+    <div class="row between"><b>外接 API 設定</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="muted sm">讓大模型 API 負責想提示詞，畫圖照樣用這台電腦的 ComfyUI。提示詞會送到對方的伺服器，看得到圖的模型連圖也會送過去；費用照對方的價格算，官方服務也可能擋成人內容。</div>
+    <div class="ac-grid two">
+      <label>服務商<select id="apProvider"><option value="deepseek">DeepSeek</option><option value="glm">GLM（智譜）</option><option value="zai">GLM（Z.ai 國際版）</option><option value="custom">自訂（OpenAI 相容）</option></select></label>
+      <label>模型名稱<input id="apModel" type="text" spellcheck="false"></label>
+      <label>網址<input id="apUrl" type="text" spellcheck="false" placeholder="https://api.example.com/v1"></label>
+      <label>金鑰<input id="apKey" type="password" autocomplete="off" spellcheck="false"></label>
+    </div>
+    <div class="muted sm" id="apHas"></div>
+    <div class="muted sm" id="apVision"></div>
+    <div class="row gap wrap"><button class="akey sm go" id="apSave" type="button">儲存</button><button class="akey sm" id="apTest" type="button" title="先儲存，再送一次小測試：查金鑰、模型，也測看不看得到圖（會花一點點 token）">儲存並測試連線</button></div>
+    <div class="pe-status" id="apMsg" hidden></div>
+  </div>
+</div>
 
 <!-- 雲端顯卡設定（生圖助手的「雲端」腦袋）：三種連法。後端 src-tauri\src\server\api_cloud.rs、js/agent.js -->
 <div class="modal" id="agCloudModal" hidden>

@@ -137,6 +137,21 @@ pub async fn tags(
     )))
 }
 
+/// POST /api/tags/zh {"tags": [...]}：提示詞框的中英對照，查對照表（不用模型，立刻回）。
+/// 回 {"zh": {原字串: 中文}}，查不到的不放；一次最多 500 個
+pub async fn tags_zh(State(app): State<Shared>, Body(b): Body) -> ApiResult {
+    let tags = b["tags"].as_array().ok_or_else(|| bad("tags 要是字串陣列"))?;
+    let mut zh = serde_json::Map::new();
+    if let Some(ix) = app.tags.get() {
+        for t in tags.iter().filter_map(Value::as_str).take(500) {
+            if let Some(z) = ix.zh_of(t) {
+                zh.insert(t.to_string(), Value::String(z));
+            }
+        }
+    }
+    ok(json!({"zh": zh}))
+}
+
 pub async fn presets(State(app): State<Shared>) -> ApiResult {
     ok(json!(app.db.presets()?))
 }

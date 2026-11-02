@@ -2,12 +2,48 @@
 use super::{internal, ok, ApiResult, Body, Shared};
 use crate::py::str_of;
 use axum::extract::State;
-use axum::response::Response;
+use axum::response::{IntoResponse, Response};
 use serde_json::{json, Value};
 
 /// SSE 串流：status／reasoning／content／zh_delta／result／error／cancelled 事件
 pub async fn rewrite(State(app): State<Shared>, Body(body): Body) -> Response {
-    app.pe.rewrite_sse(body)
+    // API 頁的總機：對照表「AI 改寫」那列（照頁面＝本機，跟以前一樣）。body.brain 可以直接指定 api／api:<id>／cloud
+    let page = Some(crate::director::tx(&body["brain"])).filter(|x| !x.is_empty()).unwrap_or_else(|| "page".into());
+    let via = match app.brains.resolve("rewrite", &page) {
+        Ok((sel, preset, _)) => {
+            let remote = match sel {
+                crate::brains::Brain::Api { remote, .. } => Some(remote),
+                crate::brains::Brain::Cloud => match app.agent.cloud.endpoints() {
+                    Some(e) => Some(e.remote()),
+                    None => return sse_error("雲端還沒開好：先到「雲端」開機"),
+                },
+                crate::brains::Brain::Local(_) => None,
+            };
+            crate::pe::Via { remote, preset }
+        }
+        Err(e) => return sse_error(&e),
+    };
+    app.pe.rewrite_sse_with(body, via)
+}
+
+/// 還沒開始改寫就出錯（API 頁的連線沒設定好之類）：照樣用 SSE 的 error 事件回，網頁（pe.js、tagger.js）才會顯示這句話，不是只看到 HTTP 400
+fn sse_error(msg: &str) -> Response {
+    use axum::http::header;
+    let body = format!("event: error\ndata: {}\n\n", json!({"message": msg}));
+    ([(header::CONTENT_TYPE, "text/event-stream; charset=utf-8")], body).into_response()
+}
+
+#[cfg(test)]
+mod sse_tests {
+    #[tokio::test]
+    async fn sse_error_is_an_error_event() {
+        let r = super::sse_error("外接 API 還沒設定");
+        assert_eq!(r.status(), 200);
+        assert!(r.headers()["content-type"].to_str().unwrap().starts_with("text/event-stream"));
+        let b = axum::body::to_bytes(r.into_body(), 4096).await.unwrap();
+        let t = String::from_utf8(b.to_vec()).unwrap();
+        assert!(t.starts_with("event: error\ndata: ") && t.contains("外接 API 還沒設定"), "{t}");
+    }
 }
 
 pub async fn cancel(State(app): State<Shared>, Body(body): Body) -> ApiResult {
@@ -198,9 +234,81 @@ pub async fn mmproj(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     }
 }
 
+/// POST /api/pe/translate {texts: [...], rid?, brain?}：提示詞框「中英對照」裡對照表查不到的句子、片語一次翻完。
+/// 腦袋照 API 頁對照表的「中英對照」那列（照頁面＝設定頁的通用模型，跟 AI 改寫同一顆）；指示在設定頁可以改（translate）。
+/// 回 {"zh": [中文或 null, ...]}，跟 texts 一一對應；一次最多 40 段、4000 字（網頁會分批）。取消走 /api/pe/cancel {rid}
+pub async fn translate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
+    let texts: Vec<String> = b["texts"]
+        .as_array()
+        .ok_or_else(|| super::bad("texts 要是字串陣列"))?
+        .iter()
+        .map(|t| t.as_str().unwrap_or("").split_whitespace().collect::<Vec<_>>().join(" "))
+        .collect();
+    if texts.is_empty() || texts.iter().any(String::is_empty) {
+        return Err(super::bad("沒有要翻的句子"));
+    }
+    let chars: usize = texts.iter().map(|t| t.chars().count()).sum();
+    if texts.len() > 40 || chars > 4000 {
+        return Err(super::bad("一次最多 40 段、4000 字，請分批送"));
+    }
+    let user = texts.iter().enumerate().map(|(i, t)| format!("{}. {t}", i + 1)).collect::<Vec<_>>().join("\n");
+    let rid = match crate::director::tx(&b["rid"]) {
+        r if !r.is_empty() => r,
+        _ => format!("ptr-{:x}", super::api_director::random_seed()),
+    };
+    let max_tokens = (chars as i64 * 2 + 256).min(8192);
+    let mut zh = vec![None; texts.len()];
+    // 格式壞掉（一段都對不上編號）就再試一次
+    for attempt in 0..2 {
+        let page = Some(crate::director::tx(&b["brain"])).filter(|x| !x.is_empty()).unwrap_or_else(|| "page".into());
+        let system = app.pe.agent_text("translate");
+        let r = super::api_llm::chat(&app, "translate", &page, &rid, &system, &user, &[], max_tokens, if attempt == 0 { 0.2 } else { 0.5 }).await.map_err(super::bad)?;
+        zh = numbered_lines(&r, texts.len());
+        if zh.iter().any(Option::is_some) {
+            break;
+        }
+        eprintln!("中英對照：模型輸出對不上編號（第 {} 次）：{}", attempt + 1, r.chars().take(200).collect::<String>());
+    }
+    ok(json!({"zh": zh}))
+}
+
+/// 模型回的「1. 翻譯」一行一段 → 照編號放回第幾段；沒編號、編號超出、重複的丟掉。
+/// 只有一段而且模型沒寫編號：整段就是翻譯
+fn numbered_lines(raw: &str, n: usize) -> Vec<Option<String>> {
+    static NUM: std::sync::LazyLock<regex::Regex> =
+        std::sync::LazyLock::new(|| regex::Regex::new(r"^\s*(?:\*\*)?(\d{1,3})\s*(?:\*\*)?\s*[.、:：)）]\s*(.+?)\s*$").unwrap());
+    let mut out: Vec<Option<String>> = vec![None; n];
+    for line in raw.lines() {
+        let Some(c) = NUM.captures(line) else { continue };
+        let i: usize = c[1].parse().unwrap_or(0);
+        let t = c[2].trim_matches(|ch: char| ch == '*' || ch.is_whitespace());
+        if (1..=n).contains(&i) && out[i - 1].is_none() && !t.is_empty() {
+            out[i - 1] = Some(t.to_string());
+        }
+    }
+    if n == 1 && out[0].is_none() && !raw.trim().is_empty() {
+        out[0] = Some(raw.trim().to_string());
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn numbered_lines_maps_by_number() {
+        let raw = "1. 一位女性坐在長椅上\n\n**2.** 夕陽下的屋頂\n3、她在笑\n9. 多出來的\n2. 重複的不要";
+        assert_eq!(
+            numbered_lines(raw, 3),
+            vec![Some("一位女性坐在長椅上".into()), Some("夕陽下的屋頂".into()), Some("她在笑".into())]
+        );
+        // 漏掉的留 None
+        assert_eq!(numbered_lines("2) 第二段", 2), vec![None, Some("第二段".into())]);
+        // 只有一段、沒寫編號
+        assert_eq!(numbered_lines("  一隻貓 \n", 1), vec![Some("一隻貓".into())]);
+        assert_eq!(numbered_lines("沒有編號", 2), vec![None, None]);
+    }
 
     /// 舊安裝的 ComfyUI 節點（pe_core.py 還在找 pe_{kind}_heretic）升級時換成程式附帶的新版，舊檔留 .old_pe；
     /// 已經是新版、或使用者自己改成別的，不動

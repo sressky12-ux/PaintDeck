@@ -1,9 +1,11 @@
 // 提示詞輔助：權重高亮與 Ctrl+↑/↓ 調權重、長度提示、最近用過的提示詞（我的片段搬到提示詞庫 library.js）
 // 權重只有 Anima 有效：ComfyUI 的 Qwen 2.1、MOSS-Image 分詞器都設了 disable_weights，(tag:1.2) 會原封不動當成文字送進模型
 import { $, el, toast, store } from "./util.js";
+import * as promptzh from "./promptzh.js";
 
 const F = (id) => $("#" + id);
 let ctx = null;  // { prompt, negative, family(), save() }
+let negZh = null;  // 負面框的中英對照
 const MAX_RECENT = 40;
 
 export function init(c) {
@@ -34,6 +36,9 @@ export function init(c) {
     toast("已換成這段提示詞（Ctrl+Z 可以復原）", "ok");
   };
   fillRecent();
+  promptzh.init(ctx.prompt, F("promptZh"), F("promptZhBtn"));
+  // 負面提示詞框另開一個實例（開關存在「negZh」）；打字由 create 自己聽 input，程式填值（載入設定）靠下面 refresh
+  negZh = promptzh.create(ctx.negative, F("negZh"), F("negZhBtn"), "negZh");
   refresh();
 }
 
@@ -74,6 +79,8 @@ export function refresh() {
   F("promptStats").textContent = parts.join("・");
   F("promptWarn").textContent = warn;
   F("promptWarn").hidden = !warn;
+  promptzh.refresh();
+  negZh?.refresh();
 }
 
 // ---------------------------------------------------------------- Ctrl+↑/↓ 調權重

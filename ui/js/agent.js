@@ -10,12 +10,13 @@ import * as loraPick from "./loras.js";
 import { app } from "./state.js";
 
 const F = (id) => document.getElementById(id);
-const BRAINS = ["9b", "35b", "cloud"];
-const BRAIN_NAME = { "9b": "9B", "35b": "35B", cloud: "CLOUD" };
+const BRAINS = ["9b", "35b", "cloud", "api"];
+const BRAIN_NAME = { "9b": "9B", "35b": "35B", cloud: "CLOUD", api: "API" };
 const BRAIN_NOTE = {
   "9b": "9B：最快，本機一輪約 1～2 分鐘；挑毛病比較粗，適合一般的圖。",
   "35b": "35B 精細：數東西、分左右手、挑細節比較準；本機每輪看圖要 1～2 分鐘以上。",
   cloud: "雲端：雲端的大顯卡跑 35B＋生圖，一輪十幾秒；要先在下面接好雲端（RunPod、其他家的主機或網址都行），只能畫 MOSS-Image。",
+  api: "API：DeepSeek、GLM 這類大模型負責想，畫圖照樣用這台電腦的 ComfyUI，不佔顯存；費用照對方的價格算。",
 };
 const KIND_ZH = { style: "畫風", character: "角色", clothing: "服裝", concept: "概念", pose: "姿勢", detail: "細節", lighting: "光影", other: "其他" };
 const FAM_NAME = { qwen21: "Qwen 2.1", moss: "MOSS-Image", anima: "Anima" };
@@ -121,6 +122,7 @@ function paintSettings() {
   F("agBrain").style.setProperty("--pos", BRAINS.indexOf(b));
   for (const btn of F("agBrain").querySelectorAll("button")) btn.setAttribute("aria-checked", String(btn.dataset.b === b));
   F("agBrainNote").textContent = BRAIN_NOTE[b];
+  F("agApiCfg").hidden = b !== "api";
   F("agBrainR").textContent = BRAIN_NAME[b];
   F("agRounds").value = String(st.rounds || 3);
   F("agCount").value = String(st.count || 2);
@@ -717,6 +719,48 @@ async function saveCfg() {
   } catch (e) { acMsg(e.message, "err"); return false; }
 }
 
+// ---------------------------------------------------------------- 外接 API
+const API_PRESETS = {
+  deepseek: { url: "https://api.deepseek.com/v1", model: "deepseek-flash" },
+  glm: { url: "https://open.bigmodel.cn/api/paas/v4", model: "glm-5.3-flash" },
+  zai: { url: "https://api.z.ai/api/paas/v4", model: "glm-5.3-flash" },
+  custom: { url: "", model: "" },
+};
+
+function apMsg(text, cls = "") {
+  const m = F("apMsg");
+  m.hidden = !text;
+  m.textContent = text;
+  m.className = "pe-status" + (cls ? " " + cls : "");
+}
+
+function paintApi(c) {
+  F("apKey").value = "";
+  F("apKey").placeholder = c.has_key ? "已存（要換才填）" : "";
+  F("apHas").textContent = c.has_key ? "金鑰欄位空著＝沿用已存的；要清掉，在欄位裡打一個減號 - 再儲存。金鑰加密存在這台電腦。" : "金鑰加密存在這台電腦；自己架、不用金鑰的服務可以空著。";
+  F("apVision").textContent = c.vision == null ? "看不看得到圖：還沒測，第一次用助手或按測試時會自動測。" : c.vision ? "看不看得到圖：看得到，助手會直接看圖驗收。" : "看不看得到圖：看不到，助手會改用反推模型讀 tag 驗收。";
+}
+
+async function openApiCfg() {
+  let c;
+  try { c = await api("/api/agent/llm_api"); } catch (e) { return toast(e.message, "err"); }
+  const p = API_PRESETS[c.provider] ? c.provider : "deepseek";
+  F("apProvider").value = p;
+  F("apUrl").value = c.url || API_PRESETS[p].url;
+  F("apModel").value = c.model || API_PRESETS[p].model;
+  paintApi(c);
+  apMsg("");
+  openModal("#agApiModal");
+}
+
+async function saveApi() {
+  const body = { provider: F("apProvider").value, url: F("apUrl").value.trim(), model: F("apModel").value.trim() };
+  const key = F("apKey").value.trim();
+  if (key) body.key = key === "-" ? "" : key;
+  try { paintApi(await api("/api/agent/llm_api", { json: body })); return true; }
+  catch (e) { apMsg(e.message, "err"); return false; }
+}
+
 // ---------------------------------------------------------------- LoRA 認識度
 async function loadLoras() {
   const fam = familyOf();
@@ -910,6 +954,14 @@ export function init() {
     // 雲端預設「先想再答」（快到不差這點時間）；本機預設不開（35B 先想會很久）
     saveSettings({ brain: b.dataset.b, ...(b.dataset.b === "cloud" && S?.settings?.think === "off" ? { think: "high" } : {}) });
   });
+  F("agApiCfg").onclick = () => openApiCfg();
+  F("apProvider").onchange = (e) => { const p = API_PRESETS[e.target.value]; F("apUrl").value = p.url; F("apModel").value = p.model; };
+  F("apSave").onclick = async () => { if (await saveApi()) apMsg("存好了", "ok"); };
+  F("apTest").onclick = async () => {
+    if (!(await saveApi())) return;
+    apMsg("測試中…", "run");
+    try { const r = await api("/api/agent/llm_api/test", { json: {} }); paintApi(r); apMsg(r.msg, "ok"); } catch (e) { apMsg(e.message, "err"); }
+  };
   F("agRounds").addEventListener("change", (e) => saveSettings({ rounds: +e.target.value }));
   F("agCount").addEventListener("change", (e) => saveSettings({ count: +e.target.value }));
   F("agAuto").onchange = (e) => saveSettings({ auto: e.target.checked });

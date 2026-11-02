@@ -202,7 +202,7 @@ const START_LIMIT: Duration = Duration::from_secs(50 * 60);
 /// 三種連法
 pub const PROVIDERS: [&str; 3] = ["runpod", "ssh", "url"];
 /// cloud.json 裡的金鑰欄位（存檔時加密成 <名稱>_dpapi）
-const SECRETS: [&str; 3] = ["runpod_key", "comfy_key", "llm_key"];
+const SECRETS: [&str; 4] = ["runpod_key", "comfy_key", "llm_key", "api_key"];
 /// RunPod 機器上的工作資料夾與埠（新的乾淨機器）
 const RUNPOD_DIR: &str = "/workspace/agent";
 /// 自己租的主機上用的埠：避開 8188、8080 這些雲端範本常已經占用的
@@ -535,6 +535,26 @@ fn url_missing(comfy: &str, llm: &str, packs: Packs) -> Result<(), &'static str>
     Ok(())
 }
 
+/// 看圖測試的回答（左紅右藍）裡兩個顏色都有才算看得到：沒看到圖的模型頂多猜中一個
+fn vision_answer(body: &str) -> bool {
+    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    let a = tx(&v["choices"][0]["message"]["content"]).to_lowercase();
+    (a.contains("red") || a.contains('红') || a.contains('紅')) && (a.contains("blue") || a.contains('蓝') || a.contains('藍'))
+}
+
+/// 外接 API 回錯時給人看的話（金鑰、餘額最常見；其他附對方原文）
+fn api_failure(status: u16, body: &str) -> String {
+    let v: Value = serde_json::from_str(body).unwrap_or(Value::Null);
+    let said = [&v["error"]["message"], &v["message"], &v["msg"]].iter().map(|x| tx(x)).find(|s| !s.is_empty()).unwrap_or_else(|| body.chars().take(200).collect());
+    match status {
+        401 | 403 => format!("金鑰不對或沒有權限（{status}）：{said}"),
+        402 => format!("帳戶餘額不足（402）：{said}"),
+        429 => format!("額度用完或太頻繁（429）：{said}"),
+        404 => format!("網址或模型名稱不對（404）：{said}"),
+        _ => format!("外接 API 回應 {status}：{said}"),
+    }
+}
+
 /// /object_info/MiniMaxH3ReferenceToVideo 的回應裡有這個節點
 fn h3_node_ok(v: &Value) -> bool {
     v.get("MiniMaxH3ReferenceToVideo").is_some()
@@ -556,7 +576,7 @@ pub struct Endpoints {
 
 impl Endpoints {
     pub fn remote(&self) -> crate::pe::Remote {
-        crate::pe::Remote { base: self.llm.clone(), key: self.llm_key.clone(), model: self.model.clone() }
+        crate::pe::Remote { base: self.llm.clone(), key: self.llm_key.clone(), model: self.model.clone(), api: false }
     }
 }
 
@@ -920,6 +940,51 @@ impl Cloud {
         v.insert("has_comfy_key".into(), json!(has("comfy_key")));
         v.insert("has_llm_key".into(), json!(has("llm_key")));
         Value::Object(v)
+    }
+
+    // ---------------------------------------------------------------- 外接 API（DeepSeek、GLM…當助手的腦袋，生圖照樣走本機）
+    /// 2026-11-02 起外接 API 的連線存在 brains.rs（llm_profiles.json，可以多組）；
+    /// cloud.json 裡舊的 api_* 只在第一次開站時搬過去，之後不再讀寫（留著給降版用）。給 brains 搬家用
+    pub fn cfg_snapshot(&self) -> Map<String, Value> {
+        self.cfg()
+    }
+
+    /// 送一張左紅右藍的小圖問顏色。回得出兩個顏色才算看得到（有的服務收了圖卻默默丟掉，只看有沒有報錯不準）。
+    /// 只回結果，記不記下來由呼叫端（brains 的 set_vision）決定
+    pub async fn api_detect(&self, r: &crate::pe::Remote) -> Result<bool, String> {
+        let mut im = image::RgbImage::new(64, 64);
+        for (x, _, p) in im.enumerate_pixels_mut() {
+            *p = if x < 32 { image::Rgb([220, 20, 20]) } else { image::Rgb([20, 20, 220]) };
+        }
+        let mut png = std::io::Cursor::new(Vec::new());
+        im.write_to(&mut png, image::ImageFormat::Png).map_err(|e| format!("做測試圖失敗：{e}"))?;
+        let part = crate::pe::image_part(png.get_ref());
+        let ask = json!([part, {"type": "text", "text": "What two colors are in this image? Answer with the two color names only."}]);
+        let (status, body) = self.api_ask(r, ask).await?;
+        let vision = match status {
+            200 => vision_answer(&body),
+            // 400 可能是不收圖，也可能是模型名稱打錯：用純文字再問一次分開
+            400 | 415 | 422 => {
+                let (s2, b2) = self.api_ask(r, json!("Reply with OK.")).await?;
+                if s2 != 200 {
+                    return Err(api_failure(s2, &b2));
+                }
+                false
+            }
+            _ => return Err(api_failure(status, &body)),
+        };
+        Ok(vision)
+    }
+
+    async fn api_ask(&self, r: &crate::pe::Remote, content: Value) -> Result<(u16, String), String> {
+        let body = json!({"model": r.model, "messages": [{"role": "user", "content": content}], "stream": false, "max_tokens": 1024});
+        let mut req = self.http.post(crate::pe::chat_url(&r.base)).timeout(Duration::from_secs(120)).json(&body);
+        if let Some(k) = &r.key {
+            req = req.bearer_auth(k);
+        }
+        let resp = req.send().await.map_err(|e| format!("連不到外接 API：{}", e.without_url()))?;
+        let status = resp.status().as_u16();
+        Ok((status, resp.text().await.unwrap_or_default()))
     }
 
     /// 閒置自動關有沒有作用：RunPod 一定有；自己的主機要勾「順便關主機」；網址模式沒有
@@ -2607,12 +2672,25 @@ mod tests {
     }
 
     #[test]
+    fn vision_needs_both_colors() {
+        let say = |t: &str| json!({"choices": [{"message": {"content": t}}]}).to_string();
+        assert!(vision_answer(&say("Red and blue.")));
+        assert!(vision_answer(&say("红色和蓝色")));
+        assert!(!vision_answer(&say("I can't see any image, maybe red?")));
+        assert!(!vision_answer(""));
+        assert!(api_failure(401, r#"{"error":{"message":"bad key"}}"#).contains("bad key"));
+        assert!(api_failure(402, "").contains("餘額"));
+    }
+
+    #[test]
     fn secrets_are_sealed_on_disk() {
         let mut m = Map::new();
         m.insert("provider".into(), json!("url"));
         m.insert("llm_key".into(), json!("SECRET-TEST-VALUE"));
+        m.insert("api_key".into(), json!("SECRET-TEST-VALUE"));
         let disk = sealed(&m).unwrap();
         assert!(disk.get("llm_key").is_none());
+        assert!(disk.get("api_key").is_none());
         let text = Value::Object(disk.clone()).to_string();
         #[cfg(windows)]
         assert!(!text.contains("SECRET-TEST-VALUE"), "Windows 上金鑰要加密");

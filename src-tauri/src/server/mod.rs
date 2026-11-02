@@ -19,12 +19,14 @@ mod api_h3chain;
 mod api_shotsheet;
 mod api_skills;
 mod api_lib;
+mod api_llm;
 mod api_hub;
 mod api_misc;
 mod api_pe;
 mod api_play;
 mod api_refmod;
 mod api_runninghub;
+mod api_sdapi;
 mod api_studio;
 mod api_video;
 mod api_video_review;
@@ -88,6 +90,8 @@ pub struct App {
     pub last_family: std::sync::Mutex<String>,
     /// 生圖助手（對話、背景工作、雲端模式）
     pub agent: api_agent::Agent,
+    /// API 總機：大模型連線、誰用哪顆腦袋、指令預設（brains.rs）
+    pub brains: Arc<crate::brains::Brains>,
     /// 影音工作台的剪輯台（FableCut 伺服器）
     pub studio: crate::studio::Studio,
     /// H3 影片台：背景工作（停止用）
@@ -422,6 +426,7 @@ pub fn router(app: Shared) -> Router {
         .route("/thumb/{id}", get(api_gallery::thumb))
         // 提示詞工具、預設組、LoRA
         .route("/api/tags", get(api_misc::tags))
+        .route("/api/tags/zh", post(api_misc::tags_zh))
         // AI（MCP）連線狀態：標題列的燈號
         .route("/api/ai/heartbeat", post(api_misc::ai_heartbeat))
         .route("/api/ai/link", get(api_misc::ai_link))
@@ -482,6 +487,7 @@ pub fn router(app: Shared) -> Router {
         // AI 改寫提示詞
         .route("/api/pe/rewrite", post(api_pe::rewrite))
         .route("/api/pe/cancel", post(api_pe::cancel))
+        .route("/api/pe/translate", post(api_pe::translate))
         .route("/api/pe/status", get(api_pe::status))
         .route("/api/pe/stop", post(api_pe::stop))
         .route("/api/pe/mmproj", post(api_pe::mmproj))
@@ -555,6 +561,18 @@ pub fn router(app: Shared) -> Router {
         .route("/api/agent/cloud/start", post(api_cloud::start))
         .route("/api/agent/cloud/stop", post(api_cloud::stop))
         .route("/api/agent/cloud/idle", post(api_cloud::idle))
+        .route("/api/agent/llm_api", get(api_llm::llm_api).post(api_llm::llm_api_config))
+        .route("/api/agent/llm_api/test", post(api_llm::llm_api_test))
+        .route("/api/llm", get(api_llm::overview))
+        .route("/api/llm/profile", post(api_llm::profile_save))
+        .route("/api/llm/profile/delete", post(api_llm::profile_delete))
+        .route("/api/llm/profile/test", post(api_llm::profile_test))
+        .route("/api/llm/profile/models", post(api_llm::profile_models))
+        .route("/api/llm/preset/get", post(api_llm::preset_get))
+        .route("/api/llm/preset", post(api_llm::preset_save))
+        .route("/api/llm/preset/delete", post(api_llm::preset_delete))
+        .route("/api/llm/preset/import", post(api_llm::preset_import).layer(DefaultBodyLimit::max(4 * 1024 * 1024)))
+        .route("/api/llm/routes", post(api_llm::routes_save))
         // H3 影片台（導演頁的「H3 影片」分頁）
         .route("/api/h3/info", get(api_h3::info))
         // 素材用 base64 包在 JSON 裡送（影片 15 秒以內、網頁擋 150MB 的檔，base64 多三分之一）：放寬全站 64MB 的限制。再大要改成串流上傳（大 JSON 很吃記憶體）
@@ -614,6 +632,19 @@ pub fn router(app: Shared) -> Router {
         .route("/api/app/update/check", post(api_update::check))
         .route("/api/app/update/preferences", post(api_update::preferences))
         .route("/api/app/update/install", post(api_update::install))
+        // Stable Diffusion WebUI（A1111）相容：SillyTavern 這類程式選 A1111 來源、網址填繪匣就能出圖（api_sdapi.rs）
+        .route("/sdapi/v1/options", get(api_sdapi::options_get).post(api_sdapi::options_set))
+        .route("/sdapi/v1/sd-models", get(api_sdapi::sd_models))
+        .route("/sdapi/v1/refresh-checkpoints", post(api_sdapi::refresh))
+        .route("/sdapi/v1/samplers", get(api_sdapi::samplers))
+        .route("/sdapi/v1/schedulers", get(api_sdapi::schedulers))
+        .route("/sdapi/v1/upscalers", get(api_sdapi::upscalers))
+        .route("/sdapi/v1/latent-upscale-modes", get(api_sdapi::empty_list))
+        .route("/sdapi/v1/sd-vae", get(api_sdapi::empty_list))
+        .route("/sdapi/v1/sd-modules", get(api_sdapi::empty_list))
+        .route("/sdapi/v1/progress", get(api_sdapi::progress))
+        .route("/sdapi/v1/interrupt", post(api_sdapi::interrupt))
+        .route("/sdapi/v1/txt2img", post(api_sdapi::txt2img))
         .nest_service(static_prefix(), ServeDir::new(web.clone()))
         .nest_service("/static", ServeDir::new(web))
         .layer(middleware::from_fn(no_stale_static))
@@ -743,6 +774,9 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
     ));
     let data_dir = paths.data.clone();
     let studio = crate::studio::Studio::new(&paths.res, &paths.data);
+    let agent = api_agent::Agent::new(&data_dir);
+    // 要比 App 早建：第一次開站會把 cloud.json 裡舊的單組外接 API 搬進 llm_profiles.json
+    let brains = Arc::new(crate::brains::Brains::new(&data_dir, &agent.cloud.cfg_snapshot()));
     let app = Arc::new(App {
         diagnostics,
         cache: Arc::new(crate::cache::Control::default()),
@@ -762,7 +796,8 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
         director: api_director::Director::new(&data_dir),
         comic: api_comic::Comic::new(&data_dir),
         last_family: std::sync::Mutex::new(String::new()),
-        agent: api_agent::Agent::new(&data_dir),
+        agent,
+        brains,
         studio,
         h3: api_h3::H3::default(),
         show_window: OnceLock::new(),

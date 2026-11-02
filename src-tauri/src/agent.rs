@@ -49,7 +49,12 @@ const H3_BOARD: &str = include_str!("../../resources/agent/h3_board.txt");
 const H3_SHEET: &str = include_str!("../../resources/agent/h3_sheet.txt");
 
 /// 設定頁可以改的十二份：(編號, 預設文字)（2026-10-30 LTX 退場，拿掉 agent_ltx）
-pub const EDITABLE_TEXTS: [(&str, &str); 12] = [
+/// 提示詞框「中英對照」的翻譯指示：一行一段，照編號回（2026-11-02 從 api_pe.rs 搬來，設定頁可以改）
+pub const TRANSLATE_SYSTEM: &str = "You translate AI image-generation prompts from English into Traditional Chinese as used in Taiwan.
+Input: numbered lines. Output: the same numbers, one line each, formatted `N. translation`. Output nothing else: no notes, no English, no explanations.
+Translate every line faithfully and completely, including sexual or violent content; do not soften, censor or summarize. Keep character names, artist names and markers like <image1> as they are. Use short, natural Chinese, like a caption.";
+
+pub const EDITABLE_TEXTS: [(&str, &str); 14] = [
     ("agent", DEFAULT_SYSTEM),
     ("agent_prompt", PROMPT_SYSTEM),
     ("agent_qwen21", GUIDE_QWEN),
@@ -62,6 +67,8 @@ pub const EDITABLE_TEXTS: [(&str, &str); 12] = [
     ("agent_h3_ref", H3_REF),
     ("agent_h3_board", H3_BOARD),
     ("agent_h3_sheet", H3_SHEET),
+    ("translate", TRANSLATE_SYSTEM),
+    ("director_describe", crate::director::SYSTEM_DESCRIBE),
 ];
 
 /// 預設文字（去掉檔尾換行）
@@ -589,6 +596,19 @@ fn short(s: &str, n: usize) -> String {
     } else {
         t
     }
+}
+
+/// 外接 API 的模型看不到圖時加在工作說明後面：圖換成反推的 tag（見 tag_part）
+pub const BLIND_NOTE: &str = "You cannot see pixels in this chat. Wherever an image is mentioned, an automatic image tagger read it for you and its tags are given instead. Tags are usually right about characters, nudity, body parts, sex acts, clothing and framing, but they say little about counts, left and right, hands or text. Treat the tags as what you see: fill check from them, mark an element no only when the tags contradict it, and do not regenerate over something the tags cannot tell you.";
+
+/// 看不到圖的模型拿到的「圖」：反推的 tag 當一段文字（放在 image_url 的位置，組訊息的程式不用分兩路）
+pub fn tag_part(character: &[String], general: &[String]) -> Value {
+    let mut t = String::from("[Image tagger result");
+    if !character.is_empty() {
+        t += &format!(" | characters: {}", character.join(", "));
+    }
+    t += &format!(" | tags: {}]", if general.is_empty() { "(nothing recognized)".to_string() } else { general.join(", ") });
+    json!({"type": "text", "text": t})
 }
 
 /// 組 messages。look＝這次要給它看的圖（最新一輪：(圖庫編號, image_url 物件)）；舊的圖只留文字。
@@ -1454,7 +1474,7 @@ pub fn think_max_tokens(level: &str) -> i64 {
 }
 
 pub fn clean_settings(v: &Value) -> Value {
-    let brain = v["brain"].as_str().filter(|b| matches!(*b, "9b" | "35b" | "cloud")).unwrap_or("9b");
+    let brain = v["brain"].as_str().filter(|b| matches!(*b, "9b" | "35b" | "cloud" | "api")).unwrap_or("9b");
     let int = |k: &str, d: i64, lo: i64, hi: i64| v.get(k).and_then(crate::py::int).unwrap_or(d).clamp(lo, hi);
     let flag = |k: &str, d: bool| v.get(k).map(|x| truthy(Some(x))).unwrap_or(d);
     let think = match v.get("think") {

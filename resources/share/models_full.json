@@ -622,6 +622,13 @@
     "note": "H3 影片的聲音 VAE"
   },
   {
+    "path": "model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+    "size": 2296635360,
+    "sha256": "9c645c0a308c8af361efd43b409710f6f8fec0db297c29503e141a84991fed0c",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3/resolve/912b6e38b2092ec4d2e86d24183e0d59ea059d48/model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors",
+    "note": "H3 動作控制（深度、骨架、線稿照著拍；預演台送 H3 也用這個）"
+  },
+  {
     "path": "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors",
     "size": 1132530600,
     "sha256": "01329abd340dd9cf55677381a11558fe5307c7fd648f1988b441172fbbd86fd5",

@@ -502,6 +502,13 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>這兩家都不吃權重，<code>(tag:1.2)</code> 會被當成文字，框裡會畫紅色波浪線提醒你。想強調什麼，就多用一句話描述它。</li>
         <li>Noct Q Anime（Qwen 的動漫版）開頭要寫 <code>An anime illustration of…</code>，沒寫會畫成照片。</li>
       </ul>
+      <h3>看不懂提示詞：中英對照</h3>
+      <ul class="tips">
+        <li>按提示詞框右下角的 <b>中英對照</b>，框下面會把每一段 tag 配上中文，例如 <code>long hair</code> 長髮、<code>safe</code> 分級：全年齡。權重、<code>{red|blue}</code> 隨機、<code>@畫師</code>、<code>&lt;image1&gt;</code> 也會寫出意思。再按一次就收起來。</li>
+        <li>tag 查對照表，打字的同時就更新，不用等。</li>
+        <li>對照表翻不了的句子（Qwen、MOSS 那種整段英文）或冷門 tag，按 <b>AI 翻句子</b>，交給 AI 改寫用的同一顆本機模型翻。第一次要等模型載入，之後幾秒就好；翻過的會記住，下次不用再翻。翻到一半可以按「停止」。</li>
+        <li>點對照裡的任何一段，提示詞框會直接選到那一段，方便改或刪。</li>
+      </ul>
       <ol class="steps" data-for="s-prompt"></ol>
     </div>
     <div class="stage-w" id="s-prompt"></div>
@@ -866,6 +873,23 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>按 <b>連線</b> 就能用。LoRA 不會自動上傳，要用的 LoRA 自己放進遠端的 <code>models/loras</code>。</li>
       </ul>
       <p class="note"><b>金鑰都存在你這台電腦：</b>RunPod 金鑰、網址模式的 token 用 Windows 的加密存起來，畫面上只會顯示「已存」，不會再秀出來。舊版用 Windows 環境變數 <code>RUNPOD_API_KEY</code> 的照樣認得。</p>
+
+      <h3>不租顯卡：外接大模型 API 當腦袋</h3>
+      <ul class="tips">
+        <li>生圖助手的腦袋選 <b>API</b>：DeepSeek、GLM 或任何 OpenAI 相容的服務負責想提示詞，畫圖照樣用這台電腦的 ComfyUI，模型不限 MOSS。</li>
+        <li>按 <b>API 設定…</b>，選服務商、貼金鑰、填模型名稱，再按 <b>儲存並測試連線</b>。</li>
+        <li>它會自動測模型看不看得到圖。看得到就直接看圖驗收；看不到就改用反推模型讀 tag 驗收，數量、左右手這類細節會看不出來。</li>
+        <li>提示詞會送到對方的伺服器，看得到圖的模型連圖也會送過去。費用照對方的價格算，官方服務也可能擋成人內容。</li>
+      </ul>
+      <h3>左邊「API」頁：所有大模型和金鑰集中在這</h3>
+      <ul class="tips">
+        <li><b>大模型連線</b>可以存好幾組：DeepSeek、智譜 GLM、OpenAI（GPT）、Anthropic（Claude）、Google Gemini、Kimi、通義千問、OpenRouter，或任何 OpenAI 相容的網址。選服務商會自動填網址，按 <b>抓模型清單</b> 挑模型，按 <b>測試</b> 確認金鑰對、順便測看不看得到圖。上面助手的「API 設定…」改的就是標「預設」的那組。</li>
+        <li><b>誰用哪顆腦袋</b>：生圖助手、AI 改寫、中英對照、拍攝單、H3 寫手、導演台，每一個都能選本機 9B／35B、雲端，或某一組 API，也能各套一組指令預設。選「照頁面上的選擇」就跟以前一樣。</li>
+        <li><b>指令預設</b>學 SillyTavern：在功能自己的指令前後加段落、調溫度、加<b>預填</b>（先替模型寫好回覆的開頭讓它接著寫，閉源模型比較肯配合）。灰底兩段是功能本身的指令和請求，一定會送、可以搬位置。按 <b>匯入 SillyTavern 預設…</b> 直接吃 SillyTavern 的預設 JSON，角色卡、世界書這些繪匣用不到的會列在匯入報告裡。</li>
+        <li>功能自己的指令想整段改：按 <b>改內建指令</b> 會跳到設定頁的「自訂系統提示詞」，改壞了按還原。</li>
+        <li><b>其他金鑰</b>：Civitai、魔塔的金鑰從設定頁搬到這裡；RunPod、雲端腦袋、RunningHub 的金鑰跟它們的設定放一起，這裡看狀態、按按鈕過去改。</li>
+        <li>跟 MCP 差在哪：MCP 是外面的 AI 程式（Claude Code、Cursor…）來操作繪匣，要在那邊講話；API 是把腦袋接進繪匣，直接在繪匣的頁面用。不管哪種，畫圖都是繪匣自己送 ComfyUI。</li>
+      </ul>
     </div>
   </section>
 

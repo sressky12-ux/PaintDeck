@@ -1587,6 +1587,7 @@ pub fn pack_of(rel: &str) -> &'static str {
         "background_removal" => "bg",
         "geometry_estimation" | "upscale_models" => "anima",
         "model_patches" if name.starts_with("qwen_image") => "qwen_pose",
+        "model_patches" if name.starts_with("minimax_h3") => "h3",
         "model_patches" => "anima",
         "diffusion_models" if name.starts_with("qwen_image") => "qwen",
         "diffusion_models" if name.starts_with("moss") => "moss",
@@ -4522,6 +4523,7 @@ mod tests {
         assert!(bundle.iter().any(|m| m.rel == "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors"));
         // 2026-10-30 LTX 退場：影片包（10Eros v1.5、gemma、LTX 放大）整個拿掉，舊網頁送來的 video 安靜略過
         assert_eq!(OPTIONAL_PACKS, ["pe_35b", "h3", "moss_4b", "moss_loras"]);
+        assert_eq!(pack_of("model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors"), "h3", "H3 動作控制檔跟 H3 包");
         assert!(!PACKS.iter().any(|p| p.0 == "video"));
         assert_eq!(packs_from(&json!({"packs": ["video", "anima"]})).unwrap(), vec!["anima"]);
         for gone in ["10eros_v1.5", "gemma-3-12b", "ltx-2.3"] {
