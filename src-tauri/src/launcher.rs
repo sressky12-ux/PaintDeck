@@ -59,7 +59,7 @@ fn failure_text(log_tail: &str, gpu: &str) -> (String, String) {
     let has = |ks: &[&str]| ks.iter().any(|k| low.contains(k));
     const NVIDIA_ERR: &[&str] = &["torch not compiled with cuda", "no kernel image", "cuda driver version is insufficient", "found no nvidia driver", "nvidia driver on your system is too old"];
     // ROCm（AMD 版）找不到顯示卡、這張卡沒有對應的程式（架構選錯）、驅動太舊載不起 amdhip64
-    const AMD_ERR: &[&str] = &["no hip gpus are available", "hip error", "hiperror", "invalid device function", "amdhip64"];
+    const AMD_ERR: &[&str] = &["no hip gpus are available", "hip error", "hiperror", "invalid device function", "invalid kernel file", "amdhip64"];
     // XPU（Intel 版）找不到顯示卡、Level Zero／SYCL 執行階段出錯（多半是驅動太舊）
     const INTEL_ERR: &[&str] = &["no xpu devices", "xpu device not", "torch not compiled with xpu", "level_zero", "ze_result", "ur_result_error", "pi_error"];
     // ZLUDA：HIP SDK 跟 ZLUDA 版本對不上（0xC0000135＝找不到 DLL）、cuBLAS 不支援
@@ -469,6 +469,30 @@ fn launch_node(
     Ok(Launch { program, args, env })
 }
 
+/// A 卡（ROCm 版 PyTorch）的電腦有好幾張 A 卡（獨顯＋CPU 內顯最常見）時，ComfyUI 要用哪一號，和原因（寫進 comfyui.log）。
+/// 只有一張 A 卡、使用者自己設了 HIP_VISIBLE_DEVICES 或 --cuda-device、問不到 PyTorch＝None（照原樣開）。
+/// 要 import torch 一次（約幾秒到幾十秒），所以只在偵測到兩張以上 A 卡時才問
+fn amd_device(layout: &ComfyLayout, prefs: &Prefs) -> Option<(usize, String)> {
+    if std::env::var_os("HIP_VISIBLE_DEVICES").is_some() || prefs.extra_args.contains("--cuda-d") {
+        return None;
+    }
+    let (gpus, _) = crate::gpu::detect(false);
+    if gpus.iter().filter(|g| g["vendor"] == "amd").count() < 2 {
+        return None;
+    }
+    let plan = crate::gpu::current_plan();
+    let probe = crate::gpu::hip_probe(layout)?;
+    let i = crate::gpu::pick_hip_device(&probe, plan.gfx.as_deref())?;
+    let all: Vec<String> = probe["dev"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(n, d)| format!("{n}＝{}（{}）", d["name"].as_str().unwrap_or("?"), d["arch"].as_str().unwrap_or("?")))
+        .collect();
+    Some((i, format!("ROCm 看到好幾張 A 卡：{}", all.join("、"))))
+}
+
 impl ComfyProc {
     /// comfy_dir＝設定檔記的 ComfyUI 位置（免安裝版或自己 clone 的，見 setup::comfy_layout）。ComfyUI 已經開著回傳 None
     pub fn start_if_needed(
@@ -535,8 +559,15 @@ impl ComfyProc {
         };
         std::fs::create_dir_all(log_dir)
             .map_err(|e| format!("建立 {} 失敗：{e}", log_dir.display()))?;
-        let log = File::create(log_dir.join(&log_name))
+        let mut log = File::create(log_dir.join(&log_name))
             .map_err(|e| format!("建立 ComfyUI 紀錄檔失敗：{e}"))?;
+        if node.is_none() && !prefs.cpu && backend == Some("rocm") {
+            if let Some((i, why)) = amd_device(&layout, &prefs) {
+                use std::io::Write;
+                let _ = writeln!(log, "[繪匣] {why}：只讓 ComfyUI 用第 {i} 號（HIP_VISIBLE_DEVICES={i}）");
+                l.env.push(("HIP_VISIBLE_DEVICES".into(), i.to_string()));
+            }
+        }
         let err = log.try_clone().map_err(|e| e.to_string())?;
         let mut cmd = Command::new(&l.program);
         cmd.args(&l.args).envs(l.env);

@@ -719,6 +719,9 @@ const FRIENDLY: &[(&[&str], &str)] = &[
      "找不到輸入圖片，或圖片壞掉了。解法：重新放一次圖片。"),
     (&["cannot connect", "connection refused", "connect call failed"],
      "連不到 ComfyUI。解法：重新開啟「繪匣 PaintDeck」。"),
+    // A 卡（ROCm）：PyTorch 沒編這張卡的架構。最常見是 CPU 內顯（Ryzen 7000／9000 的 610M、筆電 780M）排在 0 號被 ComfyUI 拿去用（2026-11-04 回報）
+    (&["invalid kernel file", "hiperrorinvalidkernelfile", "invalid device function", "hiperrorinvaliddevicefunction"],
+     "A 卡的 PyTorch 沒有這張卡能用的程式（架構對不上）。最常見是電腦同時有 AMD 獨顯和 CPU 內顯，ComfyUI 用到了內顯。解法：重開「繪匣 PaintDeck」（新版開 ComfyUI 時會自動挑獨顯）；還是不行，到「設定 → ComfyUI 啟動方式」的額外參數填 --cuda-device 1（不行再試 0、2）後重開；或在「設定 → 安裝與修復…」第二頁確認「A 卡架構」選的是你的獨顯型號，按安裝補裝。"),
     (&["expected all tensors to be on the same device"],
      "ComfyUI 模型載入狀態異常。解法：狀態列按「釋放顯存」，或重開 ComfyUI。"),
 ];
@@ -935,6 +938,13 @@ mod tests {
         assert!(m.contains("H3 影片（本機，選配）") && !m.contains("LoRA 分頁"), "{m}");
         let g = friendly("UNETLoader: Value not in list: unet_name: 'anima-base.safetensors' not in ['b.safetensors']");
         assert!(g.contains("LoRA 分頁") && !g.contains("H3"), "{g}");
+    }
+
+    /// 2026-11-04 回報：A 卡按生圖跳 TextEncodeQwenImage21: CUDA error: invalid kernel file，原文看不懂
+    #[test]
+    fn friendly_amd_kernel_file() {
+        let m = friendly("TextEncodeQwenImage21: CUDA error: invalid kernel file\nSearch for `hipErrorInvalidKernelFile' in https://rocm.docs.amd.com/");
+        assert!(m.contains("--cuda-device 1") && m.contains("內顯") && !m.contains("VRAM"), "{m}");
     }
 
     #[test]

@@ -897,6 +897,76 @@ pub fn zluda_patched(python: &Path) -> bool {
         || std::fs::metadata(lib.join("cublas64_11.dll")).is_ok_and(|m| m.len() < 10 << 20)
 }
 
+// ---------------------------------------------------------------- A 卡：好幾張卡時挑 ComfyUI 要用的那張
+/// 問 ROCm 版 PyTorch 看得到哪些卡、它本身編了哪些架構。印一行 ANIMA_HIP={"arch": [...], "dev": [{name, arch, mem}]}
+const HIP_PROBE: &str = r#"import json, torch
+c = torch.cuda
+d = [{"name": p.name, "arch": getattr(p, "gcnArchName", ""), "mem": p.total_memory} for p in (c.get_device_properties(i) for i in range(c.device_count()))] if c.is_available() else []
+try:
+    a = c.get_arch_list()
+except Exception:
+    a = []
+print("ANIMA_HIP=" + json.dumps({"arch": a, "dev": d}))"#;
+
+/// ROCm 看到好幾張卡時要用哪一號（HIP_VISIBLE_DEVICES 的值）。probe＝HIP_PROBE 的結果，want＝精靈裝的那張卡的架構（"gfx1101"，可能是空的）。
+/// Ryzen 7000／9000 桌機的 610M、筆電的 780M 這類內顯也會被 ROCm 列進來，常常排在 0 號；ComfyUI 預設用 0 號，
+/// PyTorch 又沒編那個架構 → 第一個用到顯示卡的節點就 hipErrorInvalidKernelFile（invalid kernel file）。
+/// 挑法：PyTorch 有編的架構（"gfx1100:xnack-" 只看冒號前）→ 精靈裝的那張優先 → 顯存最大。只有一張、或一張都不能用＝None（照原樣開）
+pub fn pick_hip_device(probe: &Value, want: Option<&str>) -> Option<usize> {
+    let base = |s: &str| s.split(':').next().unwrap_or("").trim().to_lowercase();
+    let built: Vec<String> = probe["arch"].as_array().into_iter().flatten().filter_map(|a| a.as_str().map(base)).collect();
+    let devs: Vec<(usize, String, u64)> = probe["dev"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .enumerate()
+        .map(|(i, d)| (i, base(d["arch"].as_str().unwrap_or("")), d["mem"].as_u64().unwrap_or(0)))
+        .collect();
+    if devs.len() < 2 {
+        return None;
+    }
+    let want: Vec<String> = want.unwrap_or("").split(',').map(base).filter(|g| !g.is_empty()).collect();
+    devs.iter()
+        .filter(|(_, a, _)| built.is_empty() || built.contains(a))
+        .max_by_key(|(_, a, mem)| (want.contains(a), *mem))
+        .map(|(i, _, _)| *i)
+}
+
+/// 跑 HIP_PROBE（最多等 2 分鐘：第一次 import torch 在傳統硬碟上很慢）。PyTorch 開不起來、逾時＝None
+pub fn hip_probe(layout: &ComfyLayout) -> Option<Value> {
+    use std::io::Read;
+    let mut cmd = std::process::Command::new(&layout.python);
+    cmd.args(["-s", "-c", HIP_PROBE])
+        .current_dir(&layout.cwd)
+        .env("PYTHONUTF8", "1")
+        .env("PYTHONIOENCODING", "utf-8")
+        .env_remove("HIP_VISIBLE_DEVICES")
+        .env_remove("CUDA_VISIBLE_DEVICES")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    win::no_window(&mut cmd);
+    let mut child = cmd.spawn().ok()?;
+    let mut out = child.stdout.take()?;
+    let reader = std::thread::spawn(move || {
+        let mut b = Vec::new();
+        let _ = out.read_to_end(&mut b);
+        b
+    });
+    let t0 = Instant::now();
+    while child.try_wait().ok()?.is_none() {
+        if t0.elapsed() > Duration::from_secs(120) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return None;
+        }
+        std::thread::sleep(Duration::from_millis(200));
+    }
+    let b = reader.join().ok()?;
+    let text = String::from_utf8_lossy(&b);
+    text.lines().find_map(|l| l.trim().strip_prefix("ANIMA_HIP=")).and_then(|j| serde_json::from_str(j).ok())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1198,5 +1268,23 @@ mod tests {
         let g = gpus_from_wmi(&raw);
         println!("顯示卡：{g:?}\n自動：{:?}　Windows 組建：{:?}", auto_plan(&g, true), windows_build());
         assert!(raw["vc"].is_array());
+    }
+
+    /// A 卡好幾張：內顯排 0 號、PyTorch 沒編它的架構 → 挑獨顯（2026-11-04 回報 invalid kernel file）
+    #[test]
+    fn hip_device_skips_unsupported_igpu() {
+        let built = json!(["gfx1100", "gfx1101", "gfx1102", "gfx1150", "gfx1151", "gfx1200", "gfx1201"]);
+        let igpu = json!({"name": "AMD Radeon(TM) Graphics", "arch": "gfx1036", "mem": 2u64 << 30});
+        let dgpu = json!({"name": "AMD Radeon RX 7800 XT", "arch": "gfx1101:sramecc-:xnack-", "mem": 16u64 << 30});
+        assert_eq!(pick_hip_device(&json!({"arch": built, "dev": [igpu, dgpu]}), Some("gfx1101")), Some(1));
+        // 精靈記的架構沒有也照樣挑得到（看 PyTorch 有編的＋顯存）
+        assert_eq!(pick_hip_device(&json!({"arch": built, "dev": [igpu, dgpu]}), None), Some(1));
+        // 問不到 PyTorch 編了哪些：照精靈裝的那張，再看顯存
+        let small = json!({"name": "AMD Radeon RX 7600", "arch": "gfx1102", "mem": 8u64 << 30});
+        assert_eq!(pick_hip_device(&json!({"arch": [], "dev": [dgpu, small]}), Some("gfx1102")), Some(1));
+        assert_eq!(pick_hip_device(&json!({"arch": [], "dev": [igpu, dgpu]}), None), Some(1));
+        // 只有一張、一張都不能用：照原樣開
+        assert_eq!(pick_hip_device(&json!({"arch": built, "dev": [dgpu]}), None), None);
+        assert_eq!(pick_hip_device(&json!({"arch": built, "dev": [igpu, igpu]}), None), None);
     }
 }

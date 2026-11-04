@@ -398,6 +398,7 @@
  "Qwen3.5-9B（較快、較穩）": "Qwen3.5-9B (faster, more stable)",
  "Qwen3.6-35B-A3B（較聰明，GPU 約 43 字／秒，占 7.5GB 顯存）": "Qwen3.6-35B-A3B (smarter, ~43 chars/s on GPU, uses 7.5GB VRAM)",
  "RH 幣": "RH coins",
+ "ROCm 看到好幾張 A 卡：{0}": "ROCm sees several AMD GPUs: {0}",
  "RX 5500 系列": "RX 5500 series",
  "RX 5700／5600 系列": "RX 5700 / 5600 series",
  "RX 6500／6400 系列": "RX 6500 / 6400 series",

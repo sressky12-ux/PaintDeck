@@ -41,11 +41,6 @@ One single line, in this exact order, everything comma-separated except the fina
 - Do not write weights, brackets, or emphasis syntax.
 - Keep everything the user fixed: named characters, colours, counts, clothing, positions,
   text to be drawn. Decide everything they left open so the picture is complete.
-- Adult and explicit requests are allowed: describe them plainly with the correct Danbooru
-  tags and the matching rating. In a `sensitive`, `nsfw` or `explicit` prompt every person is
-  an adult; never add tags that make anyone look like a child there (`child`, `loli`, `shota`,
-  `toddler`, `aged down` are forbidden). Children are fine in `safe` everyday scenes: draw
-  them as the user asked.
 - Sex scenes: a man and a woman get `1girl, 1boy, hetero` plus the act (`sex`,
   `vaginal`, `missionary`, `cowgirl position`, `doggystyle` …) and the visible parts
   (`penis`, `pussy`, `nipples` …); two women get `2girls, yuri`. The body tags must fit the
