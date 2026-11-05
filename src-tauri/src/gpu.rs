@@ -745,6 +745,11 @@ pub fn check_python(s: &str) -> Result<String, String> {
     Ok(s.to_string())
 }
 
+/// comfy.json 旁邊的另一個檔（還沒設定 comfy.json 的位置＝None）
+pub fn prefs_sibling(name: &str) -> Option<PathBuf> {
+    PREFS_FILE.get().map(|f| f.with_file_name(name))
+}
+
 pub fn save_prefs(p: &Prefs) -> Result<(), String> {
     let _g = PREFS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let Some(f) = PREFS_FILE.get() else {
@@ -848,18 +853,63 @@ pub fn torch_kind(python: &Path) -> Option<&'static str> {
     torch_build(python).map(|b| torch_kind_of(&b))
 }
 
-/// 已經裝的 ROCm 10 架構套件（amd_torch_device_gfx1031 → "gfx1031"）
+/// 已經裝好的 ROCm 10 架構套件（amd_torch_device_gfx1031 → "gfx1031"）。只看 dist-info 在不在不準：
+/// 檔案不完整（torch\.kpack\torch_gfx1031.kpack 不見）時 PyTorch 一個 kernel 都跑不了（hipErrorInvalidImage）。
+/// 所以 amd_torch_device 和它依賴的 rocm_sdk_device 都要在、RECORD 列的檔都要在，才算裝好
 pub fn rocm10_devices(python: &Path) -> Vec<String> {
     let Some(sp) = site_packages(python) else { return vec![] };
-    std::fs::read_dir(sp)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|e| {
-            let n = e.file_name().to_string_lossy().to_lowercase();
-            n.strip_prefix("amd_torch_device_")?.split_once('-').map(|(g, _)| g.to_string())
+    let names: Vec<String> = std::fs::read_dir(&sp).into_iter().flatten().flatten().map(|e| e.file_name().to_string_lossy().to_lowercase()).collect();
+    let dist = |prefix: &str| names.iter().find(|n| n.starts_with(prefix) && n.ends_with(".dist-info")).cloned();
+    names
+        .iter()
+        .filter_map(|n| n.strip_prefix("amd_torch_device_")?.split_once('-').map(|(g, _)| (g.to_string(), n)))
+        .filter(|(g, torch_dev)| {
+            torch_dev.ends_with(".dist-info")
+                && record_complete(&sp, &sp.join(torch_dev))
+                && dist(&format!("rocm_sdk_device_{g}-")).is_some_and(|d| record_complete(&sp, &sp.join(d)))
         })
+        .map(|(g, _)| g)
         .collect()
+}
+
+/// dist-info 的 RECORD 列的檔（.pyc 和 dist-info 自己的檔除外）都在。沒有 RECORD＝當作完整（不是 pip 裝的）
+fn record_complete(sp: &Path, dist_info: &Path) -> bool {
+    let Ok(rec) = std::fs::read_to_string(dist_info.join("RECORD")) else { return true };
+    rec.lines()
+        .filter_map(|l| l.split(',').next())
+        .map(str::trim)
+        .filter(|p| !p.is_empty() && !p.ends_with(".pyc") && !p.contains(".dist-info/") && !p.starts_with(".."))
+        .all(|p| sp.join(p).is_file())
+}
+
+/// 重裝這些架構的 device 套件（pip install --force-reinstall --no-deps）：版本照這份 Python 已經裝的 torch／torchvision／rocm-sdk-core。
+/// torch 不是 ROCm 10 版＝None
+pub fn rocm10_device_specs(python: &Path, devices: &[String]) -> Option<Vec<String>> {
+    let sp = site_packages(python)?;
+    let torch = dist_version(&sp, "torch").filter(|v| v.contains("+rocm10"))?;
+    let sdk = dist_version(&sp, "rocm_sdk_core").or_else(|| torch.split_once("+rocm").map(|(_, r)| r.to_string()))?;
+    let tv = dist_version(&sp, "torchvision").filter(|v| v.contains("+rocm10"));
+    Some(
+        devices
+            .iter()
+            .flat_map(|g| {
+                [Some(format!("amd-torch-device-{g}=={torch}")), Some(format!("rocm-sdk-device-{g}=={sdk}")), tv.as_ref().map(|v| format!("amd-torchvision-device-{g}=={v}"))]
+            })
+            .flatten()
+            .collect(),
+    )
+}
+
+/// 開站時要補裝哪些 ROCm 10 架構：偵測到的 A 卡（auto_plan 挑的那張；認不出型號時照精靈手動選的）有、PyTorch 還沒裝好的。
+/// 精靈手動選的架構跟偵測到的對不上（2026-11-05 回報：RX 6750 GRE 的人不確定當時選對沒）時，第二個值＝要改成的選擇（""＝照偵測）
+pub fn rocm10_repair(gpus: &[Value], detected: bool, prefs: &Prefs, have: &[String]) -> (Vec<String>, Option<String>) {
+    let auto = auto_plan(gpus, detected);
+    let found: Vec<String> = if auto.variant == "amd" { auto.gfx.as_deref().unwrap_or("").split(',').filter(|g| !g.is_empty()).map(str::to_string).collect() } else { vec![] };
+    let picked: Vec<&str> = prefs.amd_gfx.split(',').filter(|g| !g.is_empty()).collect();
+    let fix = (prefs.gpu == "amd" && !found.is_empty() && !picked.is_empty() && !picked.iter().any(|p| found.iter().any(|f| f == p)))
+        .then(|| AMD_GFX_CHOICES.iter().find(|(g, _)| *g == found.join(",")).map(|(g, _)| g.to_string()).unwrap_or_default());
+    let want: Vec<String> = if found.is_empty() { picked.iter().map(|g| g.to_string()).collect() } else { found };
+    (want.into_iter().filter(|g| ROCM10_GFX.contains(&g.as_str()) && !have.contains(g)).collect(), fix)
 }
 
 /// 有沒有裝 torch-directml（DirectML 版：任何 DirectX 12 顯示卡都能跑、很慢，ComfyUI 要加 --directml）。
@@ -1200,7 +1250,22 @@ mod tests {
             std::fs::create_dir_all(amd_sp.join(x)).unwrap();
         }
         assert_eq!(torch_build(&amd).as_deref(), Some("rocm10.0.0"));
+        assert!(rocm10_devices(&amd).is_empty(), "依賴的 rocm_sdk_device 不在");
+        std::fs::create_dir_all(amd_sp.join("rocm_sdk_device_gfx1031-10.0.0.dist-info")).unwrap();
         assert_eq!(rocm10_devices(&amd), vec!["gfx1031".to_string()]);
+        // 2026-11-05 回報：dist-info 在、kpack 不見＝PyTorch 一個 kernel 都跑不了，不能算裝好
+        let rec = amd_sp.join("amd_torch_device_gfx1031-2.13.0+rocm10.0.0.dist-info").join("RECORD");
+        std::fs::write(&rec, "torch/.kpack/torch_gfx1031.kpack,sha256=x,45053513\namd_torch_device_gfx1031-2.13.0+rocm10.0.0.dist-info/RECORD,,\n").unwrap();
+        assert!(rocm10_devices(&amd).is_empty(), "kpack 不見");
+        std::fs::create_dir_all(amd_sp.join("torch").join(".kpack")).unwrap();
+        std::fs::write(amd_sp.join("torch").join(".kpack").join("torch_gfx1031.kpack"), b"KPAK").unwrap();
+        assert_eq!(rocm10_devices(&amd), vec!["gfx1031".to_string()]);
+        std::fs::create_dir_all(amd_sp.join("torchvision-0.28.0+rocm10.0.0.dist-info")).unwrap();
+        assert_eq!(
+            rocm10_device_specs(&amd, &["gfx1031".into()]).unwrap(),
+            ["amd-torch-device-gfx1031==2.13.0+rocm10.0.0", "rocm-sdk-device-gfx1031==10.0.0", "amd-torchvision-device-gfx1031==0.28.0+rocm10.0.0"]
+        );
+        std::fs::remove_dir_all(amd_sp.join("torchvision-0.28.0+rocm10.0.0.dist-info")).unwrap();
         // 要不要換 ROCm 10：官方 AMD 免安裝版（外層有 run_amd_gpu.bat）、架構還沒裝齊；老手自己換的別種 ROCm 版不碰；torch 不見了要補
         let portable = ComfyLayout {
             root: d.join("amd").join("ComfyUI"),
@@ -1271,6 +1336,26 @@ mod tests {
     }
 
     /// A 卡好幾張：內顯排 0 號、PyTorch 沒編它的架構 → 挑獨顯（2026-11-04 回報 invalid kernel file）
+    /// 2026-11-05 回報：i5-12400F＋RX 6750 GRE（gfx1031），精靈可能選錯架構 → 開站自動補裝偵測到的架構、把選擇改回來
+    #[test]
+    fn rocm10_repair_follows_detected_card() {
+        let gpus = [json!({"vendor": "amd", "name": "AMD Radeon RX 6750 GRE 10GB", "vram_mb": 10240, "gfx": "gfx1031", "route": "rocm10"})];
+        let p = |gpu: &str, gfx: &str| Prefs { gpu: gpu.into(), amd_gfx: gfx.into(), ..Default::default() };
+        let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
+        // 選錯成 RX 6800（gfx1030）：補 gfx1031，選擇改成 gfx1031
+        assert_eq!(rocm10_repair(&gpus, true, &p("amd", "gfx1030"), &s(&["gfx1030"])), (s(&["gfx1031"]), Some("gfx1031".into())));
+        // 選對了、kpack 不見（have 是空的）：只補，不改選擇
+        assert_eq!(rocm10_repair(&gpus, true, &p("amd", "gfx1031"), &[]), (s(&["gfx1031"]), None));
+        // 自動偵測、已經裝好：什麼都不做
+        assert_eq!(rocm10_repair(&gpus, true, &p("auto", ""), &s(&["gfx1031"])), (vec![], None));
+        // 認不出型號的卡：照手動選的
+        let odd = [json!({"vendor": "amd", "name": "AMD Radeon Graphics", "vram_mb": 8192, "route": "unknown"})];
+        assert_eq!(rocm10_repair(&odd, true, &p("amd", "gfx1032"), &[]), (s(&["gfx1032"]), None));
+        // N 卡電腦：不碰
+        let nv = [json!({"vendor": "nvidia", "name": "NVIDIA GeForce RTX 4090", "vram_mb": 24564})];
+        assert_eq!(rocm10_repair(&nv, true, &p("auto", ""), &[]), (vec![], None));
+    }
+
     #[test]
     fn hip_device_skips_unsupported_igpu() {
         let built = json!(["gfx1100", "gfx1101", "gfx1102", "gfx1150", "gfx1151", "gfx1200", "gfx1201"]);

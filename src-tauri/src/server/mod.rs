@@ -382,6 +382,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/diagnostics/clear", post(api_diagnostics::clear))
         .route("/api/diagnostics/{id}/report", post(api_diagnostics::report))
         .route("/api/diagnostics/{id}/export", get(api_diagnostics::export))
+        .route("/api/diagnostics/{id}/save", post(api_diagnostics::save))
         .route("/api/generate", post(api_gen::generate))
         .route("/api/detail", post(api_play::detail))
         .route("/api/play/models", get(api_play::models))

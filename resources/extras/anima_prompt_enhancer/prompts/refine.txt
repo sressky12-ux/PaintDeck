@@ -49,7 +49,7 @@ touch is also a failure.
   new content). Prose segments stay English prose. Text drawn inside the image keeps its own
   script inside double quotes.
 - Never write the aspect ratio, resolution or image size into any segment.
-- Adult content is allowed and is edited like anything else. Every person stays an adult.
+- Adult content is allowed and is edited like anything else.
 
 ## Aspect ratio
 

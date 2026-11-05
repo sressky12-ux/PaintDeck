@@ -485,6 +485,12 @@ async fn start_main(
                     anima_app::launcher::set_note(None);
                 }
             }
+            // A 卡：PyTorch 沒有這張卡的架構（精靈選錯、檔案不完整）時先補裝，不然每次生圖都 invalid kernel file
+            if let Some(r) = anima_app::setup::auto_fix_rocm10(&dir) {
+                let m = r.unwrap_or_else(|e| e);
+                eprintln!("A 卡 PyTorch 檢查：{m}");
+                anima_app::launcher::log_note(format!("A 卡 PyTorch 檢查：{m}"));
+            }
         }
         // 程式附帶、已經裝進 ComfyUI 的東西（AI 改寫節點、工作流程、MOSS 補丁…）先換成這一版的，再開 ComfyUI
         let updated = anima_app::setup::sync_bundled(&dir, &res);

@@ -55,6 +55,16 @@ export async function download(id) {
   if (!validId(id) || downloads.has(id)) return;
   downloads.add(id);
   toast("正在整理診斷包…");
+  // 在這台電腦上開的（繪匣視窗、本機瀏覽器）：直接存進「下載」資料夾並打開檔案總管。
+  // 繪匣視窗裡的 blob 下載常常沒反應（2026-11-05 回報），存不了才退回讓瀏覽器下載
+  if (["127.0.0.1","localhost","[::1]"].includes(location.hostname)) {
+    try {
+      const r = await api(`/api/diagnostics/${encodeURIComponent(id)}/save`,{json:{},timeout:120000});
+      toast(`診斷包存好了：${r.path}（已打開資料夾）；分享前請先檢查提示詞與回報內容。`,"ok");
+      downloads.delete(id);
+      return;
+    } catch {}
+  }
   const ac = new AbortController(), timer = setTimeout(()=>ac.abort(),120000);
   try {
     const response = await fetch(`/api/diagnostics/${encodeURIComponent(id)}/export`,{signal:ac.signal});

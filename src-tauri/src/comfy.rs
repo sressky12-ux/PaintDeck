@@ -719,9 +719,10 @@ const FRIENDLY: &[(&[&str], &str)] = &[
      "找不到輸入圖片，或圖片壞掉了。解法：重新放一次圖片。"),
     (&["cannot connect", "connection refused", "connect call failed"],
      "連不到 ComfyUI。解法：重新開啟「繪匣 PaintDeck」。"),
-    // A 卡（ROCm）：PyTorch 沒編這張卡的架構。最常見是 CPU 內顯（Ryzen 7000／9000 的 610M、筆電 780M）排在 0 號被 ComfyUI 拿去用（2026-11-04 回報）
-    (&["invalid kernel file", "hiperrorinvalidkernelfile", "invalid device function", "hiperrorinvaliddevicefunction"],
-     "A 卡的 PyTorch 沒有這張卡能用的程式（架構對不上）。最常見是電腦同時有 AMD 獨顯和 CPU 內顯，ComfyUI 用到了內顯。解法：重開「繪匣 PaintDeck」（新版開 ComfyUI 時會自動挑獨顯）；還是不行，到「設定 → ComfyUI 啟動方式」的額外參數填 --cuda-device 1（不行再試 0、2）後重開；或在「設定 → 安裝與修復…」第二頁確認「A 卡架構」選的是你的獨顯型號，按安裝補裝。"),
+    // A 卡（ROCm）：PyTorch 沒有這張卡架構的 kernel。CPU 內顯（Ryzen 7000／9000 的 610M、筆電 780M）排在 0 號被 ComfyUI 拿去用（2026-11-04 回報），
+    // 或精靈選錯架構、kpack 檔不完整（2026-11-05 回報：i5-12400F＋RX 6750 GRE，沒有內顯，照舊說明填 --cuda-device 1 反而開不起來）
+    (&["invalid kernel file", "hiperrorinvalidkernelfile", "invalid device function", "hiperrorinvaliddevicefunction", "device kernel image is invalid", "hiperrorinvalidimage"],
+     "A 卡的 PyTorch 沒有這張卡能用的程式（架構對不上，或套件檔不完整）。解法：先重開「繪匣 PaintDeck」，新版開 ComfyUI 前會自動檢查、補裝這張卡的套件（約 100MB）；還是不行，到「設定 → 安裝與修復…」第二頁把「A 卡架構」選成你的顯示卡型號（例如 RX 6700／6750 是 gfx1031），按安裝補裝。電腦同時有 AMD 獨顯和 CPU 內顯（Ryzen 7000／9000 桌機、筆電）時，才到「設定 → ComfyUI 啟動方式」的額外參數試 --cuda-device 1；只有一張卡（例如 Intel CPU）不要填，填了 ComfyUI 會開不起來。"),
     (&["expected all tensors to be on the same device"],
      "ComfyUI 模型載入狀態異常。解法：狀態列按「釋放顯存」，或重開 ComfyUI。"),
 ];
@@ -945,6 +946,9 @@ mod tests {
     fn friendly_amd_kernel_file() {
         let m = friendly("TextEncodeQwenImage21: CUDA error: invalid kernel file\nSearch for `hipErrorInvalidKernelFile' in https://rocm.docs.amd.com/");
         assert!(m.contains("--cuda-device 1") && m.contains("內顯") && !m.contains("VRAM"), "{m}");
+        // 2026-11-05 回報：第一次是 device kernel image is invalid，單卡的人不能叫他填 --cuda-device
+        let m = friendly("TextEncodeQwenImage21: CUDA error: device kernel image is invalid\nSearch for `hipErrorInvalidImage'");
+        assert!(m.contains("自動檢查") && m.contains("gfx1031") && m.contains("不要填"), "{m}");
     }
 
     #[test]

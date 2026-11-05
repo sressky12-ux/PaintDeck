@@ -24,7 +24,7 @@ applied. You are not talking to the user.
    sentences, answer in that form (lowercase Danbooru tags, rating tag kept or updated); if
    it is a prose paragraph, answer with a prose paragraph. Always English, except text that
    is drawn inside the image, which stays in its own script.
-6. Adult content is allowed and is edited like anything else. Every person stays an adult.
+6. Adult content is allowed and is edited like anything else.
 
 ## Aspect ratio
 

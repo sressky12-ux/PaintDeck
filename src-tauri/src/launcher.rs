@@ -28,6 +28,13 @@ pub fn set_note(n: Option<String>) {
     *NOTE.lock().unwrap_or_else(|e| e.into_inner()) = n;
 }
 
+/// 開站時做過的檢查（A 卡 PyTorch 補裝…）：下一次開 ComfyUI 時寫在 comfyui.log 第一段，網友回報只給 log 也看得到
+static LOG_NOTES: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+pub fn log_note(n: String) {
+    LOG_NOTES.lock().unwrap_or_else(|e| e.into_inner()).push(n);
+}
+
 /// 驅動那一類錯誤要叫使用者看哪一家：backend＝gpu::comfy_backend（這份 ComfyUI 的 PyTorch 是哪一種），
 /// machine()＝這台電腦自動判斷該裝哪一版（gpu::auto_plan 的 variant，要偵測顯示卡，用到才問）。
 /// "nvidia"＝照舊（N 卡、認不出來）；"amd"＝ROCm（AMD 版）；"intel"＝XPU（Intel 版）；"zluda"＝ZLUDA 版；
@@ -561,9 +568,30 @@ impl ComfyProc {
             .map_err(|e| format!("建立 {} 失敗：{e}", log_dir.display()))?;
         let mut log = File::create(log_dir.join(&log_name))
             .map_err(|e| format!("建立 ComfyUI 紀錄檔失敗：{e}"))?;
+        if node.is_none() {
+            use std::io::Write;
+            for n in std::mem::take(&mut *LOG_NOTES.lock().unwrap_or_else(|e| e.into_inner())) {
+                let _ = writeln!(log, "[繪匣] {n}");
+            }
+        }
         if node.is_none() && !prefs.cpu && backend == Some("rocm") {
+            use std::io::Write;
+            // 回報常常只給 comfyui.log：偵測到的 A 卡、精靈選的架構、PyTorch 實際裝好的架構先寫一行
+            let (gpus, _) = crate::gpu::detect(false);
+            let cards: Vec<String> = gpus
+                .iter()
+                .filter(|g| g["vendor"] == "amd")
+                .map(|g| format!("{}（{}）", g["name"].as_str().unwrap_or("?"), g["gfx"].as_str().unwrap_or("認不出架構")))
+                .collect();
+            let _ = writeln!(
+                log,
+                "[繪匣] A 卡：{}；精靈選的架構：{}；PyTorch {} 裝好的架構：{}",
+                if cards.is_empty() { "沒偵測到".into() } else { cards.join("、") },
+                if prefs.amd_gfx.is_empty() { "自動偵測" } else { &prefs.amd_gfx },
+                crate::gpu::torch_build(&layout.python).unwrap_or_default(),
+                crate::gpu::rocm10_devices(&layout.python).join("、"),
+            );
             if let Some((i, why)) = amd_device(&layout, &prefs) {
-                use std::io::Write;
                 let _ = writeln!(log, "[繪匣] {why}：只讓 ComfyUI 用第 {i} 號（HIP_VISIBLE_DEVICES={i}）");
                 l.env.push(("HIP_VISIBLE_DEVICES".into(), i.to_string()));
             }

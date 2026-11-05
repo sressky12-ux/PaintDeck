@@ -161,6 +161,54 @@ pub async fn export(
     Ok(response)
 }
 
+/// POST /api/diagnostics/{id}/save：診斷包直接存進這台電腦的「下載」資料夾，再用檔案總管選取它。
+/// 2026-11-05 回報：在繪匣視窗裡按「下載診斷包」只跳提示、沒有下載（視窗內 blob 下載不可靠）；網頁在本機開時改走這條
+pub async fn save(
+    State(app): State<Shared>,
+    axum::extract::Path(id): axum::extract::Path<String>,
+) -> ApiResult {
+    let store = app.diagnostics.clone();
+    let dest = blocking(move || -> std::io::Result<std::path::PathBuf> {
+        let export = store.export(&id)?;
+        let dir = downloads_dir();
+        std::fs::create_dir_all(&dir)?;
+        let dest = dir.join(format!("paintdeck-{id}.zip"));
+        std::fs::copy(&export.path, &dest)?;
+        Ok(dest)
+    })
+    .await
+    .map_err(|e| bad(e.to_string()))?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        // 路徑有空白時 /select, 後面要整段加引號（同 api_wf::reveal）
+        let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", dest.display())).spawn();
+    }
+    ok(json!({"ok": true, "path": dest.to_string_lossy()}))
+}
+
+/// 使用者的「下載」資料夾：登錄檔 User Shell Folders 的 Downloads（搬到 D 槽的也認得），讀不到＝%USERPROFILE%\Downloads
+fn downloads_dir() -> std::path::PathBuf {
+    #[cfg(windows)]
+    {
+        use windows_sys::Win32::System::Registry::{RegGetValueW, HKEY_CURRENT_USER, RRF_RT_REG_SZ};
+        let w = |s: &str| s.encode_utf16().chain([0]).collect::<Vec<u16>>();
+        let (k, n) = (w(r"Software\Microsoft\Windows\CurrentVersion\Explorer\User Shell Folders"), w("{374DE290-123F-4565-9164-39C4925E467B}"));
+        let mut buf = vec![0u16; 1024];
+        let mut len = (buf.len() * 2) as u32;
+        // RRF_RT_REG_SZ 會順便展開 REG_EXPAND_SZ 的 %USERPROFILE%
+        let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), n.as_ptr(), RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr().cast(), &mut len) };
+        if r == 0 {
+            let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+            let p = std::path::PathBuf::from(String::from_utf16_lossy(&buf[..end]));
+            if p.is_absolute() {
+                return p;
+            }
+        }
+    }
+    std::path::PathBuf::from(std::env::var_os("USERPROFILE").unwrap_or_default()).join("Downloads")
+}
+
 async fn quick_get(app: &Shared, path: &str) -> Result<Value, ()> {
     tokio::time::timeout(std::time::Duration::from_millis(1500), app.comfy.get(path))
         .await

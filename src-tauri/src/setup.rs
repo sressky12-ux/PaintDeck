@@ -537,6 +537,73 @@ pub fn auto_upgrade_comfy(comfy_dir: &Path, res: &Path) -> Option<Result<(), Str
     Some(upgrade_comfy_code(&l.python, &code, res, &upgrade_backup(&code)))
 }
 
+/// 開站時檢查 A 卡的 ROCm 10 PyTorch 有沒有這張卡的架構（main.rs 在開 ComfyUI 之前呼叫；ComfyUI 已經開著、「我自己開 ComfyUI」的不要叫）。
+/// 2026-11-05 回報：RX 6750 GRE（gfx1031）每次生圖都 hipErrorInvalidImage／invalid kernel file，精靈的架構可能選錯、或 kpack 不完整。
+/// 精靈手動選錯的改回偵測到的；PyTorch 已經是 ROCm 10 版就只補這幾個架構的 device 套件（約 100MB，--force-reinstall --no-deps）。
+/// 同一組（torch 版本＋架構）只試一次，失敗不會每次開站都重抓。不用修＝None；修了＝Some(結果說明)
+pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
+    let prefs = gpu::prefs();
+    if prefs.external || prefs.cpu || prefs.gpu == "own" {
+        return None;
+    }
+    let l = comfy_layout(comfy_dir).filter(|l| l.portable && l.cwd.join("run_amd_gpu.bat").is_file())?;
+    let (gpus, ok) = gpu::detect(false);
+    let have = gpu::rocm10_devices(&l.python);
+    let (missing, fix) = gpu::rocm10_repair(&gpus, ok, &prefs, &have);
+    let mut said = vec![];
+    if let Some(g) = &fix {
+        let p = gpu::Prefs { amd_gfx: g.clone(), ..prefs.clone() };
+        if gpu::save_prefs(&p).is_ok() {
+            said.push(format!("精靈選的 A 卡架構（{}）跟偵測到的顯示卡對不上，改成{}", prefs.amd_gfx, if g.is_empty() { "自動偵測".to_string() } else { g.clone() }));
+        }
+    }
+    let build = gpu::torch_build(&l.python).unwrap_or_default();
+    // 免安裝版原本的 ROCm 7.2 本身就有的架構（RX 7000／9000…）不用補；老手自己換的別種 ROCm 版不碰（跟 rocm10_needed 一樣）
+    let missing: Vec<String> = match &build {
+        b if b.starts_with("rocm10") => missing,
+        b if b.starts_with("rocm7.2") => missing.into_iter().filter(|g| !gpu::PORTABLE_GFX.contains(&g.as_str())).collect(),
+        _ => vec![],
+    };
+    if missing.is_empty() {
+        return (!said.is_empty()).then(|| Ok(said.join("；")));
+    }
+    let Some(specs) = gpu::rocm10_device_specs(&l.python, &missing) else {
+        // 還是免安裝版原本的 ROCm 7.2（沒有這張卡）：要整包換 ROCm 10（約 1.1GB），交給「安裝與修復」
+        said.push(format!("這份 ComfyUI 的 PyTorch（{build}）沒有這張卡的架構（{}）：請到「設定 → 安裝與修復…」按安裝，會換成支援這張卡的版本", missing.join("、")));
+        return Some(Err(said.join("；")));
+    };
+    let key = format!("{build} {}", missing.join(","));
+    let mark = gpu::prefs_sibling("rocm10_fix.txt");
+    if mark.as_ref().and_then(|m| std::fs::read_to_string(m).ok()).is_some_and(|s| s.trim() == key) {
+        return (!said.is_empty()).then(|| Ok(said.join("；")));
+    }
+    if let Some(m) = &mark {
+        let _ = std::fs::write(m, &key);
+    }
+    crate::launcher::set_note(Some(format!("正在補裝這張 A 卡（{}）的 PyTorch 套件（約 100MB，只有這一次），好了會自己開 ComfyUI", missing.join("、"))));
+    let mut args: Vec<String> = ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location", "--index-url", gpu::ROCM10_INDEX, "--force-reinstall", "--no-deps"]
+        .map(String::from)
+        .to_vec();
+    args.extend(specs);
+    let r = run_pip(&l.python, &args, None, || false);
+    crate::launcher::set_note(None);
+    let now = gpu::rocm10_devices(&l.python);
+    match r {
+        Ok(()) if missing.iter().all(|g| now.contains(g)) => {
+            said.push(format!("補裝好 A 卡架構 {} 的 PyTorch 套件", missing.join("、")));
+            Some(Ok(said.join("；")))
+        }
+        Ok(()) => {
+            said.push(format!("pip 說裝好了，但還是找不到架構 {} 的套件", missing.join("、")));
+            Some(Err(said.join("；")))
+        }
+        Err(e) => {
+            said.push(format!("補裝 A 卡架構 {} 的 PyTorch 套件失敗：{e}", missing.join("、")));
+            Some(Err(said.join("；")))
+        }
+    }
+}
+
 /// 這份 ComfyUI 能不能跑 MOSS-Image。官方正式版到 0.40.0 都還沒有（2026-10-30 查），只有 2026-10-16 之後的 master 有
 #[derive(Debug, PartialEq)]
 pub enum MossSupport {
@@ -2946,7 +3013,18 @@ impl Setup {
         self.set_status("rocm10.install", "run", None);
         // 這一步不能中途停：pip 先移掉舊的 torch 再解開新的，砍在中間 ComfyUI 就沒有 PyTorch 了（取消要等它裝完才生效）
         let args = pip("install", &["--no-index", "--no-warn-script-location", "--find-links", &dls]);
-        let r = self.pip_blocking(python, args, None, false).await;
+        let mut r = self.pip_blocking(python, args, None, false).await;
+        // 之前裝過、檔案卻不完整（dist-info 在、kpack 不見）時 pip 會當作已經裝好跳過：只把這幾個架構的 device 套件從剛下載的檔強制重裝
+        let broken: Vec<String> = devices.iter().filter(|d| !gpu::rocm10_devices(python).contains(d)).cloned().collect();
+        if r.is_ok() && !broken.is_empty() {
+            if let Some(specs) = gpu::rocm10_device_specs(python, &broken) {
+                let mut a: Vec<String> = ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location", "--no-index", "--find-links", &dls, "--force-reinstall", "--no-deps"]
+                    .map(String::from)
+                    .to_vec();
+                a.extend(specs);
+                r = self.pip_blocking(python, a, None, false).await;
+            }
+        }
         let have = gpu::rocm10_devices(python);
         let r = r.and_then(|()| {
             devices.iter().all(|d| have.contains(d)).then_some(()).ok_or_else(|| "pip 說裝好了，但找不到這張卡的架構套件".to_string())
