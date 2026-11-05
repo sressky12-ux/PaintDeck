@@ -372,7 +372,27 @@ impl Store {
             "schema_version":"1.0","process_id":std::process::id(),"timezone":"timestamps are UTC; UI uses local time",
             "coverage":{"request":true,"workflow_api":"when_submitted","workflow_ui":"unavailable_without_client_snapshot","native_gpu_driver":"unavailable","process_logs":"shared local stdout/stderr sampled during run; startup/error tails; external or cloud logs may be unavailable","images":"omitted","model_weights":"never_collected"}}));
         run.event("run_started", json!({"route":route}));
+        self.startup_log(&run.id);
         Some(run)
+    }
+
+    /// ComfyUI 紀錄檔開頭那段（繪匣寫的 A 卡狀態行、PyTorch 版本、顯示卡、啟動警告）。sample_logs 只取這次操作期間新增的，
+    /// 開機那段永遠收不到（2026-11-05 回報的診斷包就看不到 [繪匣] A 卡那行）
+    fn startup_log(&self, id: &str) {
+        use std::io::Read;
+        let Some((name, path)) = self.logs.iter().find(|(n, _)| n == "comfy") else { return };
+        if reject_link(path).is_err() {
+            return;
+        }
+        let Ok(f) = fs::File::open(path) else { return };
+        let mut bytes = vec![];
+        if f.take(16 * 1024).read_to_end(&mut bytes).is_err() || bytes.is_empty() {
+            return;
+        }
+        let text = String::from_utf8_lossy(&bytes);
+        // 只留到 ComfyUI 開好（To see the GUI…）為止，後面是生圖的輸出，sample_logs 會另外收
+        let end = text.find("To see the GUI").and_then(|i| text[i..].find('\n').map(|j| i + j + 1)).unwrap_or(text.len());
+        self.event(id, "process_log_comfy_startup", json!({"source":name,"scope":"head of the shared local log (ComfyUI startup)","byte_start":0,"byte_end":end,"text":&text[..end]}));
     }
 
     /// Read only bytes appended during this operation; both native streams share these legacy files.
@@ -536,7 +556,7 @@ impl Store {
             "critical.jsonl"
         } else if kind == "resources" {
             "metrics.jsonl"
-        } else if kind == "process_log_comfy" {
+        } else if kind == "process_log_comfy" || kind == "process_log_comfy_startup" {
             "comfy_stdout_stderr.jsonl"
         } else if kind == "process_log_llama" {
             "llama_stdout_stderr.jsonl"

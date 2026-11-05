@@ -92,6 +92,8 @@ F("skipBtn").onclick = () => { if (finished && usable) finish(); };
 
 // ---------------------------------------------------------------- 1. 檢查電腦
 const gb = (n) => (n == null ? "—" : `${(n / 2 ** 30).toFixed(n >= 100 * 2 ** 30 ? 0 : 1)} GB`);
+// RX 6000 這一族（gfx1030～1036）裝的是 gfx103X 專用 PyTorch，不是多架構 ROCm 10（gpu.rs gfx103_family）
+const rx6000 = (gfx) => !!gfx && String(gfx).split(",").every((g) => g.trim().startsWith("gfx103"));
 const esc = (s) => String(s ?? "").replace(/[&<>"]/g, (c) => `&#${c.charCodeAt(0)};`);
 
 // 檢查失敗：講白話原因和怎麼辦，給「重試」鈕（技術細節留給回報用）
@@ -144,7 +146,7 @@ async function loadScan() {
   else if (why === "nvidia" && !gpus.some((g) => g.vendor === "nvidia")) warn.push("沒有偵測到 NVIDIA 顯示卡。ComfyUI 的免安裝版需要 NVIDIA 顯示卡（顯存 8GB 以上）才能正常畫圖。");
   else if (usableGpu.length && usableGpu.every((g) => g.vram_mb && g.vram_mb < 7800)) warn.push("顯示卡的顯存不到 8GB，畫圖可能會很慢或失敗。");
   if (why === "amd_portable") warn.push({ html: `偵測到 AMD 顯示卡（架構 <span translate="no">${esc(auto.gfx)}</span>）：A 卡目前是實驗性支援。安裝時會改下載 ComfyUI 官方的 AMD 版免安裝包（PyTorch＋ROCm 7.2.1），AI 改寫改用 llama.cpp 的 Vulkan 版。請先裝好最新的 AMD Adrenalin 驅動（<a href="https://www.amd.com/en/support/download/drivers.html" target="_blank" rel="noopener">AMD 官網</a>）。生圖站作者手上沒有 A 卡，這條路還沒實際測過，遇到問題請回報。` });
-  if (why === "amd_rocm10") warn.push({ html: `偵測到 AMD 顯示卡（架構 <span translate="no">${esc(auto.gfx)}</span>）：A 卡目前是實驗性支援。官方 AMD 版免安裝包沒有附這張卡的程式，安裝時會先下載它，再用 pip 從 AMD 官方的套件庫把 PyTorch 換成支援這張卡的 ROCm 10 版（多下載約 ${gb(auto.rocm10_bytes)}）。AI 改寫用 llama.cpp 的 Vulkan 版。請先裝好最新的 AMD Adrenalin 驅動（<a href="https://www.amd.com/en/support/download/drivers.html" target="_blank" rel="noopener">AMD 官網</a>）。這條路只在 N 卡電腦上試裝過（PyTorch 裝得起來），還沒在 A 卡上實際畫過圖，遇到問題請回報。` });
+  if (why === "amd_rocm10") warn.push({ html: `偵測到 AMD 顯示卡（架構 <span translate="no">${esc(auto.gfx)}</span>）：A 卡目前是實驗性支援。官方 AMD 版免安裝包沒有附這張卡的程式，安裝時會先下載它，再用 pip 從 AMD 官方的套件庫把 PyTorch 換成支援這張卡的${rx6000(auto.gfx) ? " RX 6000 專用版（gfx103X）" : " ROCm 10 版"}（多下載約 ${gb(auto.rocm10_bytes)}）。AI 改寫用 llama.cpp 的 Vulkan 版。請先裝好最新的 AMD Adrenalin 驅動（<a href="https://www.amd.com/en/support/download/drivers.html" target="_blank" rel="noopener">AMD 官網</a>）。這條路只在 N 卡電腦上試裝過（PyTorch 裝得起來），還沒在 A 卡上實際畫過圖，遇到問題請回報。` });
   if (why === "amd_unknown") warn.push({ html: `偵測到 AMD 顯示卡，但認不出是哪一代（<span translate="no">${esc(auto.card)}</span>）：會先照 AMD 版免安裝包裝；知道型號的話，可以在下一頁的「A 卡架構」手動選。A 卡目前是實驗性支援，還沒實際測過。` });
   if (why === "intel_arc") warn.push({ html: `偵測到 Intel Arc 顯示卡：Intel 目前是實驗性支援。安裝時會改下載 ComfyUI 官方的 Intel 版免安裝包（PyTorch XPU，解壓縮後約 5.3GB），AI 改寫用 llama.cpp 的 Vulkan 版。請先裝好最新的 Intel 顯示卡驅動（<a href="https://www.intel.com/content/www/us/en/download/785597/intel-arc-graphics-windows.html" target="_blank" rel="noopener">Intel 官網</a>）。還沒實際測過，遇到問題請回報。` });
   if (["none", "amd_old", "intel_old"].includes(why)) {
@@ -301,7 +303,7 @@ function gpuNote(c) {
   if (g.variant === "unknown") return `<div class="st-err sm">偵測不到顯示卡：請選一個 ComfyUI 版本，不然沒辦法自動下載 ComfyUI。</div>`;
   if (g.variant === "cpu") return `<div class="muted sm">用 CPU 畫圖非常慢（一張圖要好幾分鐘），只適合試試看；生圖助手可以改用「雲端顯卡」。</div>`;
   if (g.variant === "nvidia" && g.legacy) return `<div class="muted sm">比較舊的 N 卡（GTX 10 系列以前）：新版 PyTorch 不支援，會改下載官方給舊卡的版本（CUDA 12.6）。驅動要 ${esc(scan.driver_min_legacy || "")} 版以上；顯存小的卡畫 Qwen、MOSS 會很慢或不夠。</div>`;
-  if (g.variant === "amd" && g.rocm10.length) return `<div class="muted sm">這張卡（<span translate="no">${esc(g.rocm10.join("、"))}</span>）官方 AMD 版沒有附：裝完 ComfyUI 會再用 pip 換成 AMD 官方的 ROCm 10 版 PyTorch，多下載約 ${gb(g.rocm10_bytes)}。</div>`;
+  if (g.variant === "amd" && g.rocm10.length) return `<div class="muted sm">這張卡（<span translate="no">${esc(g.rocm10.join("、"))}</span>）官方 AMD 版沒有附：裝完 ComfyUI 會再用 pip 換成 AMD 官方的${rx6000(g.rocm10.join(",")) ? " RX 6000 專用版（gfx103X）" : " ROCm 10 版"} PyTorch，多下載約 ${gb(g.rocm10_bytes)}。</div>`;
   if (g.variant === "amd" && !g.gfx) return `<div class="muted sm">認不出這張 A 卡的架構，先照官方 AMD 版裝；知道型號的話，在右邊選架構。</div>`;
   return "";
 }

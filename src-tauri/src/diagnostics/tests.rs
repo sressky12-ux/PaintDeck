@@ -203,11 +203,29 @@ fn bounded_log_sampling_omits_old_bytes_and_marks_gaps() {
             .join("comfy_stdout_stderr.jsonl"),
     )
     .unwrap();
-    assert!(!output.contains("before-operation"));
-    assert!(output.contains("FixtureOOM"));
-    let data: Value = serde_json::from_str(output.trim()).unwrap();
+    // 開機那段另外收成 process_log_comfy_startup；這次操作期間的取樣不重複帶舊的
+    let sampled: Vec<Value> = output.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).filter(|v| v["type"] == "process_log_comfy").collect();
+    assert_eq!(sampled.len(), 1);
+    let data = &sampled[0];
+    assert!(!data["data"]["text"].as_str().unwrap().contains("before-operation"));
+    assert!(data["data"]["text"].as_str().unwrap().contains("FixtureOOM"));
     assert!(data["data"]["skipped_bytes"].as_u64().unwrap() > 0);
     assert!(store.inner.lock().unwrap().records[&run.id].truncated > 0);
+}
+
+/// 2026-11-05 回報：A 卡網友的診斷包沒有 ComfyUI 開機那段，看不到 [繪匣] A 卡狀態行和 PyTorch 版本
+#[test]
+fn startup_log_head_is_captured() {
+    let (paths, store) = fixture();
+    let path = paths.data.join("logs/comfyui.log");
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "[繪匣] A 卡：AMD Radeon RX 6750 GRE 10GB（gfx1031）\npytorch version: 2.13.0+rocm10.0.0\nTo see the GUI go to: http://127.0.0.1:8188\ngot prompt\nlater-output\n").unwrap();
+    let run = store.begin("/fixture/startup", &json!({})).unwrap();
+    let output = fs::read_to_string(store.check_dir(&run.id).unwrap().join("comfy_stdout_stderr.jsonl")).unwrap();
+    let head: Value = output.lines().filter_map(|l| serde_json::from_str::<Value>(l).ok()).find(|v| v["type"] == "process_log_comfy_startup").unwrap();
+    let text = head["data"]["text"].as_str().unwrap();
+    assert!(text.contains("[繪匣] A 卡") && text.contains("rocm10.0.0") && text.contains("To see the GUI"), "{text}");
+    assert!(!text.contains("later-output"), "{text}");
 }
 
 #[tokio::test]

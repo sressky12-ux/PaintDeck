@@ -549,7 +549,11 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
     }
     let l = comfy_layout(comfy_dir).filter(|l| l.portable && l.cwd.join("run_amd_gpu.bat").is_file())?;
     let (gpus, ok) = gpu::detect(false);
-    let have = gpu::rocm10_devices(&l.python);
+    // RX 6000 這一族只認 gfx103X 專用套件（多架構 ROCm 10 的 gfx103x device 套件就算在，也當作沒有：2026-11-05 回報它跑不動）
+    let mut have: Vec<String> = gpu::rocm10_devices(&l.python).into_iter().filter(|g| !gpu::is_gfx103(g)).collect();
+    if gpu::gfx103_installed(&l.python) {
+        have.extend(gpu::ROCM10_GFX.iter().filter(|g| gpu::is_gfx103(g)).map(|g| g.to_string()));
+    }
     let (missing, fix) = gpu::rocm10_repair(&gpus, ok, &prefs, &have);
     let mut said = vec![];
     if let Some(g) = &fix {
@@ -561,23 +565,46 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
     let build = gpu::torch_build(&l.python).unwrap_or_default();
     // 免安裝版原本的 ROCm 7.2 本身就有的架構（RX 7000／9000…）不用補；老手自己換的別種 ROCm 版不碰（跟 rocm10_needed 一樣）
     let missing: Vec<String> = match &build {
-        b if b.starts_with("rocm10") => missing,
+        b if b.starts_with("rocm10") || *b == format!("rocm{}", gpu::GFX103_ROCM) => missing,
         b if b.starts_with("rocm7.2") => missing.into_iter().filter(|g| !gpu::PORTABLE_GFX.contains(&g.as_str())).collect(),
         _ => vec![],
     };
     if missing.is_empty() {
         return (!said.is_empty()).then(|| Ok(said.join("；")));
     }
-    let Some(specs) = gpu::rocm10_device_specs(&l.python, &missing) else {
-        // 還是免安裝版原本的 ROCm 7.2（沒有這張卡）：要整包換 ROCm 10（約 1.1GB），交給「安裝與修復」
-        said.push(format!("這份 ComfyUI 的 PyTorch（{build}）沒有這張卡的架構（{}）：請到「設定 → 安裝與修復…」按安裝，會換成支援這張卡的版本", missing.join("、")));
-        return Some(Err(said.join("；")));
-    };
     let key = format!("{build} {}", missing.join(","));
     let mark = gpu::prefs_sibling("rocm10_fix.txt");
     if mark.as_ref().and_then(|m| std::fs::read_to_string(m).ok()).is_some_and(|s| s.trim() == key) {
         return (!said.is_empty()).then(|| Ok(said.join("；")));
     }
+    if gpu::gfx103_family(&missing) {
+        // RX 6000：整組換成 gfx103X 專用套件（約 1.1GB，不用 HIP SDK、不用系統管理員）
+        crate::launcher::set_note(Some(format!("正在把 PyTorch 換成 RX 6000 專用版（{}，約 1.1GB，只要換一次），好了會自己開 ComfyUI", missing.join("、"))));
+        let r = install_gfx103(&l.python, &["--index-url", gpu::GFX103_INDEX]);
+        crate::launcher::set_note(None);
+        return Some(match r {
+            Ok(()) if gpu::gfx103_installed(&l.python) => {
+                said.push("PyTorch 換成 RX 6000 專用版（gfx103X）了".into());
+                Ok(said.join("；"))
+            }
+            Ok(()) => {
+                if let Some(m) = &mark {
+                    let _ = std::fs::write(m, &key);
+                }
+                said.push("pip 說裝好了，但還是找不到 RX 6000 專用版的套件".into());
+                Err(said.join("；"))
+            }
+            Err(e) => {
+                said.push(format!("換 RX 6000 專用版 PyTorch 失敗（下次開繪匣會再試）：{e}"));
+                Err(said.join("；"))
+            }
+        });
+    }
+    let Some(specs) = gpu::rocm10_device_specs(&l.python, &missing) else {
+        // 還是免安裝版原本的 ROCm 7.2（沒有這張卡）：要整包換 ROCm 10（約 1.1GB），交給「安裝與修復」
+        said.push(format!("這份 ComfyUI 的 PyTorch（{build}）沒有這張卡的架構（{}）：請到「設定 → 安裝與修復…」按安裝，會換成支援這張卡的版本", missing.join("、")));
+        return Some(Err(said.join("；")));
+    };
     crate::launcher::set_note(Some(format!("正在補裝這張 A 卡（{}）的 PyTorch 套件（約 100MB），好了會自己開 ComfyUI", missing.join("、"))));
     let mut args: Vec<String> = ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location", "--index-url", gpu::ROCM10_INDEX, "--force-reinstall", "--no-deps"]
         .map(String::from)
@@ -605,6 +632,24 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
             Some(Err(said.join("；")))
         }
     }
+}
+
+/// 裝 RX 6000 專用（gfx103X）PyTorch：source＝["--index-url", 網址]（線上）或 ["--no-index", "--find-links", 資料夾]（精靈先下載好的）。
+/// 全部 --force-reinstall --no-deps，裝好再移掉多架構 ROCm 10／ROCm 7.2 留下的函式庫套件（兩套 ROCm 互搶）
+fn install_gfx103(python: &Path, source: &[&str]) -> Result<(), String> {
+    let mut args: Vec<String> = ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location", "--force-reinstall", "--no-deps"]
+        .map(String::from)
+        .to_vec();
+    args.extend(source.iter().map(|s| s.to_string()));
+    args.extend(gpu::gfx103_specs());
+    run_pip(python, &args, None, || false)?;
+    let old = gpu::rocm10_leftovers(python);
+    if old.is_empty() {
+        return Ok(());
+    }
+    let mut un: Vec<String> = ["-s", "-m", "pip", "uninstall", "-y", "--disable-pip-version-check"].map(String::from).to_vec();
+    un.extend(old);
+    run_pip(python, &un, None, || false).map_err(|e| format!("移掉舊的 ROCm 套件失敗：{e}"))
 }
 
 /// 這份 ComfyUI 能不能跑 MOSS-Image。官方正式版到 0.40.0 都還沒有（2026-10-30 查），只有 2026-10-16 之後的 master 有
@@ -2989,6 +3034,9 @@ impl Setup {
     /// 先 pip download 到 <資料>\data\_dl\rocm10\（斷掉再按一次會接著下載，已經下載完的檔不重抓），再從那裡離線安裝；
     /// 裝好把下載的檔搬到「待刪除」。2026-10-21 在這台實測 gfx1031：下載 1.1GB 約 76 秒、安裝約 77 秒
     async fn install_rocm10(&self, p: &Plan, python: &Path, devices: &[String]) -> Result<(), String> {
+        if gpu::gfx103_family(devices) {
+            return self.install_gfx103(p, python, devices).await;
+        }
         let dl = p.dl().join("rocm10");
         std::fs::create_dir_all(&dl).map_err(|e| format!("建立 {} 失敗：{e}", dl.display()))?;
         let specs = gpu::rocm10_specs(devices);
@@ -3043,6 +3091,48 @@ impl Setup {
         self.stash(&files, &p.data_root);
         let _ = std::fs::remove_dir(&dl);
         let _ = std::fs::remove_dir(p.dl()); // 空了才會刪得掉
+        Ok(())
+    }
+
+    /// RX 6000（gfx103x）：換成 gfx103X 專用 PyTorch（見 gpu::GFX103_INDEX）。跟 install_rocm10 一樣先下載到 <資料>\data\_dl\gfx103\ 再離線裝
+    async fn install_gfx103(&self, p: &Plan, python: &Path, devices: &[String]) -> Result<(), String> {
+        let dl = p.dl().join("gfx103");
+        std::fs::create_dir_all(&dl).map_err(|e| format!("建立 {} 失敗：{e}", dl.display()))?;
+        let dls = dl.to_string_lossy().to_string();
+        self.phase("下載 RX 6000 專用的 PyTorch（gfx103X，約 1.1GB）");
+        self.set_status("rocm10", "run", None);
+        let mut args: Vec<String> = ["-s", "-m", "pip", "download", "--disable-pip-version-check", "--no-input", "--no-cache-dir", "--no-deps", "--progress-bar", "raw", "--index-url", gpu::GFX103_INDEX, "-d", &dls]
+            .map(String::from)
+            .to_vec();
+        args.extend(gpu::gfx103_specs());
+        // rocm 是 sdist，離線安裝時要建置用的 setuptools（它的 pyproject 要 >=70.2.0）；--no-deps 不會順便抓，所以一起下載
+        args.push("setuptools>=70.2.0".into());
+        if let Err(e) = self.pip_blocking(python, args, Some(self.prog_handle("rocm10")), true).await {
+            self.set_status("rocm10", "error", Some(e.clone()));
+            return Err(e);
+        }
+        self.set_status("rocm10", "done", None);
+        self.phase("換上新的 PyTorch（約 1～3 分鐘）");
+        if self.cancel.load(Ordering::SeqCst) {
+            return Err("已取消".into());
+        }
+        self.comfy_hook(false);
+        self.set_status("rocm10.install", "run", None);
+        // 不能中途停（同 install_rocm10）
+        let (py, d) = (python.to_path_buf(), dls.clone());
+        let r = tokio::task::spawn_blocking(move || install_gfx103(&py, &["--no-index", "--find-links", &d])).await.unwrap_or_else(|e| Err(e.to_string()));
+        let r = r.and_then(|()| gpu::gfx103_installed(python).then_some(()).ok_or_else(|| "pip 說裝好了，但找不到 RX 6000 專用版的套件".to_string()));
+        self.comfy_hook(true);
+        if let Err(e) = r {
+            self.set_status("rocm10.install", "error", Some(e.clone()));
+            return Err(e);
+        }
+        self.set_status("rocm10.install", "done", None);
+        self.say(format!("PyTorch 換成 RX 6000 專用版了（gfx103X，這張卡：{}）", devices.join("、")));
+        let files = files_under(&dl);
+        self.stash(&files, &p.data_root);
+        let _ = std::fs::remove_dir(&dl);
+        let _ = std::fs::remove_dir(p.dl());
         Ok(())
     }
 

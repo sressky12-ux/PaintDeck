@@ -258,6 +258,18 @@ fn comfy_running(port: u16) -> bool {
 
 /// ZLUDA 版自己的 bat 預設參數（patientx/ComfyUI-Zluda 的 comfyui-n.bat，2026-10-21）：找不到 bat 時用
 const ZLUDA_ARGS: &[&str] = &["--use-quad-cross-attention", "--reserve-vram", "0.9", "--disable-async-offload", "--disable-pinned-memory"];
+/// RX 6000 專用（gfx103X）PyTorch 的 ComfyUI 參數和環境變數（comfyui-rinsei 的 comfyui_rinsei.bat，2026-11-05）
+const GFX103_ARGS: &[&str] = &["--use-quad-cross-attention", "--disable-async-offload"];
+const GFX103_ENV: &[(&str, &str)] = &[
+    ("HSA_OVERRIDE_GFX_VERSION", "10.3.0"),
+    ("MIOPEN_FIND_MODE", "2"),
+    ("MIOPEN_FIND_ENFORCE", "1"),
+    ("MIOPEN_SEARCH_CUTOFF", "1"),
+    ("MIOPEN_ENABLE_LOGGING", "0"),
+    ("GPU_MAX_HEAP_SIZE", "100"),
+    ("GPU_MAX_ALLOC_PERCENT", "100"),
+    ("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True"),
+];
 /// 要另外加的環境變數（名稱, 值）
 type Env = Vec<(String, String)>;
 
@@ -468,6 +480,12 @@ fn launch_node(
             program = exe.to_path_buf();
             args.splice(0..0, ["--".into(), layout.python.clone().into()]);
         }
+        // RX 6000 專用（gfx103X）PyTorch：照 comfyui-rinsei 在 RX 6700 XT 確認能跑的設定（見 gpu::GFX103_INDEX）。
+        // async offload 在 RDNA2 換模型時會 access violation；HSA_OVERRIDE 讓 1031／1032… 都用 gfx1030 的 kernel
+        Some("rocm") if !prefs.cpu && crate::gpu::gfx103_installed(&layout.python) => {
+            auto.extend(GFX103_ARGS.iter().map(|s| s.to_string()));
+            env.extend(GFX103_ENV.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+        }
         _ => {}
     }
     args.extend(merge_args(&auto, &user).into_iter().map(OsString::from));
@@ -589,7 +607,11 @@ impl ComfyProc {
                 if cards.is_empty() { "沒偵測到".into() } else { cards.join("、") },
                 if prefs.amd_gfx.is_empty() { "自動偵測" } else { &prefs.amd_gfx },
                 crate::gpu::torch_build(&layout.python).unwrap_or_default(),
-                crate::gpu::rocm10_devices(&layout.python).join("、"),
+                if crate::gpu::gfx103_installed(&layout.python) {
+                    "RX 6000 專用版（gfx103X：gfx1030～1036，HSA_OVERRIDE_GFX_VERSION=10.3.0）".to_string()
+                } else {
+                    crate::gpu::rocm10_devices(&layout.python).join("、")
+                },
             );
             if let Some((i, why)) = amd_device(&layout, &prefs) {
                 let _ = writeln!(log, "[繪匣] {why}：只讓 ComfyUI 用第 {i} 號（HIP_VISIBLE_DEVICES={i}）");
@@ -815,6 +837,18 @@ mod tests {
         assert_eq!(launch(&portable, 8188, &p, Some("cuda"), None, None, None).unwrap().args[8..], os(&["--cpu", "--fast"])[..]);
         // DirectML 自動加 --directml；額外參數裡生圖站自己管的不准放
         assert_eq!(launch(&portable, 8188, &def, Some("directml"), None, None, None).unwrap().args[8..], os(&["--directml"])[..]);
+        // ROCm：一般的不加東西；RX 6000 專用（gfx103X）PyTorch 加 quad attention、關 async offload、HSA_OVERRIDE
+        assert_eq!(launch(&portable, 8188, &def, Some("rocm"), None, None, None).unwrap().args.len(), base.len());
+        let sp = d.join("P").join("python_embeded").join("Lib").join("site-packages");
+        for x in [format!("torch-2.10.0+rocm{}.dist-info", crate::gpu::GFX103_ROCM), format!("rocm_sdk_libraries_gfx103x_all-{}.dist-info", crate::gpu::GFX103_ROCM)] {
+            std::fs::create_dir_all(sp.join(x)).unwrap();
+        }
+        let l = launch(&portable, 8188, &def, Some("rocm"), None, None, None).unwrap();
+        assert_eq!(l.args[8..], os(&["--use-quad-cross-attention", "--disable-async-offload"])[..]);
+        assert!(std::env::var_os("HSA_OVERRIDE_GFX_VERSION").is_some() || l.env.iter().any(|(k, v)| k == "HSA_OVERRIDE_GFX_VERSION" && v == "10.3.0"));
+        let p = Prefs { extra_args: "--use-split-cross-attention".into(), ..Default::default() };
+        assert!(!launch(&portable, 8188, &p, Some("rocm"), None, None, None).unwrap().args.iter().any(|a| a == "--use-quad-cross-attention"), "attention 以使用者選的為準");
+        std::fs::remove_dir_all(&sp).unwrap();
         let bad = Prefs { extra_args: "--port 9000".into(), ..Default::default() };
         assert!(launch(&portable, 8188, &bad, Some("cuda"), None, None, None).is_err());
         // ZLUDA（patientx 版）：zluda.exe -- python main.py…，照 comfyui-n.bat 的參數和環境變數
