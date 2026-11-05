@@ -540,7 +540,8 @@ pub fn auto_upgrade_comfy(comfy_dir: &Path, res: &Path) -> Option<Result<(), Str
 /// 開站時檢查 A 卡的 ROCm 10 PyTorch 有沒有這張卡的架構（main.rs 在開 ComfyUI 之前呼叫；ComfyUI 已經開著、「我自己開 ComfyUI」的不要叫）。
 /// 2026-11-05 回報：RX 6750 GRE（gfx1031）每次生圖都 hipErrorInvalidImage／invalid kernel file，精靈的架構可能選錯、或 kpack 不完整。
 /// 精靈手動選錯的改回偵測到的；PyTorch 已經是 ROCm 10 版就只補這幾個架構的 device 套件（約 100MB，--force-reinstall --no-deps）。
-/// 同一組（torch 版本＋架構）只試一次，失敗不會每次開站都重抓。不用修＝None；修了＝Some(結果說明)
+/// pip 說裝好、檔案卻還是不齊的那一組（torch 版本＋架構）記下來不再重抓；網路斷掉、連不上這類失敗下次開站會再試。
+/// 不用修＝None；修了＝Some(結果說明)
 pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
     let prefs = gpu::prefs();
     if prefs.external || prefs.cpu || prefs.gpu == "own" {
@@ -577,10 +578,7 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
     if mark.as_ref().and_then(|m| std::fs::read_to_string(m).ok()).is_some_and(|s| s.trim() == key) {
         return (!said.is_empty()).then(|| Ok(said.join("；")));
     }
-    if let Some(m) = &mark {
-        let _ = std::fs::write(m, &key);
-    }
-    crate::launcher::set_note(Some(format!("正在補裝這張 A 卡（{}）的 PyTorch 套件（約 100MB，只有這一次），好了會自己開 ComfyUI", missing.join("、"))));
+    crate::launcher::set_note(Some(format!("正在補裝這張 A 卡（{}）的 PyTorch 套件（約 100MB），好了會自己開 ComfyUI", missing.join("、"))));
     let mut args: Vec<String> = ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location", "--index-url", gpu::ROCM10_INDEX, "--force-reinstall", "--no-deps"]
         .map(String::from)
         .to_vec();
@@ -594,11 +592,16 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
             Some(Ok(said.join("；")))
         }
         Ok(()) => {
+            // 重抓也不會比較好：記下來，下次開站不再每次抓 100MB
+            if let Some(m) = &mark {
+                let _ = std::fs::write(m, &key);
+            }
             said.push(format!("pip 說裝好了，但還是找不到架構 {} 的套件", missing.join("、")));
             Some(Err(said.join("；")))
         }
         Err(e) => {
-            said.push(format!("補裝 A 卡架構 {} 的 PyTorch 套件失敗：{e}", missing.join("、")));
+            // 多半是網路（大陸連 AMD 套件庫不穩）：不記，下次開站再試
+            said.push(format!("補裝 A 卡架構 {} 的 PyTorch 套件失敗（下次開繪匣會再試）：{e}", missing.join("、")));
             Some(Err(said.join("；")))
         }
     }
