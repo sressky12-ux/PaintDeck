@@ -352,7 +352,7 @@ fn is_page(ctype: &str, host: &str) -> bool {
 
 fn login_msg(host: &str) -> String {
     if is_civitai(host) {
-        "Civitai 要求登入才能下載這個模型：請到「設定」填入你的 Civitai API key（有些模型還要先在網站上登入並同意授權），再重試".into()
+        "Civitai 不給下載：請到「設定」填入你的 Civitai API key（有些模型還要先在網站上登入並同意授權）。如果這個版本標著「付費」，要先在 C 站用 Buzz 買下（早鳥期過了就免費），再重試".into()
     } else {
         "下載到的是網頁不是檔案：網址可能要登入、已經失效，或是貼成介紹頁了（要貼檔案的下載連結）".into()
     }

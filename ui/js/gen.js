@@ -70,7 +70,7 @@ const F = (id) => $("#" + id);
 const num = (id) => parseFloat(F(id).value);
 // 模型家族由伺服器看檔頭判斷（anima／qwen21／moss）；LoRA 只能用在同家族的模型上
 // 內建畫得出來的模型家族（families.rs 的 BUILTIN）；SDXL、Flux、SD1.5 這些靠匯入的工作流組
-const BUILTIN_FAMS = ["anima", "qwen21", "moss"];
+const BUILTIN_FAMS = ["anima", "qwen21", "moss", "krea2", "sdxl"];
 // 設定頁匯入的生圖工作流組（值是 wf:<id>）算 custom：模型照工作流，步數、CFG 預設也照工作流（可勾「用生成頁的」）
 const fam = (name = F("model").value) => (name || "").startsWith("wf:") ? "custom" : app.state?.models?.unet_family?.[name] || "anima";
 // 選到的工作流組（/api/state 的 models.image_workflows 其中一筆：{id, name, modes, family, options}）；不是工作流或找不到就是 null
@@ -465,8 +465,14 @@ async function checkBasic(m) {
 const isQwenAnime = () => fam() === "qwen21" && /anime/i.test(F("model").value || "");
 // MOSS-Image：官方使用說明建議的負面詞拿掉 nsfw（設定頁的預設負面詞是 Anima 用的 tag）
 const MOSS_NEG = "worst quality, bad anatomy, watermark, jpeg artifact";
+// SDXL 系（Illustrious、NoobAI、Pony）：NoobAI-XL 1.1 官方說明的負面詞，拿掉 nsfw 和防獸人的那幾個（跟 graphs.rs SDXL_NEG 同一句）
+const SDXL_NEG = "worst quality, old, early, low quality, lowres, signature, username, logo, bad hands, mutated hands";
+// SDXL 加速版（Lightning、Hyper、Turbo、DMD2、LCM）：檔名看得出來（跟 graphs.rs is_fast_sdxl 同一套）
+const isFastSdxl = () => /lightning|hyper|turbo|dmd|lcm/i.test(F("model").value || "");
+const sdxlSub = () => app.state?.models?.unet_sub?.[F("model").value] || "";
 // 生圖工作流：負面詞空白＝照工作流自己寫的
-const defaultNeg = () => (fam() === "qwen21" ? (isQwenAnime() ? QWEN_ANIME_NEG : QWEN_NEG) : fam() === "moss" ? MOSS_NEG : fam() === "custom" ? "" : (app.state?.settings?.negative || ""));
+// Krea 2：Turbo 是 CFG 1，官方範本的負面＝把正面歸零（graphs.rs neg_text），負面詞不會用到；預設留空
+const defaultNeg = () => (fam() === "qwen21" ? (isQwenAnime() ? QWEN_ANIME_NEG : QWEN_NEG) : fam() === "moss" ? MOSS_NEG : fam() === "sdxl" ? SDXL_NEG : fam() === "custom" || fam() === "krea2" ? "" : (app.state?.settings?.negative || ""));
 
 // MOSS 快速：lodestones 的 8 步 DMD 加速 LoRA 掛 0.35、步數 10（2026-10-17 實測 3070：25 步約 40 秒 → 約 16 秒，構圖畫風接近）
 // 勾選狀態不另外存：清單裡有啟用這顆 LoRA 就算開著（手動移除它，勾勾也會跟著取消）
@@ -556,7 +562,7 @@ function setMossFast(on) {
 function familySwitch() {
   const f = fam();
   const neg = F("negative").value.trim();
-  if (!neg || [app.state?.settings?.negative || "", QWEN_NEG, QWEN_ANIME_NEG, MOSS_NEG].some((d) => d.trim() === neg)) F("negative").value = defaultNeg();
+  if (!neg || [app.state?.settings?.negative || "", QWEN_NEG, QWEN_ANIME_NEG, MOSS_NEG, SDXL_NEG].some((d) => d.trim() === neg)) F("negative").value = defaultNeg();
   // 換到另一組工作流（家族都是 custom）也要重新檢查 LoRA 合不合
   const wfChanged = f === "custom" && S.wfModel !== F("model").value;
   if (S.family && S.family !== f) {
@@ -598,6 +604,10 @@ function modelDefaults() {
   }
   if (fam() === "moss") { F("steps").value = fastOn() ? MOSS_FAST.steps : MOSS_FAST.normal; F("cfg").value = 3; pick("sampler", "euler"); pick("scheduler", "sgm_uniform"); }
   else if (fam() === "qwen21") { F("steps").value = isOfficialTurbo() ? 8 : isTurboModel() ? 6 : 25; F("cfg").value = isOfficialTurbo() || isTurboModel() ? 1 : 3; }
+  // Krea 2 Turbo：ComfyUI 內建範本 8 步、CFG 1、euler＋simple。Raw（沒蒸餾）沒有官方建議值：先給一般 DiT 的 30 步、CFG 4
+  else if (fam() === "krea2") { F("steps").value = isTurboModel() ? 8 : 30; F("cfg").value = isTurboModel() ? 1 : 4; pick("sampler", "euler"); pick("scheduler", "simple"); }
+  // SDXL：NoobAI 官方建議 25～30 步、CFG 5～6、Euler a；加速版 8 步、CFG 1.5（各家建議不一樣，畫不好再照模型頁調）
+  else if (fam() === "sdxl") { F("steps").value = isFastSdxl() ? 8 : 28; F("cfg").value = isFastSdxl() ? 1.5 : 5; pick("sampler", "euler_ancestral"); pick("scheduler", isFastSdxl() ? "sgm_uniform" : "normal"); }
   else if (fam() === "custom") { /* 步數、CFG 照工作流，這裡的不用 */ }
   else if (isTurboModel()) { F("steps").value = 8; F("cfg").value = 1; }
   else if (F("turboLora").value) { F("steps").value = /anima-turbo-lora/i.test(F("turboLora").value) ? 10 : 12; F("cfg").value = 1; }
@@ -641,6 +651,18 @@ function modelHint() {
       ? "MOSS 快速開著：加速 LoRA 0.35＋10 步（CFG 3、euler＋sgm_uniform 照舊），3070 一張約 16 秒。構圖畫風跟 25 步接近，衣服花紋、小配件等細節會換樣子；要最細的那張就取消快速、用 25 步。"
       : "MOSS-Image：25 步、CFG 3、euler＋sgm_uniform（官方 50 步；實測 25 步看不出差別、快一倍。負面提示詞有效）。3070 一張 1024 約 40 秒。") +
       "擅長排版和畫字（中英文都行），提示詞用完整句子描述；要畫的字放在引號裡。不支援 Anima 的 LoRA、構圖控制。"
+    : fam() === "krea2"
+    ? (isTurboModel()
+      ? "Krea 2 Turbo：8 步、CFG 1、euler＋simple（ComfyUI 官方範本；負面提示詞無效）。寫實照片、插畫、各種畫風都行，提示詞用英文完整句子描述畫面。可以疊 Krea 2 的 LoRA（官方畫風 LoRA 要寫觸發詞）。"
+      : "Krea 2 Raw（沒蒸餾的底模，多半拿來練 LoRA）：先用 30 步、CFG 4，負面提示詞有效。日常出圖建議換 Turbo。")
+    : fam() === "sdxl"
+    ? (isFastSdxl()
+      ? "SDXL 加速版：先用 8 步、CFG 1.5、euler_ancestral＋sgm_uniform（Lightning、DMD2 各家建議不同，畫不好照模型頁調）。"
+      : "SDXL：28 步、CFG 5、euler_ancestral＋normal，負面提示詞有效。832×1216、1024×1024 這類約 1MP 的尺寸最穩。") +
+      (sdxlSub() === "Pony"
+        ? "Pony 系：提示詞開頭寫 score_9, score_8_up, score_7_up，負面寫 score_4, score_5, score_6。"
+        : "Illustrious／NoobAI 系：用 Danbooru tag，開頭加 masterpiece, best quality, newest, absurdres, highres。") +
+      "只能疊 SDXL 的 LoRA；不支援 Anima 的構圖控制。"
     : q
     ? (official
       ? "官方 Qwen 2.1 Turbo：固定 8 步、CFG 1（負面提示詞無效）。官方建議約 2K（例如 1696×2528），1024 也能畫。研究授權，不能商用。不要再疊其他加速 LoRA。"

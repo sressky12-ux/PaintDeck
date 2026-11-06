@@ -552,6 +552,20 @@
     "note": null
   },
   {
+    "path": "diffusion_models/krea2_turbo_int8_convrot.safetensors",
+    "size": 13492686496,
+    "sha256": "8e4eeda70dd5037ab1ba2bef6b417f9f901e26093117cf397f741fc1fdaaf3f1",
+    "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/588feaf955b08b9ac4723eeb751752ab045dba71/diffusion_models/krea2_turbo_int8_convrot.safetensors",
+    "note": "Krea 2 Turbo（Comfy-Org/Krea-2，Krea 2 Community License）"
+  },
+  {
+    "path": "text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+    "size": 4858559240,
+    "sha256": "32de113cbf8282b02cbff0794b637b9d6676da09314a1db5a30bcea9bf4ee01c",
+    "url": "https://huggingface.co/Comfy-Org/Krea-2/resolve/588feaf955b08b9ac4723eeb751752ab045dba71/text_encoders/qwen3vl_4b_int8_convrot.safetensors",
+    "note": "Krea 2 的文字編碼器 Qwen3-VL-4B"
+  },
+  {
     "path": "loras/moss/moss_speed_dmd_lodestones.safetensors",
     "size": 1189176800,
     "sha256": "be82ab2bef78194651815bb6de443cec67553e01c14559f2ad365449445f0452",

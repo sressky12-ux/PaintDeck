@@ -270,6 +270,11 @@ const GFX103_ENV: &[(&str, &str)] = &[
     ("GPU_MAX_ALLOC_PERCENT", "100"),
     ("PYTORCH_HIP_ALLOC_CONF", "expandable_segments:True"),
 ];
+/// RX 6000（gfx103x）不能用 hipBLASLt（2026-11-06 回報：RX 6750 XT 按生圖，SamplerCustomAdvanced 報
+/// HIPBLAS_STATUS_INVALID_VALUE when calling hipblasLtMatmulAlgoGetHeuristic）。查過 gfx103X 套件：hipBLASLt 只帶 gfx1100 的 kernel，
+/// rocBLAS 才有 gfx1030～1036；torch 2.10.0+rocm7.14 的 addmm（帶 bias 的線性層）卻把 gfx1030 列在可走 hipBLASLt 的清單裡。
+/// DISABLE_ADDMM_CUDA_LT＝addmm 改走 rocBLAS；TORCH_BLAS_PREFER_HIPBLASLT=0＝其他矩陣乘法的預設庫也維持 rocBLAS
+const NO_HIPBLASLT_ENV: &[(&str, &str)] = &[("DISABLE_ADDMM_CUDA_LT", "1"), ("TORCH_BLAS_PREFER_HIPBLASLT", "0")];
 /// 要另外加的環境變數（名稱, 值）
 type Env = Vec<(String, String)>;
 
@@ -484,7 +489,7 @@ fn launch_node(
         // async offload 在 RDNA2 換模型時會 access violation；HSA_OVERRIDE 讓 1031／1032… 都用 gfx1030 的 kernel
         Some("rocm") if !prefs.cpu && crate::gpu::gfx103_installed(&layout.python) => {
             auto.extend(GFX103_ARGS.iter().map(|s| s.to_string()));
-            env.extend(GFX103_ENV.iter().map(|(k, v)| (k.to_string(), v.to_string())));
+            env.extend(GFX103_ENV.iter().chain(NO_HIPBLASLT_ENV).map(|(k, v)| (k.to_string(), v.to_string())));
         }
         _ => {}
     }
@@ -596,23 +601,37 @@ impl ComfyProc {
             use std::io::Write;
             // 回報常常只給 comfyui.log：偵測到的 A 卡、精靈選的架構、PyTorch 實際裝好的架構先寫一行
             let (gpus, _) = crate::gpu::detect(false);
-            let cards: Vec<String> = gpus
+            let amd: Vec<&serde_json::Value> = gpus.iter().filter(|g| g["vendor"] == "amd").collect();
+            let cards: Vec<String> = amd
                 .iter()
-                .filter(|g| g["vendor"] == "amd")
                 .map(|g| format!("{}（{}）", g["name"].as_str().unwrap_or("?"), g["gfx"].as_str().unwrap_or("認不出架構")))
                 .collect();
+            let gfx103_build = crate::gpu::gfx103_installed(&layout.python);
             let _ = writeln!(
                 log,
                 "[繪匣] A 卡：{}；精靈選的架構：{}；PyTorch {} 裝好的架構：{}",
                 if cards.is_empty() { "沒偵測到".into() } else { cards.join("、") },
                 if prefs.amd_gfx.is_empty() { "自動偵測" } else { &prefs.amd_gfx },
                 crate::gpu::torch_build(&layout.python).unwrap_or_default(),
-                if crate::gpu::gfx103_installed(&layout.python) {
-                    "RX 6000 專用版（gfx103X：gfx1030～1036，HSA_OVERRIDE_GFX_VERSION=10.3.0）".to_string()
+                if gfx103_build {
+                    "RX 6000 專用版（gfx103X：gfx1030～1036，HSA_OVERRIDE_GFX_VERSION=10.3.0，不走 hipBLASLt）".to_string()
                 } else {
                     crate::gpu::rocm10_devices(&layout.python).join("、")
                 },
             );
+            // 別的 ROCm PyTorch（還沒換成 RX 6000 專用版、或使用者自己的）裝在 RX 6000 上：至少把 hipBLASLt 關掉
+            let gfx: Vec<String> = amd.iter().filter_map(|g| g["gfx"].as_str().map(String::from)).collect();
+            if !gfx103_build && gfx.len() == amd.len() && crate::gpu::gfx103_family(&gfx) {
+                let add: Vec<(String, String)> = NO_HIPBLASLT_ENV
+                    .iter()
+                    .filter(|(k, _)| std::env::var_os(k).is_none() && !l.env.iter().any(|(e, _)| e == k))
+                    .map(|(k, v)| (k.to_string(), v.to_string()))
+                    .collect();
+                if !add.is_empty() {
+                    let _ = writeln!(log, "[繪匣] RX 6000 不走 hipBLASLt（這張卡沒有它的 kernel）：{}", add.iter().map(|(k, v)| format!("{k}={v}")).collect::<Vec<_>>().join(" "));
+                    l.env.extend(add);
+                }
+            }
             if let Some((i, why)) = amd_device(&layout, &prefs) {
                 let _ = writeln!(log, "[繪匣] {why}：只讓 ComfyUI 用第 {i} 號（HIP_VISIBLE_DEVICES={i}）");
                 l.env.push(("HIP_VISIBLE_DEVICES".into(), i.to_string()));
@@ -846,6 +865,10 @@ mod tests {
         let l = launch(&portable, 8188, &def, Some("rocm"), None, None, None).unwrap();
         assert_eq!(l.args[8..], os(&["--use-quad-cross-attention", "--disable-async-offload"])[..]);
         assert!(std::env::var_os("HSA_OVERRIDE_GFX_VERSION").is_some() || l.env.iter().any(|(k, v)| k == "HSA_OVERRIDE_GFX_VERSION" && v == "10.3.0"));
+        // gfx103X 的 hipBLASLt 沒有 RX 6000 的 kernel：addmm 和預設矩陣庫都要走 rocBLAS（2026-11-06 回報）
+        for (k, v) in [("DISABLE_ADDMM_CUDA_LT", "1"), ("TORCH_BLAS_PREFER_HIPBLASLT", "0")] {
+            assert!(std::env::var_os(k).is_some() || l.env.iter().any(|(e, x)| e == k && x == v), "{k}");
+        }
         let p = Prefs { extra_args: "--use-split-cross-attention".into(), ..Default::default() };
         assert!(!launch(&portable, 8188, &p, Some("rocm"), None, None, None).unwrap().args.iter().any(|a| a == "--use-quad-cross-attention"), "attention 以使用者選的為準");
         std::fs::remove_dir_all(&sp).unwrap();

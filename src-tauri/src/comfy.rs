@@ -719,6 +719,10 @@ const FRIENDLY: &[(&[&str], &str)] = &[
      "找不到輸入圖片，或圖片壞掉了。解法：重新放一次圖片。"),
     (&["cannot connect", "connection refused", "connect call failed"],
      "連不到 ComfyUI。解法：重新開啟「繪匣 PaintDeck」。"),
+    // A 卡（ROCm）：矩陣運算走到 hipBLASLt，這張卡沒有它的 kernel（2026-11-06 回報：RX 6750 XT，
+    // SamplerCustomAdvanced: CUDA error: HIPBLAS_STATUS_INVALID_VALUE when calling hipblasLtMatmulAlgoGetHeuristic）。新版繪匣開 ComfyUI 時會自己關掉
+    (&["hipblaslt", "hipblas_status_invalid_value", "hipblas_status_not_supported"],
+     "A 卡的矩陣運算庫 hipBLASLt 不支援這張卡（RX 6000 系列最常見，跟模型、提示詞無關）。解法：把「繪匣 PaintDeck」更新到最新版（設定 → 程式更新）再重開，新版開 ComfyUI 時會自動改用 rocBLAS。你是自己開 ComfyUI 的話，啟動前加兩個環境變數再開：DISABLE_ADDMM_CUDA_LT=1、TORCH_BLAS_PREFER_HIPBLASLT=0。"),
     // A 卡（ROCm）：PyTorch 沒有這張卡架構的 kernel。CPU 內顯（Ryzen 7000／9000 的 610M、筆電 780M）排在 0 號被 ComfyUI 拿去用（2026-11-04 回報），
     // 或精靈選錯架構、kpack 檔不完整（2026-11-05 回報：i5-12400F＋RX 6750 GRE，沒有內顯，照舊說明填 --cuda-device 1 反而開不起來）
     (&["invalid kernel file", "hiperrorinvalidkernelfile", "invalid device function", "hiperrorinvaliddevicefunction", "device kernel image is invalid", "hiperrorinvalidimage"],
@@ -949,6 +953,13 @@ mod tests {
         // 2026-11-05 回報：第一次是 device kernel image is invalid，單卡的人不能叫他填 --cuda-device
         let m = friendly("TextEncodeQwenImage21: CUDA error: device kernel image is invalid\nSearch for `hipErrorInvalidImage'");
         assert!(m.contains("自動檢查") && m.contains("gfx1031") && m.contains("不要填"), "{m}");
+    }
+
+    /// 2026-11-06 回報：RX 6750 XT 換成 RX 6000 專用 PyTorch 之後，按生圖跳 hipBLASLt 的錯
+    #[test]
+    fn friendly_amd_hipblaslt() {
+        let m = friendly("SamplerCustomAdvanced: CUDA error: HIPBLAS_STATUS_INVALID_VALUE when calling hipblasLtMatmulAlgoGetHeuristic( ltHandle, computeDesc.descriptor(), Adesc.descriptor(), Bdesc.descriptor(), Cdesc.descriptor(), Cdesc.descriptor(), preference.descriptor(), 1, &heuristicResult, &returnedResult)");
+        assert!(m.contains("hipBLASLt") && m.contains("DISABLE_ADDMM_CUDA_LT=1") && !m.contains("VRAM") && !m.contains("架構對不上"), "{m}");
     }
 
     #[test]

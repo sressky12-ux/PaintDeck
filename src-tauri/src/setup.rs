@@ -1658,6 +1658,8 @@ pub const PACKS: &[(&str, &str, &str, &str)] = &[
     ("qwen", "Qwen 2.1 編輯", "改圖、多圖參考、四視圖，也能畫寫實照片（官方 Qwen Image 2.1 Turbo）", ""),
     ("qwen_pose", "Qwen 2.1 姿勢參考", "照人偶的姿勢畫（Fun ControlNet）", "qwen"),
     ("moss", "MOSS-Image 文生圖繪圖", "用文字畫圖：海報、招牌、版面框、漫畫台的對白（中英文都能寫）", ""),
+    // 2026-11-06 使用者：「把模型默認支援 krea2」。ComfyUI 0.43 內建；VAE 跟 Anima 共用 qwen_image_vae
+    ("krea2", "Krea 2 文生圖", "Krea 2 Turbo：寫實照片、插畫、各種畫風，8 步出圖，提示詞用完整句子（主模型 13.5GB＋文字編碼器 4.9GB，約 18.4GB；8GB 顯卡能跑）", "anima"),
     ("face", "修臉／修手", "生成後自動找出臉和手再重畫（SAM3.1）", ""),
     ("bg", "一鍵去背", "BiRefNet 去背模型", ""),
     ("pe", "AI 改寫、生圖助手", "通用語言模型 Qwen3.5-9B Defiant Fable（含看圖檔）＋挑段用的 Qwen3-Embedding-0.6B＋llama.cpp：AI 改寫提示詞、生圖助手、導演台分段", ""),
@@ -1706,6 +1708,8 @@ pub fn pack_of(rel: &str) -> &'static str {
         "model_patches" => "anima",
         "diffusion_models" if name.starts_with("qwen_image") => "qwen",
         "diffusion_models" if name.starts_with("moss") => "moss",
+        "diffusion_models" if name.starts_with("krea2") => "krea2",
+        "text_encoders" if name.starts_with("qwen3vl_4b") => "krea2", // 要排在 qwen3vl（Qwen 2.1 的 8B）前面
         "diffusion_models" if name.starts_with("anima") => "anima",
         "text_encoders" if name.starts_with("qwen3vl") => "qwen",
         "text_encoders" if name.starts_with("qwen3.5") => "moss",

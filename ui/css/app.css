@@ -277,6 +277,7 @@ input[type=range]:focus-visible { outline-offset: 0; }
 .hub-badges { display: flex; flex-wrap: wrap; gap: 4px; }
 .card .badge.src { background: var(--key-dark); color: var(--ph-green); }
 .card .badge.no { background: #4a3a1d; color: var(--warn); }
+.card .badge.paid { background: #4a2a5a; color: #e8c4ff; }
 .card .hub-desc { display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card .bd select.sm { max-width: 100%; }
 .card .ph.none { aspect-ratio: auto; min-height: 44px; }  /* 魔塔的搜尋結果幾乎都沒有封面：不要佔一大塊 */
@@ -1455,7 +1456,7 @@ html[lang="en"] .group > .lbl[data-silk]::before { display: none; }
 .wf-msg { white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; }
 .wf-mark { display: grid; gap: 6px; padding-top: 6px; border-top: 1px dashed var(--field-line); }
 .wf-mark label { display: grid; gap: 2px; }
-.wf-feat { display: grid; grid-template-columns: auto repeat(3, minmax(0, 1fr)); gap: 6px 8px; align-items: center; margin: 4px 0; }
+.wf-feat { display: grid; grid-template-columns: auto repeat(5, minmax(0, 1fr)); gap: 6px 8px; align-items: center; margin: 4px 0; }
 .wf-fh { font-size: 12px; text-align: center; }
 .wf-fm { font-size: 12px; font-weight: 600; white-space: nowrap; }
 .wf-feat select { font-size: 12px; padding: 3px 22px 3px 7px; }

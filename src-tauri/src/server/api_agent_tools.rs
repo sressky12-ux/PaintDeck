@@ -5,7 +5,7 @@ use super::api_agent::render_local;
 use super::Shared;
 use crate::agent_tools::{self as at, clip, RESULT_CHARS};
 use crate::director::tx;
-use crate::families::{ANIMA, MOSS, QWEN21};
+use crate::families::{ANIMA, KREA2, MOSS, QWEN21, SDXL};
 use axum::http::{header, Method, Request};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
@@ -104,6 +104,11 @@ pub fn family_defaults(fam: &str, model: &str, anima_neg: &str) -> Map<String, V
     let turbo = model.to_lowercase().contains("turbo");
     let (steps, cfg, sampler, scheduler, neg) = match fam {
         MOSS => (25, 3.0, "euler", "sgm_uniform", MOSS_NEG.to_string()),
+        // Krea 2 Turbo 照 ComfyUI 內建範本（CFG 1 負面詞不會用到）；Raw 沒有官方建議值
+        KREA2 => (if turbo { 8 } else { 30 }, if turbo { 1.0 } else { 4.0 }, "euler", "simple", String::new()),
+        // SDXL 系（Illustrious、NoobAI、Pony）：NoobAI 官方建議 25～30 步、CFG 5～6、Euler a；加速版（Lightning、DMD…）8 步、CFG 1.5
+        SDXL if crate::graphs::is_fast_sdxl(model) => (8, 1.5, "euler_ancestral", "sgm_uniform", crate::graphs::SDXL_NEG.to_string()),
+        SDXL => (28, 5.0, "euler_ancestral", "normal", crate::graphs::SDXL_NEG.to_string()),
         QWEN21 => (if turbo { 8 } else { 25 }, if turbo { 1.0 } else { 3.0 }, "euler", "simple", (if model.to_lowercase().contains("anime") { QWEN_ANIME_NEG } else { QWEN_NEG }).to_string()),
         ANIMA if turbo => (8, 1.0, "euler", "simple", anima_neg.to_string()),
         ANIMA => (30, 4.0, "er_sde", "simple", anima_neg.to_string()),
@@ -150,7 +155,7 @@ pub fn match_model<'a>(names: &'a [(String, String)], want: &str) -> Option<&'a 
 /// 只講了家族（「Qwen 2.1」「qwen」「MOSS」「Anima」）：挑那個家族的一顆，Turbo 優先（2026-10-27 實測 9B 會這樣寫）
 pub fn match_family<'a>(names: &'a [(String, String)], want: &str) -> Option<&'a (String, String)> {
     let w = want.to_lowercase();
-    let fam = if w.contains("qwen") { QWEN21 } else if w.contains("moss") { MOSS } else if w.contains("anima") { ANIMA } else { return None };
+    let fam = if w.contains("qwen") { QWEN21 } else if w.contains("moss") { MOSS } else if w.contains("krea") { KREA2 } else if w.contains("anima") { ANIMA } else if ["sdxl", "noob", "illustrious", "pony"].iter().any(|k| w.contains(k)) { SDXL } else { return None };
     let of: Vec<&(String, String)> = names.iter().filter(|(_, f)| f == fam).collect();
     of.iter().find(|(n, _)| n.to_lowercase().contains("turbo")).or(of.first()).copied()
 }
@@ -315,7 +320,7 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
             })?;
             // 跟網頁的換模型（api_agent::base_model）同一條規則：別的家族會配錯文字編碼器和 VAE（2026-10-29 盤點）
             if !crate::families::is_builtin(&fam) {
-                return Err(format!("{name} is a {fam} model; you can only use Anima, Qwen 2.1 and MOSS-Image models. Pick one of those, or stay on the current model."));
+                return Err(format!("{name} is a {fam} model; you can only use Anima, Qwen 2.1, MOSS-Image, Krea 2 and SDXL models. Pick one of those, or stay on the current model."));
             }
             let b = switch_base(cx.base, &name, &fam, &neg);
             // 9B 換完模型會把上一個請求的提示詞整段搬過來（2026-10-27 實測：要橘貓，畫成上一張的銀髮女孩）：把這次的要求貼回去

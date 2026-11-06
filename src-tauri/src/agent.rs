@@ -11,7 +11,7 @@
 //!
 //! 存檔：data\agent\sessions\<id>.json（設定＋事件清單；事件同時是畫面上的對話和下一次給模型的上下文）
 use crate::director::{json_in, tx, valid_id, write_atomic};
-use crate::families::{ANIMA, MOSS, QWEN21};
+use crate::families::{ANIMA, KREA2, MOSS, QWEN21};
 use crate::py::{now, truthy};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -79,7 +79,7 @@ pub fn default_text(id: &str) -> Option<&'static str> {
 /// 這個家族用哪一份寫法說明
 pub fn guide_id(family: &str) -> &'static str {
     match family {
-        QWEN21 => "agent_qwen21",
+        QWEN21 | KREA2 => "agent_qwen21",
         MOSS => "agent_moss",
         ANIMA => "agent_anima",
         _ => "agent_other",
@@ -116,7 +116,8 @@ pub fn guides_list() -> String {
 /// 家族的文生圖寫法名稱
 pub fn family_guide(family: &str) -> &'static str {
     match family {
-        QWEN21 => "qwen",
+        // Krea 2 的文字編碼器也是 Qwen3-VL、吃完整英文句子：先借 Qwen 2.1 文生圖的寫法
+        QWEN21 | KREA2 => "qwen",
         MOSS => "moss",
         ANIMA => "anima",
         _ => "other",
@@ -129,7 +130,8 @@ pub fn prompt_family<'a>(target: &str, fallback: &'a str) -> &'a str {
         "anima" => ANIMA,
         "qwen" | "qwen_edit" | "qwen_multiref" => QWEN21,
         "moss" => MOSS,
-        "other" => "other",
+        // other 這份寫法就是 SDXL 系的（GUIDES 的 "SDXL 系"）；2026-11-06 SDXL 變成內建家族
+        "other" => crate::families::SDXL,
         _ => fallback,
     }
 }

@@ -11,9 +11,11 @@
 //!   Flux.1                    double_blocks.N.*、single_blocks.N.*（lora_unet_double_blocks_*、diffusion_model.double_blocks.*）、
 //!                              diffusers 格式的 single_transformer_blocks.*
 //!   SD3／3.5                  joint_blocks.N.*（lora_unet_joint_blocks_*）
+//!   Krea 2（單流 DiT）        txtfusion.*、blocks.N.attn.wq／wk／wv／wo（跟 ComfyUI model_detection 一樣看 txtfusion）；
+//!                              diffusers 格式的 LoRA 是 text_fusion.*、transformer_blocks.N.attn.to_gate、ff.gate／up／down
 //!
 //! 判斷順序（Anima、Qwen、MOSS 的規則一字不改，只在前面插入新家族的「結構證據」）：
-//!   MOSS → Qwen 的 txt_in.text_norm → Flux／SD3 → SDXL／SD1.5 → （有 UNet 命名卻分不出 SD1.5／SDXL：metadata，否則 other）
+//!   MOSS → Krea 2 → Qwen 的 txt_in.text_norm → Flux／SD3 → SDXL／SD1.5 → （有 UNet 命名卻分不出 SD1.5／SDXL：metadata，否則 other）
 //!   → Qwen 的 transformer_blocks → Anima → metadata → other。
 //!   SD 的 UNet 與 Flux／SD3 的 diffusers 格式也有 transformer_blocks，所以一定要比舊的 Qwen 規則先判斷。
 //!   SD1.5 與 SDXL 之間，結構證據（區塊編號、transformer 深度）比 label_emb、文字編碼器名稱可靠。
@@ -33,23 +35,25 @@ use std::time::SystemTime;
 pub const ANIMA: &str = "anima";
 pub const QWEN21: &str = "qwen21";
 pub const MOSS: &str = "moss";
+pub const KREA2: &str = "krea2";
 pub const SD15: &str = "sd15";
 pub const SDXL: &str = "sdxl";
 pub const FLUX: &str = "flux";
 pub const SD3: &str = "sd3";
 pub const OTHER: &str = "other";
-/// 顯示名稱（順序就是生成頁模型選單的順序：內建的三個在前面）
-pub const FAMILY_NAMES: [(&str, &str); 7] = [
+/// 顯示名稱（順序就是生成頁模型選單的順序：內建的在前面，順序跟 BUILTIN 一樣）
+pub const FAMILY_NAMES: [(&str, &str); 8] = [
     (ANIMA, "Anima（動漫）"),
     (QWEN21, "Qwen 2.1（編輯）"),
     (MOSS, "MOSS-Image（文生圖繪圖）"),
+    (KREA2, "Krea 2（寫實／插畫）"),
     (SDXL, "SDXL（含 Pony、Illustrious、NoobAI）"),
     (SD15, "SD 1.5"),
     (FLUX, "Flux"),
     (SD3, "SD3"),
 ];
 /// 生圖站內建流程（graphs.rs）真的會畫的家族；其他家族只能走匯入的工作流
-pub const BUILTIN: [&str; 3] = [ANIMA, QWEN21, MOSS];
+pub const BUILTIN: [&str; 5] = [ANIMA, QWEN21, MOSS, KREA2, SDXL];
 
 pub fn is_builtin(family: &str) -> bool {
     BUILTIN.contains(&family)
@@ -359,6 +363,8 @@ struct Probe {
     attn12: bool,
     /// Anima 自己才有的名稱（Cosmos predict2 的 adaln_modulation、llm_adapter）
     anima_strong: bool,
+    /// Krea 2：txtfusion／text_fusion、注意力 attn.wq／wk／wv／wo（kohya 底線版也是）、diffusers 版的 attn.to_gate、ff.gate／up／down
+    krea2: bool,
 }
 
 impl Probe {
@@ -390,6 +396,12 @@ impl Probe {
         let t: Vec<&str> = low.split(['.', '_']).filter(|s| !s.is_empty()).collect();
         let t = &t[..];
         self.video_evidence(t);
+        let wqkvo = |x: &&str| matches!(*x, "wq" | "wk" | "wv" | "wo");
+        self.krea2 |= t.contains(&"txtfusion")
+            || has(t, &["text", "fusion"])
+            || find(t, &["attn"]).is_some_and(|i| t.get(i + 1).is_some_and(wqkvo))
+            || has(t, &["attn", "to", "gate"])
+            || find(t, &["ff"]).is_some_and(|i| matches!(t.get(i + 1), Some(&"gate") | Some(&"up") | Some(&"down")));
         // MOSS 的 LoRA 也有 kohya 底線版（lora_unet_layers_0_proj_qkv）和只練注意力層的（沒有 ffn_up_gate）：認 layers.N.proj.<qkv|q|k|v|o|ffn>
         self.moss |= has(t, &["shared", "block", "modulation"])
             || after(t, &["layers"]).is_some_and(|r| num(r, 0).is_some() && r.get(1) == Some(&"proj") && r.get(2).is_some_and(|x| matches!(*x, "qkv" | "q" | "k" | "v" | "o" | "ffn")));
@@ -619,6 +631,8 @@ fn classify_with(keys: &[String], meta: Option<&Meta>) -> &'static str {
     let p = Probe::new(keys);
     if p.moss {
         MOSS
+    } else if p.krea2 {
+        KREA2
     } else if p.qwen_strong {
         QWEN21
     } else if p.is_video() {
@@ -761,8 +775,13 @@ pub fn from_base_model(base: &str) -> Option<&'static str> {
         Some(ANIMA)
     } else if b.contains("moss") {
         Some(MOSS)
+    } else if b.contains("krea 2") || b.contains("krea2") || b.contains("krea-2") {
+        Some(KREA2)
     } else if b.contains("qwen") && b.contains("2.1") {
         Some(QWEN21)
+    } else if b.contains("sdxl") || b.contains("pony") || b.contains("illustrious") || b.contains("noobai") {
+        // C 站寫 "SDXL 1.0"、"Pony"、"Illustrious"、"NoobAI"（Flux.1 Krea、SD 1.5 都不含這些字）
+        Some(SDXL)
     } else {
         None
     }
@@ -896,7 +915,10 @@ mod tests {
         // 檔案找不到（看不出家族）時才用 Civitai 的底模
         let roots = vec![std::env::temp_dir().join("no_such_lora_root_20261028")];
         assert_eq!(lora_family(&roots, "x.safetensors", Some(&json!({"base_model": "MOSS Image"}))), MOSS);
-        assert_eq!(lora_family(&roots, "x.safetensors", Some(&json!({"base_model": "SDXL 1.0"}))), OTHER);
+        // 2026-11-06 起 SDXL 是內建家族：C 站寫 SDXL 1.0／Pony／Illustrious／NoobAI 都算 sdxl
+        assert_eq!(lora_family(&roots, "x.safetensors", Some(&json!({"base_model": "SDXL 1.0"}))), SDXL);
+        assert_eq!(from_base_model("Illustrious"), Some(SDXL));
+        assert_eq!(from_base_model("SD 1.5"), None);
         assert_eq!(lora_family(&roots, "x.safetensors", None), OTHER);
     }
 
@@ -908,6 +930,23 @@ mod tests {
         assert_eq!(classify(&s(&["transformer.layers.4.proj.q.lora_A.weight", "transformer.layers.4.proj.v.lora_B.weight"])), MOSS);
         // 文字編碼器 LoRA（layers.N.self_attn.q_proj）不能被認成 MOSS
         assert_eq!(classify(&s(&["model.layers.0.self_attn.q_proj.lora_A.weight"])), OTHER);
+    }
+
+    #[test]
+    fn krea2_model_and_lora_formats() {
+        // 主模型（Comfy-Org/Krea-2 的 ComfyUI 版）：blocks.N 跟 Anima 撞名，靠 txtfusion、attn.wq 認
+        assert_eq!(classify(&s(&["first.weight", "txtfusion.projector.weight", "blocks.0.attn.wq.weight", "blocks.0.mlp.gate.weight"])), KREA2);
+        // ComfyUI 原生名稱的 LoRA、kohya 底線版、diffusers 版（transformer_blocks 跟 Qwen 撞名）
+        assert_eq!(classify(&s(&["diffusion_model.blocks.3.attn.wq.lora_A.weight", "diffusion_model.blocks.3.attn.wk.lora_B.weight"])), KREA2);
+        assert_eq!(classify(&s(&["lora_unet_blocks_3_attn_wv.lora_down.weight"])), KREA2);
+        assert_eq!(classify(&s(&["transformer.transformer_blocks.0.attn.to_q.lora_A.weight", "transformer.transformer_blocks.0.attn.to_gate.lora_A.weight"])), KREA2);
+        assert_eq!(classify(&s(&["transformer_blocks.5.ff.up.lora_A.weight"])), KREA2);
+        // 舊的不能被搶走：Anima 的 self_attn.q_proj、Flux diffusers 的 ff.net、Qwen 的 attn.to_q
+        assert_eq!(classify(&s(&["lora_unet_blocks_3_self_attn_q_proj.lora_down.weight"])), ANIMA);
+        assert_eq!(classify(&s(&["transformer_blocks.0.attn.to_q.weight"])), QWEN21);
+        assert_eq!(classify(&s(&["single_transformer_blocks.0.attn.to_q.weight", "transformer_blocks.0.ff.net.0.proj.weight"])), FLUX);
+        assert_eq!(from_base_model("Krea 2 Turbo"), Some(KREA2));
+        assert_eq!(from_base_model("Flux.1 Krea"), None);
     }
 
     #[test]
@@ -1796,13 +1835,13 @@ mod tests {
         assert_eq!(label(SDXL), "SDXL（含 Pony、Illustrious、NoobAI）");
         assert_eq!(label(SD15), "SD 1.5");
         assert_eq!(label(OTHER), "其他");
-        assert!(is_builtin(ANIMA) && is_builtin(QWEN21) && is_builtin(MOSS));
-        assert!(!is_builtin(SDXL) && !is_builtin(FLUX) && !is_builtin(OTHER));
-        // 內建三個維持在最前面（生成頁模型選單的順序）
+        assert!(is_builtin(ANIMA) && is_builtin(QWEN21) && is_builtin(MOSS) && is_builtin(KREA2) && is_builtin(SDXL));
+        assert!(!is_builtin(SD15) && !is_builtin(FLUX) && !is_builtin(OTHER));
+        // 內建的維持在最前面（生成頁模型選單的順序）
         assert_eq!(
             FAMILY_NAMES
                 .iter()
-                .take(3)
+                .take(BUILTIN.len())
                 .map(|(k, _)| *k)
                 .collect::<Vec<_>>(),
             BUILTIN

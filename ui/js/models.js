@@ -13,7 +13,7 @@ let FMODES = [];         // 同上的 modes：[{id, name}]
 let FFLOWS = {};         // 同上的 feature_flows：{"家族.模式": 工作流組代號}
 let scanTimer = null, dlTimer = null;
 const label = (k) => KINDS.find((x) => x.id === k)?.label || k;
-const FAM = { anima: "Anima", qwen21: "Qwen 2.1", moss: "MOSS", sdxl: "SDXL", sd15: "SD1.5", flux: "Flux", sd3: "SD3", other: "" };
+const FAM = { anima: "Anima", qwen21: "Qwen 2.1", moss: "MOSS", krea2: "Krea 2", sdxl: "SDXL", sd15: "SD1.5", flux: "Flux", sd3: "SD3", other: "" };
 
 export function init() {
   $("#mdAdd").onclick = addDir;
@@ -286,7 +286,7 @@ async function pollDownloads() {
 // 後端在 server\api_wf.rs、image_wf.rs、wf_import.rs；設計在 design\萬用工作流與匯入匯出.md
 const MODE_NAMES = { txt2img: "文生圖", img2img: "圖生圖", inpaint: "局部重繪", upscale: "放大", multiref: "多圖參考" };
 const modeLabel = (m) => FMODES.find((x) => x.id === m)?.name || MODE_NAMES[m] || m;
-const BUILTIN_FAMS = ["anima", "qwen21", "moss"];
+const BUILTIN_FAMS = ["anima", "qwen21", "moss", "krea2", "sdxl"];
 const famName = (f) => app.state?.models?.family_names?.[f] || FAM[f] || f;
 
 async function loadFlows() {

@@ -30,7 +30,7 @@ export function init() {
   $("#hubGo").onclick = () => search(false);
   $("#hubQ").onkeydown = (e) => { if (e.key === "Enter") search(false); };
   $("#hubAll").onchange = () => { fillFams(); search(false); };
-  for (const id of ["#hubFam", "#hubSort", "#hubNsfw"]) $(id).onchange = () => search(false);
+  for (const id of ["#hubFam", "#hubSort", "#hubNsfw", "#hubNoPaid"]) $(id).onchange = () => search(false);
   $("#hubMore").onclick = () => search(true);
   initRun();
   // 設定頁匯入工作流後，缺的模型「到下載中心找」
@@ -89,6 +89,7 @@ function paintBar() {
   if (sorts.some(([v]) => v === keep)) $("#hubSort").value = keep;
   $("#hubSort").hidden = !sorts.length;
   $("#hubNsfwBox").hidden = cur.source !== "civitai";
+  $("#hubNoPaidBox").hidden = cur.source !== "civitai" || cur.kind === "workflow";
   paintTags();
   $("#hubQ").placeholder = cur.source === "runninghub" ? "搜尋 RunningHub 的工作流（中文關鍵字就可以）"
     : cur.source === "modelscope" ? `搜尋魔塔的${KIND_NAME[cur.kind]}（中英文都可以）` : `搜尋 C 站的${KIND_NAME[cur.kind]}（英文關鍵字較準）`;
@@ -155,10 +156,12 @@ async function search(append) {
     // 一張卡片畫壞（來源的資料長得不一樣）只影響那一張，不要讓後面的全部不見
     for (const it of r.items) {
       if (shown.has(it.id)) continue;
+      if (hidePaid(it)) continue;
       shown.add(it.id);
       try { $("#hubGrid").append(card(it)); }
       catch (e) { console.error("下載中心：卡片畫不出來", it, e); $("#hubGrid").append(el("div", { class: "card muted pad" }, `這一筆顯示不出來：${e.message}`)); }
     }
+    if (!append && r.items.length && r.items.every(hidePaid)) $("#hubGrid").append(el("div", { class: "muted pad" }, "這一頁都是付費版本（勾著「不顯示付費」）：按「載入更多」看下一頁，或取消勾選。"));
     if (!r.items.length && !append) $("#hubGrid").append(el("div", { class: "muted pad" }, qs.has("tag")
       ? "這個分類下沒有找到：魔塔只有一小部分模型有標分類，換「全部分類」或別的底模試試。" : "沒有找到，換個關鍵字或底模試試。"));
     $("#hubMore").hidden = next == null;
@@ -170,6 +173,15 @@ async function search(append) {
 }
 
 // ---------------------------------------------------------------- 卡片
+// C 站付費版本（後端 modelhub::civitai_paid）：{permanent: true}＝一直要付費；{permanent: false, ends}＝早鳥付費，ends 之後免費。API 沒有價錢
+const paidDate = (p) => { const d = new Date(p.ends); return isNaN(d) ? "" : `${d.getMonth() + 1}/${d.getDate()}`; };
+const paidLabel = (p) => (p.permanent ? "付費" : `早鳥付費・${paidDate(p)} 後免費`);
+const paidTip = (p) => (p.permanent
+  ? "C 站的付費版本：要先在網站上用 Buzz 買下才下載得到（價錢在 C 站模型頁）"
+  : `C 站的早鳥（Early Access）版本：${paidDate(p)} 以前要先在網站上用 Buzz 買下才下載得到，之後免費（價錢在 C 站模型頁）`);
+/** 「不顯示付費」勾著：全部版本都付費的不列 */
+const hidePaid = (it) => $("#hubNoPaid").checked && it.source === "civitai" && it.versions?.length && it.versions.every((v) => v.paid);
+
 function badges(it) {
   const out = [el("span", { class: "badge src" }, SRC_SHORT[it.source] || it.source)];
   if (it.kind !== "workflow") {
@@ -220,7 +232,8 @@ const link = (it) => el("a", { class: "icon", href: it.url, target: "_blank", re
 /** C 站 LoRA／主模型／VAE：版本選單（同一個模型有好幾個版本）、檔案選單（一個版本有好幾個模型檔，例如 fp16／fp32） */
 function civitaiPart(c, body) {
   const it = c.it, vs = it.versions || [];
-  c.ver = vs[0];
+  // 「不顯示付費」勾著、而且有免費版本：預設選免費的
+  c.ver = ($("#hubNoPaid").checked && vs.find((v) => !v.paid)) || vs[0];
   const chooseFile = () => {
     const fs = (c.ver?.files || []).filter((f) => /\.(safetensors|ckpt|pt|pth|bin|gguf|sft)$/i.test(f.name || ""));
     c.files = fs.length ? fs : c.ver?.files || [];
@@ -234,9 +247,18 @@ function civitaiPart(c, body) {
     if (c.fileSel) body.insertBefore(c.fileSel, c.trig.parentNode === body ? c.trig : null);
   };
   const paint = () => {
+    // 付費標籤跟著目前選的版本走（同一個模型常是新版早鳥付費、舊版免費）
+    c.paidB?.remove();
+    c.paidB = null;
+    const hb = body.querySelector(".hub-badges");
+    if (c.ver?.paid && hb) {
+      c.paidB = el("span", { class: "badge paid", title: paidTip(c.ver.paid) }, paidLabel(c.ver.paid));
+      hb.insertBefore(c.paidB, hb.querySelector(".badge.nsfw"));
+    }
     c.ft.replaceChildren();
     if (c.ver?.installed) c.ft.append(el("span", { class: "badge ok" }, "已安裝"));
-    else if (c.file) c.ft.append(el("button", { class: "btn sm primary", type: "button", onclick: () => download(c, c.ver, c.file) }, `下載（${c.file.size ? fmtBytes(c.file.size) : "?"}）`));
+    else if (c.file) c.ft.append(el("button", { class: "btn sm primary", type: "button", title: c.ver?.paid ? paidTip(c.ver.paid) : "", onclick: () => download(c, c.ver, c.file) },
+      `${c.ver?.paid ? "付費版・" : ""}下載（${c.file.size ? fmtBytes(c.file.size) : "?"}）`));
     else c.ft.append(el("span", { class: "muted sm" }, "這個版本沒有檔案"));
     c.ft.append(link(it));
     const tw = c.ver?.triggers || [];
@@ -245,7 +267,7 @@ function civitaiPart(c, body) {
   c.paint = paint;
   if (vs.length > 1) {
     body.append(el("select", { class: "sm", title: "選擇版本", onchange: (e) => { c.ver = vs.find((v) => String(v.id) === e.target.value); chooseFile(); paint(); } },
-      ...vs.map((v) => el("option", { value: v.id }, `${v.name}${v.published ? "（" + v.published + "）" : ""}${v.base ? "・" + v.base : ""}${v.installed ? " ✓" : ""}`))));
+      ...vs.map((v) => el("option", { value: v.id, selected: v === c.ver }, `${v.name}${v.published ? "（" + v.published + "）" : ""}${v.base ? "・" + v.base : ""}${v.paid ? "・" + paidLabel(v.paid) : ""}${v.installed ? " ✓" : ""}`))));
   }
   chooseFile();
   for (const v of vs) civKeys.set(String(v.id), c);
@@ -305,6 +327,8 @@ async function download(c, ver, f) {
   const it = c.it;
   const fam = ver?.family || it.family, usable = ver ? ver.usable : it.usable;
   if (!usable && !confirm(`「${it.name}」的底模（${ver?.base || it.base || "不明"}）生圖站內建的流程畫不了，下載後只能配匯入的工作流用。還是要下載嗎？`)) return;
+  // 付費版本：生圖站不會幫你花 Buzz；沒在 C 站買過就會下載失敗
+  if (ver?.paid && !confirm(`「${it.name}」的「${ver.name}」是 C 站的${ver.paid.permanent ? "付費版本" : `早鳥版本（${paidDate(ver.paid)} 以前要付費，之後免費）`}。\n要先在 C 站模型頁用 Buzz 買下，生圖站才下載得到；沒買會下載失敗。生圖站不會幫你花 Buzz。\n\n已經買過了，要下載嗎？`)) return;
   const body = { source: it.source, id: it.id, kind: it.kind, family: fam || "", base: ver?.base || it.base || "", version: ver?.id ?? null, title: it.name,
     triggers: ver?.triggers || it.triggers || [], file: { name: f.name, path: f.path, size: f.size, sha256: f.sha256, url: f.url } };
   try {

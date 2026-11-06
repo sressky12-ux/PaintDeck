@@ -135,7 +135,7 @@ pub async fn base_model(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         return Err(bad(format!("找不到模型 {want}")));
     };
     if !families::is_builtin(&fam) {
-        return Err(bad("助手只能用 Anima、Qwen 2.1、MOSS-Image 的模型"));
+        return Err(bad("助手只能用 Anima、Qwen 2.1、MOSS-Image、Krea 2、SDXL 的模型"));
     }
     let s = update(&app, &id, |s| {
         let base = s["settings"]["base"].as_object().cloned().unwrap_or_default();
@@ -685,7 +685,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         let req_imgs = if ag::rounds_used(&events) == 0 { ag::request_user_images(&events) } else { vec![] };
         let refs_mode = match (brain == "cloud", family) {
             (false, f) if f == QWEN21 => "multi",
-            (false, f) if f == ANIMA || f == MOSS => "one",
+            (false, f) if f == ANIMA || f == MOSS || f == families::KREA2 || f == families::SDXL => "one",
             _ => "",
         };
         let system = if uall.is_empty() { system } else { ag::with_images(&system, refs_mode) };

@@ -76,10 +76,13 @@ impl Paths {
         }
     }
 
-    /// 主模型的資料夾：生圖站的 ComfyUI＋外部模型資料夾（model_dirs.rs）。順序跟 ComfyUI 找檔一樣，自己的先
+    /// 主模型的資料夾：生圖站的 ComfyUI＋外部模型資料夾（model_dirs.rs）。順序跟 ComfyUI 找檔一樣，自己的先。
+    /// 最後接 ComfyUI 自己的 models\checkpoints：SDXL 是整包 checkpoint（內建流程用 CheckpointLoaderSimple 載），
+    /// 要找得到檔才判得出家族（外部的 checkpoints 資料夾 model_dirs::effective 本來就算主模型資料夾）
     pub fn unet_roots(&self) -> Vec<PathBuf> {
         let mut v = self.unet_dirs.clone();
         v.extend(crate::model_dirs::roots("diffusion_models"));
+        v.push(self.comfy_root.join("models").join("checkpoints"));
         v
     }
 

@@ -942,7 +942,7 @@ pub fn skill_guide(task: &str, family: &str) -> Option<&'static str> {
     match (task, family) {
         ("anima", _) => Some("anima"),
         ("t2i", "moss") => Some("moss"),
-        ("t2i", "qwen21") => Some("qwen"),
+        ("t2i", "qwen21") | ("t2i", "krea2") => Some("qwen"),
         ("i2i", _) => Some("qwen_edit"),
         _ => None,
     }

@@ -39,10 +39,10 @@ pub const FAMILIES: [Family; 9] = [
     Family { id: "anima", label: "Anima（動漫）", civitai: &["Anima"], modelscope: None, usable: true },
     Family { id: "qwen21", label: "Qwen 2.1（編輯）", civitai: &["Qwen 2.1"], modelscope: Some(&["QWEN_IMAGE_2_1", "QWEN_IMAGE_2_1_TURBO"]), usable: true },
     Family { id: "moss", label: "MOSS-Image（文生圖繪圖）", civitai: &["MOSS Image", "MOSS Image Base"], modelscope: Some(&["MOSS_IMAGE_SFT"]), usable: true },
-    Family { id: "sdxl", label: "SDXL（含 Pony、Illustrious、NoobAI）", civitai: &["SDXL 1.0", "Pony", "Illustrious", "NoobAI"], modelscope: Some(&["SD_XL"]), usable: false },
+    Family { id: "sdxl", label: "SDXL（含 Pony、Illustrious、NoobAI）", civitai: &["SDXL 1.0", "Pony", "Illustrious", "NoobAI"], modelscope: Some(&["SD_XL"]), usable: true },
     Family { id: "sd15", label: "SD 1.5", civitai: &["SD 1.5"], modelscope: Some(&["SD_1_5"]), usable: false },
     Family { id: "flux", label: "Flux", civitai: &["Flux.1 D", "Flux.1 S", "Flux.1 Krea", "Flux.2 D"], modelscope: Some(&["FLUX1_DEV", "FLUX1_KONTEXT", "FLUX2_DEV", "FLUX2_KLEIN_4B", "FLUX2_KLEIN_9B", "FLUX2_KLEIN_BASE_4B", "FLUX2_KLEIN_BASE_9B"]), usable: false },
-    Family { id: "krea2", label: "Krea 2", civitai: &["Krea 2", "Krea 2 Turbo"], modelscope: Some(&["KREA_2_TURBO"]), usable: false },
+    Family { id: "krea2", label: "Krea 2", civitai: &["Krea 2", "Krea 2 Turbo"], modelscope: Some(&["KREA_2_TURBO"]), usable: true },
     Family { id: "ltx", label: "LTX-2.3（影片）", civitai: &["LTXV 2.3", "LTXV2", "LTXV"], modelscope: Some(&["LTX_VIDEO_2_3"]), usable: false },
     Family { id: "h3", label: "MiniMax H3（影片）", civitai: &["MiniMax H3"], modelscope: Some(&["MINIMAX_H3"]), usable: false },
 ];
@@ -153,7 +153,24 @@ fn civitai_file(f: &Value) -> Value {
 }
 
 /// C 站搜尋結果的一個模型 → 統一格式。fam 有給就只留那個家族的版本；一個版本都不剩就是 None
+/// C 站版本的付費狀態（2026-11-06 照 /api/v1/models 實際回應：版本的 paidAccess＝{"permanent": bool, "endsAt": ISO}，
+/// 舊欄位 earlyAccessDeadline 跟 endsAt 一樣；API 沒有價錢）。早鳥期過了＝免費，回 None。
+/// 回 {"permanent": true}（一直要付費）或 {"permanent": false, "ends": "<ISO>"}（早鳥付費，到 ends 之後免費）
+pub fn civitai_paid(v: &Value, now: chrono::DateTime<chrono::Utc>) -> Option<Value> {
+    let pa = &v["paidAccess"];
+    if pa["permanent"].as_bool() == Some(true) {
+        return Some(json!({"permanent": true}));
+    }
+    let ends = pa["endsAt"].as_str().or_else(|| v["earlyAccessDeadline"].as_str())?;
+    let t = chrono::DateTime::parse_from_rfc3339(ends).ok()?.with_timezone(&chrono::Utc);
+    (t > now).then(|| json!({"permanent": false, "ends": ends}))
+}
+
 pub fn civitai_item(m: &Value, kind: &str, fam: &str) -> Option<Value> {
+    civitai_item_at(m, kind, fam, chrono::Utc::now())
+}
+
+fn civitai_item_at(m: &Value, kind: &str, fam: &str, now: chrono::DateTime<chrono::Utc>) -> Option<Value> {
     let want = family(fam).map(|f| f.civitai);
     let versions: Vec<Value> = m["modelVersions"]
         .as_array()?
@@ -166,7 +183,7 @@ pub fn civitai_item(m: &Value, kind: &str, fam: &str) -> Option<Value> {
             let base = v["baseModel"].as_str().unwrap_or("");
             let f = family_of_civitai(base);
             json!({
-                "id": v["id"], "name": v["name"], "base": base, "family": f, "usable": usable(f),
+                "id": v["id"], "name": v["name"], "base": base, "family": f, "usable": usable(f), "paid": civitai_paid(v, now),
                 "published": v["publishedAt"].as_str().map(|s| s.chars().take(10).collect::<String>()),
                 "triggers": v.get("trainedWords").cloned().unwrap_or(json!([])),
                 "files": v["files"].as_array().into_iter().flatten().map(civitai_file).collect::<Vec<_>>(),
@@ -200,6 +217,8 @@ pub fn civitai_item(m: &Value, kind: &str, fam: &str) -> Option<Value> {
         "size": size.unwrap_or(Value::Null), "nsfw": m["nsfw"].as_bool().unwrap_or(false),
         "tags": m["tags"].as_array().map(|t| t.iter().take(8).cloned().collect::<Vec<_>>()).unwrap_or_default(),
         "triggers": first["triggers"], "url": format!("https://civitai.com/models/{}", m["id"]),
+        // 列出來的第一個版本（預設要下載的那個）要不要付費；各版本自己的在 versions[].paid
+        "paid": first["paid"],
         "description": Value::Null, "versions": versions,
     }))
 }
@@ -516,6 +535,29 @@ mod tests {
     }
 
     #[test]
+    fn civitai_paid_versions() {
+        // 2026-11-06 C 站實際回應的格式（模型 3032115 版本 3444766：早鳥到 11/13）
+        let now = chrono::DateTime::parse_from_rfc3339("2026-11-06T12:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        let early = json!({"paidAccess": {"permanent": false, "endsAt": "2026-11-13T12:05:58.857Z"}, "earlyAccessDeadline": "2026-11-13T12:05:58.857Z"});
+        assert_eq!(civitai_paid(&early, now), Some(json!({"permanent": false, "ends": "2026-11-13T12:05:58.857Z"})));
+        // 早鳥期過了＝免費
+        let later = chrono::DateTime::parse_from_rfc3339("2026-11-14T00:00:00Z").unwrap().with_timezone(&chrono::Utc);
+        assert_eq!(civitai_paid(&early, later), None);
+        assert_eq!(civitai_paid(&json!({"paidAccess": {"permanent": true, "endsAt": null}}), later), Some(json!({"permanent": true})));
+        // 只有舊欄位、或完全沒有
+        assert!(civitai_paid(&json!({"earlyAccessDeadline": "2026-11-10T00:00:00Z"}), now).is_some());
+        assert_eq!(civitai_paid(&json!({"paidAccess": null, "availability": "Public"}), now), None);
+        let m = json!({"id": 9, "name": "Lemon", "creator": {"username": "u"}, "stats": {},
+            "modelVersions": [
+                {"id": 3, "name": "v1", "baseModel": "Anima", "paidAccess": {"permanent": false, "endsAt": "2026-11-13T12:05:58.857Z"}, "files": [], "images": []},
+                {"id": 4, "name": "v0", "baseModel": "Anima", "paidAccess": null, "files": [], "images": []}
+            ]});
+        let it = civitai_item_at(&m, "lora", "anima", now).unwrap();
+        assert_eq!(it["paid"]["ends"], "2026-11-13T12:05:58.857Z");
+        assert!(it["versions"][1]["paid"].is_null());
+    }
+
+    #[test]
     fn civitai_query_and_item() {
         let q = civitai_query("lora", "moss", " cat ", "newest", true, "abc");
         assert!(q.contains(&("types", "LORA".into())) && q.contains(&("types", "DoRA".into())));
@@ -536,9 +578,9 @@ mod tests {
         assert_eq!(it["size"], 1048576);
         assert_eq!(it["cover"], "https://image.civitai.com/x/width=450/b.jpeg"); // 尺度最低的那張、縮小
         assert_eq!(it["images"], json!([{"url": "https://image.civitai.com/x/width=450/a.jpeg", "nsfw": 4}, {"url": "https://image.civitai.com/x/width=450/b.jpeg", "nsfw": 1}])); // 影片不算
-        // 不限底模：兩個版本都在，第一個是 SDXL（生圖站用不了）
+        // 不限底模：兩個版本都在，第一個是 SDXL（2026-11-06 起內建流程畫得了）
         let all = civitai_item(&m, "lora", "").unwrap();
-        assert_eq!((all["versions"].as_array().unwrap().len(), all["usable"].as_bool()), (2, Some(false)));
+        assert_eq!((all["versions"].as_array().unwrap().len(), all["usable"].as_bool()), (2, Some(true)));
         assert!(civitai_item(&m, "lora", "qwen21").is_none());
     }
 

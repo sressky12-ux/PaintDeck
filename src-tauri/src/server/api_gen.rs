@@ -19,6 +19,7 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
         let c = &app.comfy;
         let wanted = [
             ("unets", "UNETLoader", "unet_name"),
+            ("ckpts", "CheckpointLoaderSimple", "ckpt_name"),
             ("loras_all", "LoraLoaderModelOnly", "lora_name"),
             ("upscalers", "UpscaleModelLoader", "model_name"),
             ("samplers", "KSampler", "sampler_name"),
@@ -45,10 +46,21 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
             .filter_map(|v| v.as_str().map(str::to_owned))
             .collect()
     };
-    let (unets, loras_all) = (names("unets"), names("loras_all"));
+    let (mut unets, loras_all) = (names("unets"), names("loras_all"));
     let meta = app.db.lora_meta()?;
     let p = &app.paths;
     let (unet_roots, lora_roots) = (p.unet_roots(), p.lora_roots());
+    // SDXL 是整包 checkpoint（CheckpointLoaderSimple 的清單）：判得出 SDXL 的併進主模型清單，生成頁選單才列得到。
+    // 其他 checkpoint（SAM3、SDPose、LTX 整包檔…）不列；外部資料夾同時算主模型資料夾的，同名只列一次
+    for n in names("ckpts") {
+        if !unets.contains(&n) && families::family_of(&unet_roots, &n) == families::SDXL {
+            unets.push(n);
+        }
+    }
+    models.remove("ckpts");
+    if models.contains_key("unets") {
+        models.insert("unets".into(), json!(unets));
+    }
     let lfam: HashMap<&str, &str> = loras_all
         .iter()
         .map(|n| {
@@ -107,6 +119,13 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
         models.insert("dirs_pending".into(), json!({"list": list, "can_restart": app.restart_comfy.get().is_some()}));
         models.insert("comfy_updated".into(), json!({"list": crate::setup::updated(), "can_restart": app.restart_comfy.get().is_some()}));
     }
+    // SDXL 的子標籤（Pony／Illustrious／NoobAI…，看檔頭 metadata，看不出來就不列）：網頁拿來換說明文字（Pony 要寫 score tag）
+    let unet_sub: Map<String, Value> = unets
+        .iter()
+        .filter(|n| unet_family.get(n.as_str()).and_then(Value::as_str) == Some(families::SDXL))
+        .filter_map(|n| families::sublabel_of(&unet_roots, n).map(|s| (n.clone(), json!(s))))
+        .collect();
+    models.insert("unet_sub".into(), Value::Object(unet_sub));
     models.insert("unet_family".into(), Value::Object(unet_family));
     models.insert(
         "family_names".into(),

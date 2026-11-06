@@ -4,7 +4,8 @@
 //! 五種模式：txt2img、img2img、inpaint、multiref（Qwen 2.1 限定）、upscale。
 //! 兩個家族：anima（CLIPTextEncode＋qwen_image_vae，可用 LLLite、Turbo LoRA）、
 //!           qwen21（TextEncodeQwenImage21＋2.1 專用 VAE；圖生圖把輸入圖當參考圖）、
-//!           moss（MOSS-Image：moss_image 文字編碼器＋FLUX.2 VAE、AuraFlow 位移、跳第 22 層）。
+//!           moss（MOSS-Image：moss_image 文字編碼器＋FLUX.2 VAE、AuraFlow 位移、跳第 22 層）、
+//!           krea2（Krea 2：Qwen3-VL-4B 文字編碼器＋qwen_image_vae；照 ComfyUI 0.43 內建範本「Text to Image (Krea-2 Turbo)」）。
 //! Qwen 2.1 在 2.0.19 拿掉、2.1.3 裝回（使用者要求），跟 MOSS 並存：選哪個模型就走哪一套。
 //!
 //! 跟 Python 對齊的細節：
@@ -34,6 +35,17 @@ pub const MOSS_TE: &str = "qwen3.5_9b_w4a8_gptq.safetensors";
 pub const MOSS_TE_4B: &str = "Qwen3.5-4B_int8_convrot.safetensors";
 pub const MOSS_4B_ADAPTER: &str = "moss_qwen35_4b_to_9b_1600_train.safetensors";
 pub const MOSS_VAE: &str = "flux2-vae.safetensors";
+/// Krea 2（Comfy-Org/Krea-2 的 ComfyUI 版檔案，ComfyUI 0.43 內建支援）：Qwen3-VL-4B 文字編碼器（CLIPLoader type krea2）＋
+/// 跟 Anima 同一顆 qwen_image_vae。官方 Turbo 範本：8 步、CFG 1、euler＋simple、負面＝ConditioningZeroOut（shift 1.15 是模型預設，不用另外接）
+pub const KREA2_TE: &str = "qwen3vl_4b_int8_convrot.safetensors";
+/// SDXL 系（Illustrious、NoobAI、Pony）的預設負面詞：NoobAI-XL 1.1 官方說明的負面詞，拿掉 nsfw 和防獸人的那幾個
+pub const SDXL_NEG: &str = "worst quality, old, early, low quality, lowres, signature, username, logo, bad hands, mutated hands";
+
+/// SDXL 的加速版（Lightning、Hyper、Turbo、DMD2、LCM）：檔名看得出來就用 8 步、低 CFG
+pub fn is_fast_sdxl(model: &str) -> bool {
+    let m = model.to_lowercase();
+    ["lightning", "hyper", "turbo", "dmd", "lcm"].iter().any(|k| m.contains(k))
+}
 const MOSS_SHIFT: f64 = 5.0;
 const MOSS_SKIP_LAYERS: &str = "22";
 const TILED_ABOVE: i64 = 2_400_000;
@@ -320,6 +332,20 @@ impl Graph {
     fn moss(&self) -> bool {
         self.family == "moss"
     }
+    fn krea2(&self) -> bool {
+        self.family == "krea2"
+    }
+    /// SDXL：整包 checkpoint，文字編碼器和 VAE 從 CheckpointLoaderSimple 拿（model_chain 設好 clip／vae）
+    fn sdxl(&self) -> bool {
+        self.family == "sdxl"
+    }
+    /// 一般 CLIPTextEncode 家族的負面條件。Krea 2 在 CFG ≤ 1（Turbo）時跟官方範本一樣把正面條件歸零當負面，省掉一次 4B 編碼
+    fn neg_text(&mut self, pos: &Ref, negative: &str, cfg: f64) -> Ref {
+        if self.krea2() && cfg <= 1.0 {
+            return self.add("ConditioningZeroOut", json!({"conditioning": pos}));
+        }
+        self.text(negative)
+    }
     /// 空白 latent：MOSS 用 FLUX.2 的 latent 空間（128 通道），其他家族用一般的
     fn empty_latent(&mut self, w: i64, h: i64) -> Ref {
         let cls = if self.moss() { "EmptyFlux2LatentImage" } else { "EmptyLatentImage" };
@@ -348,6 +374,11 @@ impl Graph {
                 self.add(
                     "CLIPLoader",
                     json!({"clip_name": MOSS_TE, "type": "moss_image", "device": "default"}),
+                )
+            } else if self.krea2() {
+                self.add(
+                    "CLIPLoader",
+                    json!({"clip_name": KREA2_TE, "type": "krea2", "device": "default"}),
                 )
             } else {
                 self.add(
@@ -432,6 +463,9 @@ type Lllite = (&'static str, Ref, Option<Ref>, f64, f64, f64);
 
 fn model_chain(g: &mut Graph, p: &Value, lll: Vec<Lllite>) -> Ref {
     let model_name = s(p.get("model"), "");
+    if g.sdxl() {
+        return sdxl_chain(g, p);
+    }
     let mut m = g.add(
         "UNETLoader",
         json!({"unet_name": p.get("model"), "weight_dtype": "default"}),
@@ -507,6 +541,29 @@ fn model_chain(g: &mut Graph, p: &Value, lll: Vec<Lllite>) -> Ref {
             );
         }
     }
+    m
+}
+
+/// SDXL：CheckpointLoaderSimple 一次給 MODEL／CLIP／VAE；LoRA 用 LoraLoader（連文字編碼器一起套，跟 A1111 一樣）。
+/// clip skip 不用另外接：ComfyUI 的 SDXL 兩顆 CLIP 本來就取倒數第二層（等於 A1111 的 clip skip 2）
+fn sdxl_chain(g: &mut Graph, p: &Value) -> Ref {
+    let ck = g.add("CheckpointLoaderSimple", json!({"ckpt_name": p.get("model")}));
+    let (mut m, mut clip) = (ck.clone(), Graph::slot(&ck, 1));
+    g.vae = Some(Graph::slot(&ck, 2));
+    if let Some(Value::Array(ls)) = p.get("loras") {
+        for l in ls {
+            let enabled = l.get("enabled").map(|v| truthy(Some(v))).unwrap_or(true);
+            let st = f(l.get("strength"), 1.0);
+            if enabled && st != 0.0 {
+                let lo = g.add(
+                    "LoraLoader",
+                    json!({"model": m, "clip": clip, "lora_name": l.get("name"), "strength_model": st, "strength_clip": st}),
+                );
+                (m, clip) = (lo.clone(), Graph::slot(&lo, 1));
+            }
+        }
+    }
+    g.clip = Some(clip);
     m
 }
 
@@ -895,7 +952,9 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 (a, b)
             } else {
                 let t = lay.as_ref().map_or_else(|| prompt.clone(), |l| l.prompt(w0, h0));
-                (g.text(&t), g.text(&negative))
+                let pos = g.text(&t);
+                let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
+                (pos, neg)
             };
             let (pos, neg) = if g.moss() { moss_control(&mut g, p, pos, neg, w0, h0) } else { (pos, neg) };
             // 姿勢參考圖（MOSS）：MOSS 沒有 ControlNet，改成從 3D 人偶的深度圖出發、重繪 0.95（Qwen 2.1 走 model_chain 裡的 Fun ControlNet）。
@@ -970,7 +1029,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 };
             } else {
                 pos = g.text(&lay.as_ref().map_or_else(|| prompt.clone(), |l| l.prompt(w0, h0)));
-                neg = g.text(&negative);
+                neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
                 lat = g.encode(&src, w0, h0);
             }
             let smp = sample(
@@ -1079,7 +1138,9 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 let (a, b, _) = g.qtext(&qp, &negative, std::slice::from_ref(&work));
                 (a, b)
             } else {
-                (g.text(&prompt), g.text(&negative))
+                let pos = g.text(&prompt);
+                let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
+                (pos, neg)
             };
             let enc = g.encode(&work, w0, h0);
             let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
@@ -1321,7 +1382,11 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             let extra = s(dt.get("extra"), "").trim();
             let text = if extra.is_empty() { prompt.clone() } else { format!("{prompt}, {extra}") };
             let model = model_chain(&mut g, p, vec![]);
-            let shared = (!q).then(|| (g.text(&text), g.text(&negative)));
+            let cfg = f(p.get("cfg"), 0.0);
+            let shared = (!q).then(|| {
+                let pos = g.text(&text);
+                (pos.clone(), g.neg_text(&pos, &negative, cfg))
+            });
             let mut cur = g.add("LoadImage", json!({"image": init}));
             for (k, m) in masks.iter().enumerate() {
                 let Some(bb) = mask_bbox(&inp(m))? else {
@@ -1407,7 +1472,9 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                     let (a, b, _) = g.qtext(&prompt, &negative, &[]);
                     (a, b)
                 } else {
-                    (g.text(&prompt), g.text(&negative))
+                    let pos = g.text(&prompt);
+                    let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
+                    (pos, neg)
                 };
                 let lat = g.encode(&im, w0, h0);
                 let smp = sample(
@@ -1464,6 +1531,93 @@ mod tests {
         let (n1, _) = build(&p1, &dir, 0).unwrap();
         assert!(!n1.values().any(|v| v["class_type"] == "SkipLayerGuidanceDiTSimple"));
         assert!(n1.values().any(|v| v["class_type"] == "ModelSamplingAuraFlow"));
+    }
+
+    #[test]
+    fn krea2_txt2img_graph() {
+        // 照 ComfyUI 內建範本 Text to Image (Krea-2 Turbo)：CLIPLoader type krea2、qwen_image_vae、負面＝ConditioningZeroOut、KSampler 8 步 CFG 1
+        let dir = std::env::temp_dir();
+        let p = json!({"mode": "txt2img", "family": "krea2", "model": "krea2_turbo_int8_convrot.safetensors", "prompt": "a cat", "negative": "blurry",
+                       "seed": 1, "width": 1024, "height": 1024, "steps": 8, "cfg": 1, "sampler": "euler", "scheduler": "simple",
+                       "loras": [{"name": "krea2_darkbrush.safetensors", "strength": 0.8}]});
+        let (n, info) = build(&p, &dir, 0).unwrap();
+        let by = |n: &Map<String, Value>, c: &str| n.values().filter(|v| v["class_type"] == c).cloned().collect::<Vec<_>>();
+        let clip = &by(&n, "CLIPLoader")[0];
+        assert_eq!((clip["inputs"]["type"].clone(), clip["inputs"]["clip_name"].clone()), (json!("krea2"), json!(KREA2_TE)));
+        assert_eq!(by(&n, "VAELoader")[0]["inputs"]["vae_name"], VAE);
+        assert_eq!(by(&n, "EmptyLatentImage").len(), 1);
+        let zero = &by(&n, "ConditioningZeroOut");
+        assert_eq!(zero.len(), 1);
+        assert_eq!(by(&n, "CLIPTextEncode").len(), 1, "CFG 1 不用編碼負面詞");
+        let ks = &by(&n, "KSampler")[0]["inputs"];
+        assert_eq!((ks["steps"].clone(), ks["cfg"].clone(), ks["scheduler"].clone()), (json!(8), json!(1.0), json!("simple")));
+        assert_eq!(n[ks["negative"][0].as_str().unwrap()]["class_type"], "ConditioningZeroOut");
+        assert_eq!(by(&n, "LoraLoaderModelOnly")[0]["inputs"]["lora_name"], "krea2_darkbrush.safetensors");
+        assert!(by(&n, "ModelSamplingAuraFlow").is_empty() && by(&n, "AnimaLLLiteApply").is_empty());
+        assert_eq!(info["family"], "krea2");
+        // Raw（CFG > 1）：負面詞照常編碼
+        let mut raw = p.clone();
+        raw["cfg"] = json!(4);
+        let (n2, _) = build(&raw, &dir, 0).unwrap();
+        assert!(by(&n2, "ConditioningZeroOut").is_empty());
+        assert_eq!(by(&n2, "CLIPTextEncode").len(), 2);
+    }
+
+    #[test]
+    fn sdxl_checkpoint_graphs() {
+        // SDXL：CheckpointLoaderSimple 一顆給 MODEL／CLIP／VAE；LoRA 用 LoraLoader 連 CLIP 一起套；負面詞照常編碼
+        let dir = play_dir("sdxl", 640, 480, &[(100, 100, 300, 300)]);
+        let p = json!({"mode": "txt2img", "family": "sdxl", "model": "NoobAI-XL-v1.1.safetensors", "prompt": "1girl", "negative": SDXL_NEG,
+                       "seed": 1, "width": 832, "height": 1216, "steps": 28, "cfg": 5, "sampler": "euler_ancestral", "scheduler": "normal",
+                       "turbo_lora": "anima-turbo-lora-v0.2.safetensors",
+                       "loras": [{"name": "a.safetensors", "strength": 0.8}, {"name": "off.safetensors", "enabled": false}, {"name": "b.safetensors", "strength": 0.5}],
+                       "hires": {"enabled": true, "scale": 1.5, "denoise": 0.4}});
+        let (n, info) = build(&p, &dir, 0).unwrap();
+        for c in ["UNETLoader", "CLIPLoader", "VAELoader", "LoraLoaderModelOnly", "AnimaLLLiteApply"] {
+            assert!(by_class(&n, c).is_empty(), "SDXL 不該有 {c}");
+        }
+        let ck = by_class(&n, "CheckpointLoaderSimple");
+        assert_eq!(ck.len(), 1);
+        assert_eq!(ck[0]["inputs"]["ckpt_name"], "NoobAI-XL-v1.1.safetensors");
+        let ck_id = n.iter().find(|(_, v)| v["class_type"] == "CheckpointLoaderSimple").unwrap().0.clone();
+        let lo = by_class(&n, "LoraLoader");
+        assert_eq!(lo.len(), 2, "停用的 LoRA 不接");
+        assert_eq!((lo[0]["inputs"]["model"].clone(), lo[0]["inputs"]["clip"].clone()), (json!([ck_id, 0]), json!([ck_id, 1])));
+        assert_eq!((lo[1]["inputs"]["lora_name"].clone(), lo[1]["inputs"]["strength_clip"].clone()), (json!("b.safetensors"), json!(0.5)));
+        let last = n.iter().find(|(_, v)| v["inputs"]["lora_name"] == "b.safetensors").unwrap().0.clone();
+        let te = by_class(&n, "CLIPTextEncode");
+        assert_eq!(te.len(), 2, "CFG 5：正負都要編碼");
+        assert!(te.iter().all(|x| x["inputs"]["clip"] == json!([last, 1])), "文字編碼器要接最後一顆 LoRA 的 CLIP");
+        assert!(te.iter().any(|x| x["inputs"]["text"] == SDXL_NEG));
+        let ks = by_class(&n, "KSampler");
+        assert_eq!(ks.len(), 2, "高解析修復第二段");
+        assert!(ks.iter().all(|k| k["inputs"]["model"] == json!([last, 0])));
+        assert_eq!((ks[0]["inputs"]["sampler_name"].clone(), ks[0]["inputs"]["cfg"].clone()), (json!("euler_ancestral"), json!(5.0)));
+        assert!(by_class(&n, "VAEDecode").iter().chain(by_class(&n, "VAEEncode").iter()).all(|x| x["inputs"]["vae"] == json!([ck_id, 2])));
+        assert_eq!(by_class(&n, "EmptyLatentImage").len(), 1);
+        assert_eq!((info["family"].clone(), info["width"].clone()), (json!("sdxl"), json!(1248)));
+        // 圖生圖、局部重繪、修細節、放大精修：都只有一顆 checkpoint，VAE 也從它拿
+        let cases = [
+            json!({"mode": "img2img", "init_image": "in.png", "denoise": 0.6}),
+            json!({"mode": "inpaint", "init_image": "in.png", "mask": "m0.png", "inpaint": {"area": "masked", "method": "lllite"}}),
+            json!({"mode": "detail", "init_image": "in.png", "detail": {"masks": ["m0.png"]}}),
+            json!({"mode": "upscale", "init_image": "in.png", "upscale": {"scale": 2, "refine": true}}),
+        ];
+        for c in cases {
+            let mut q = p.clone();
+            q["hires"] = json!({});
+            for (k, v) in c.as_object().unwrap() {
+                q[k] = v.clone();
+            }
+            let (n, _) = build(&q, &dir, 0).unwrap_or_else(|e| panic!("{c}: {e}"));
+            assert_eq!(by_class(&n, "CheckpointLoaderSimple").len(), 1, "{c}");
+            for cl in ["UNETLoader", "CLIPLoader", "VAELoader", "AnimaLLLiteApply"] {
+                assert!(by_class(&n, cl).is_empty(), "{c} 不該有 {cl}");
+            }
+            let ck_id = n.iter().find(|(_, v)| v["class_type"] == "CheckpointLoaderSimple").unwrap().0.clone();
+            assert!(by_class(&n, "VAEEncode").iter().all(|x| x["inputs"]["vae"] == json!([ck_id, 2])), "{c}");
+        }
+        assert!(is_fast_sdxl("sdxl_lightning_8step.safetensors") && is_fast_sdxl("noobai_DMD2.safetensors") && !is_fast_sdxl("NoobAI-XL-v1.1.safetensors"));
     }
 
     #[test]
