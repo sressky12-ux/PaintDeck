@@ -1122,6 +1122,23 @@
    "preview": "fwaun-style_qwen_image_2_1_v50.jpg",
    "strength": 0.8
   },
+  "qwen21\\PornMaster_QI2.1_Age_Slider_V1.safetensors": {
+   "title": "PornMaster Qwen Image 2.1 Age Slider",
+   "modelId": 2954120,
+   "versionId": 3346090,
+   "version": "V1",
+   "triggers": [],
+   "tags": [
+    "age",
+    "pornmaster",
+    "slider",
+    "tool"
+   ],
+   "nsfw": false,
+   "url": "https://civitai.com/models/2954120",
+   "preview": "PornMaster_QI2.1_Age_Slider_V1.jpg",
+   "strength": 0.8
+  },
   "qwen21\\Qwen-Image-2.1-viggle-turbo-4step-lora-r64.safetensors": {
    "title": "[ Accelerator LoRAs ] Applicable to QW21 | Minimax H3 | HYVideo TURBO/LIGHTNING/DMD/FAST",
    "modelId": 1063735,
@@ -1211,6 +1228,24 @@
    "base_model": "MOSS",
    "min": -3,
    "max": 3
+  },
+  "moss\\Excellent-Loras\\滑块\\age slider_-5_+1.5.safetensors": {
+   "title": "年齡滑桿",
+   "note": "【滑桿】年齡：負的變年輕、正的變老。範圍 -5～+1.5",
+   "triggers": [],
+   "strength": -1.0,
+   "base_model": "MOSS",
+   "min": -5,
+   "max": 1.5
+  },
+  "moss\\Excellent-Loras\\滑块\\age_silder_rank2_-1_+1.safetensors": {
+   "title": "年齡滑桿（輕）",
+   "note": "【滑桿】年齡（輕量版，改得比較溫和）：負的變年輕、正的變老。範圍 -1～+1",
+   "triggers": [],
+   "strength": -0.5,
+   "base_model": "MOSS",
+   "min": -1,
+   "max": 1
   },
   "moss\\Excellent-Loras\\滑块\\体重滑块weight_slider_moss_v5_W_-5+5.safetensors": {
    "title": "體重滑桿",

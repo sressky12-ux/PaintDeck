@@ -504,6 +504,15 @@
     "nsfw": 1
    }
   },
+  "qwen21\\PornMaster_QI2.1_Age_Slider_V1.safetensors": {
+   "title": "PornMaster Qwen Image 2.1 Age Slider",
+   "civitai": {
+    "model": 2954120,
+    "version": 3346090,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ec8a09f6-98b7-44c3-913b-c88c2c0cc3f9/width=450/143419355.jpeg",
+    "nsfw": 1
+   }
+  },
   "qwen21\\Qwen-Image-2.1-viggle-turbo-4step-lora-r64.safetensors": {
    "title": "[ Accelerator LoRAs ] Applicable to QW21 | Minimax H3 | HYVideo TURBO/LIGHTNING/DMD/FAST",
    "civitai": {
@@ -607,6 +616,32 @@
     "version": 3431367,
     "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/08664298-f1e1-4e76-9ed6-2ce4b74fb79d/width=450/146902694.jpeg",
     "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\age slider_-5_+1.5.safetensors": {
+   "title": "年齡滑桿",
+   "civitai": {
+    "model": 3008515,
+    "version": 3413819,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e4a15fe2-1668-4c34-af94-54239305f9a8/width=450/146054514.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\age_silder_rank2_-1_+1.safetensors": {
+   "title": "年齡滑桿（輕）",
+   "civitai": {
+    "model": 3008912,
+    "version": 3414383,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/aab34051-68d5-4bfe-86d1-0f81decee19a/width=450/146082686.jpeg",
+    "nsfw": 1
    },
    "modelscope": {
     "id": "gordonz/Excellent-Loras-for-MossImage",

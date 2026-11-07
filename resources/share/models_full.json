@@ -357,6 +357,13 @@
     "note": "Pruna 加速 8 步（Qwen 2.1）"
   },
   {
+    "path": "loras/qwen21/PornMaster_QI2.1_Age_Slider_V1.safetensors",
+    "size": 3301944,
+    "sha256": "b8dd016e224b6346cc26c9a4a7dcc7d0168ad8a1b74307d3bfb3fce4b14afbdb",
+    "url": "https://civitai.com/api/download/models/3346090?fileId=3233012",
+    "note": "PornMaster Qwen Image 2.1 Age Slider"
+  },
+  {
     "path": "loras/qwen21/Pornmaster_QI2.1_Breasts_Slider_V1.safetensors",
     "size": 3301944,
     "sha256": "b73b79deeffc4de8157c1db10532b5db775aab5e703fa85166f2c9fe89c3caae",
@@ -683,6 +690,20 @@
     "sha256": "bc601a20c2ee34063b03380e7d750c0f9ccb7e85cb1a501578d02c75e84fa33f",
     "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/a06b2d69d782790d02ce26562b97ea1bfb4d40a2/%E6%BB%91%E5%9D%97/%E7%BE%8E%E5%A6%86%E6%BB%A4%E9%95%9C%E6%BB%91%E5%9D%97_beautyFilter_-3to3.safetensors",
     "note": "MOSS 合集：美顏濾鏡滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/age slider_-5_+1.5.safetensors",
+    "size": 18196296,
+    "sha256": "a84986bbdc8ebd2989ee54ca339024e3b6189f2caa108f78dbd8cadeba0b105d",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/131b1e10f18237a30e4fb6e45fdf0e8e481e37ee/%E6%BB%91%E5%9D%97/age%20slider_-5_%2B1.5.safetensors",
+    "note": "MOSS 合集：年齡滑桿"
+  },
+  {
+    "path": "loras/moss/Excellent-Loras/滑块/age_silder_rank2_-1_+1.safetensors",
+    "size": 9372000,
+    "sha256": "b993b42d9e759975772d23fd37ccd613bbb5a5045f30171f11e748a46d752469",
+    "url": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/967af18e145601b64dfad44649c4cde03274d65c/%E6%BB%91%E5%9D%97/age_silder_rank2_-1_%2B1.safetensors",
+    "note": "MOSS 合集：年齡滑桿（輕）"
   },
   {
     "path": "loras/moss/Excellent-Loras/滑块/体重滑块weight_slider_moss_v5_W_-5+5.safetensors",
