@@ -3,6 +3,8 @@
 #   1. anima-server（無視窗）用空的資料資料夾開起來，/api/state、首頁要回 200
 #   2. AppImage 在 xvfb 裡開起來（第一次開＝安裝精靈），8190 要有回應
 #   3. deb 解開看檔案有沒有放對（主程式、resources、ui、libonnxruntime.so）
+#      套件名要合 Debian 規定、Depends 不重複、選單 .desktop 有中文名
+#   4. 有免密碼 sudo（CI）就真的 apt 裝 deb，開裝好的 /usr/bin/anima-server，再移除
 # 用法：bash tools/linux_smoke.sh <target/release 資料夾>
 set -uo pipefail
 
@@ -86,6 +88,44 @@ else
   for want in usr/bin/anima-app usr/bin/anima-server /resources/poses/ /ui/index.html libonnxruntime.so; do
     if grep -q -- "$want" "$work/deb.txt"; then echo "  有 $want"; else echo "  缺 $want"; fail=1; fi
   done
+  # Debian 的套件名只能是小寫 ASCII 字母數字和 + . -，開頭要是字母或數字（26.1108.1 是「繪匣-paint-deck」，dpkg 拒裝）
+  pkg="$(dpkg-deb -f "$deb" Package)"
+  if printf '%s' "$pkg" | grep -Eq '^[a-z0-9][a-z0-9+.-]+$'; then echo "  套件名 $pkg"; else echo "  套件名不合 Debian 規定：$pkg"; fail=1; fi
+  deps="$(dpkg-deb -f "$deb" Depends)"
+  echo "  Depends: $deps"
+  for want in libwebkit2gtk-4.1-0 libgtk-3-0; do
+    printf '%s' "$deps" | grep -q "$want" || { echo "  Depends 缺 $want"; fail=1; }
+  done
+  dup="$(printf '%s' "$deps" | tr ',' '\n' | sed 's/^ *//' | sort | uniq -d)"
+  [ -z "$dup" ] || { echo "  Depends 重複：$dup"; fail=1; }
+  dpkg-deb -x "$deb" "$work/debx"
+  desk="$(ls "$work"/debx/usr/share/applications/*.desktop 2>/dev/null | head -1)"
+  if [ -n "$desk" ] && grep -q '^Name\[zh_TW\]=繪匣 PaintDeck$' "$desk"; then
+    echo "  選單：$(basename "$desk")（有中文名）"
+    if command -v desktop-file-validate >/dev/null; then desktop-file-validate "$desk" || fail=1; fi
+  else
+    echo "  .desktop 不對：$desk"; fail=1
+  fi
+
+  echo "== 4. 真的用 apt 裝 deb，開裝好的 anima-server"
+  if sudo -n true 2>/dev/null; then
+    if sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "$deb" >"$work/apt.log" 2>&1; then
+      dpkg -s "$pkg" | grep -E '^(Status|Version):'
+      env -i PATH=/usr/bin:/bin HOME="$work/debhome" /usr/bin/anima-server --port 8193 >"$work/deb-server.log" 2>&1 &
+      pids+=($!)
+      if wait_http http://127.0.0.1:8193/ 60 && curl -s http://127.0.0.1:8193/ | grep -q "安裝與修復"; then
+        echo "  裝好的 anima-server 找得到網頁（精靈 OK）"
+      else
+        fail=1; cat "$work/deb-server.log"
+      fi
+      kill "${pids[-1]}" 2>/dev/null
+      sudo apt-get remove -y "$pkg" >/dev/null 2>&1 && echo "  已移除"
+    else
+      echo "  apt 裝不起來"; cat "$work/apt.log"; fail=1
+    fi
+  else
+    echo "  沒有免密碼 sudo，跳過"
+  fi
 fi
 
 exit $fail

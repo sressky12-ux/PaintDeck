@@ -86,9 +86,12 @@ pub fn linux_lib_dir() -> Option<PathBuf> {
     }
     let exe = std::env::current_exe().ok()?;
     let lib = exe.parent()?.parent()?.join("lib");
-    let named = lib.join("繪匣 PaintDeck");
-    if named.join("resources").join("poses").is_dir() {
-        return Some(named);
+    // 26.1108.2 起 Linux 的 productName 是 PaintDeck（deb 的套件名不能有中文）；舊包是「繪匣 PaintDeck」
+    for name in ["PaintDeck", "繪匣 PaintDeck"] {
+        let named = lib.join(name);
+        if named.join("resources").join("poses").is_dir() {
+            return Some(named);
+        }
     }
     std::fs::read_dir(&lib)
         .ok()?

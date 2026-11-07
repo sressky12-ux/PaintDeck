@@ -1,2 +1,3 @@
 *.bat -text
 *.sh text eol=lf
+*.desktop text eol=lf

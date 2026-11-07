@@ -1,0 +1,17 @@
+[Desktop Entry]
+Type=Application
+Name=PaintDeck
+Name[zh_TW]=繪匣 PaintDeck
+Name[zh_HK]=繪匣 PaintDeck
+Name[zh_CN]=绘匣 PaintDeck
+GenericName=AI Image Generator
+GenericName[zh_TW]=AI 生圖
+GenericName[zh_CN]=AI 生图
+Comment=Local AI image generation (ComfyUI front-end)
+Comment[zh_TW]=本機 AI 生圖（ComfyUI 前端）
+Comment[zh_CN]=本机 AI 生图（ComfyUI 前端）
+Exec=anima-app
+Icon=anima-app
+StartupWMClass=anima-app
+Terminal=false
+Categories=Graphics;
