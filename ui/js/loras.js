@@ -53,7 +53,42 @@ function agentDesc(l) {
   return el("div", { class: "agent-desc", title: (a.src === "user" ? "你寫的" : a.src === "probe" ? "助手試畫比較後寫的" : "助手讀線索寫的") + "（給助手挑 LoRA 用）\n" + a.desc },
     el("span", { class: "ag-kind" + (a.sure === false ? " unsure" : "") }, "助手：" + (KIND_ZH[a.kind] || a.kind || "其他") + (a.sure === false ? "？" : "")), a.desc_zh || a.desc);
 }
-const preview = (l) => l.preview ? `url(/lora_preview/${encodeURIComponent(l.preview)})` : l.local_preview ? `url(/api/loras/local-preview?name=${encodeURIComponent(l.name)})` : "";
+const previewUrl = (l) => l.preview ? `/lora_preview/${encodeURIComponent(l.preview)}` : l.local_preview ? `/api/loras/local-preview?name=${encodeURIComponent(l.name)}` : "";
+// 模糊成人預覽圖：LoRA 標成人的，或封面那張圖 C 站的尺度等級大於 1（同下載中心的 cover_nsfw）
+const blurOf = (l) => !!app.state?.settings?.blur_nsfw && (!!l.nsfw || (l.preview_nsfw ?? l.cover_nsfw ?? 1) > 1);
+
+// 卡片上方的圖：有圖用 <img>（載不出來換成寫著名字的替代卡）；還在抓封面的先寫名字＋「正在抓封面…」（2026-11-07：預載的 LoRA 整片黑不好找）
+function ph(l, attrs = {}) {
+  const box = el("div", { class: "ph", "data-lora": l.name, ...attrs });
+  fillPh(box, l);
+  return box;
+}
+function fillPh(box, l) {
+  const url = previewUrl(l);
+  const noImg = (waiting) => [el("div", { class: "ph-name" }, title(l)), el("div", { class: "ph-note" }, waiting ? "正在抓封面…" : "沒有預覽圖")];
+  box.classList.toggle("blur", blurOf(l));
+  if (!url) return box.replaceChildren(...noImg(l.cover && !l.coverFailed));
+  const img = el("img", { class: "ph-img", src: url, loading: "lazy", alt: "" });
+  img.onerror = () => box.replaceChildren(...noImg(false));
+  box.replaceChildren(img);
+}
+// 沒預覽圖、抓得到封面的（/api/state 的 cover）：後端在背景抓，抓完廣播 lora_cover（main.js 轉給 onCover）
+const coverAsked = new Set();
+function askCovers(items) {
+  const names = items.filter((l) => l.cover && !l.preview && !coverAsked.has(l.name)).map((l) => l.name);
+  if (!names.length) return;
+  for (const n of names) coverAsked.add(n);
+  api("/api/loras/covers", { json: { names } }).catch(() => { for (const n of names) coverAsked.delete(n); });
+}
+export function onCover(m) {
+  for (const l of [list.find((x) => x.name === m.name), app.state?.models?.loras?.find((x) => x.name === m.name)]) {
+    if (!l) continue;
+    if (m.failed) l.coverFailed = true;
+    else Object.assign(l, { preview: m.preview, preview_nsfw: m.nsfw });
+  }
+  const l = list.find((x) => x.name === m.name);
+  if (l) for (const box of document.querySelectorAll(".ph[data-lora]")) if (box.dataset.lora === m.name) fillPh(box, l);
+}
 
 function fillFilters() {
   const fill = (id, options) => {
@@ -81,6 +116,7 @@ function renderPage(reset = true) {
   if (reset) { shown = 0; g.replaceChildren(); }
   const end = Math.min(items.length, shown + PAGE);
   for (const l of items.slice(shown, end)) g.append(card(l));
+  askCovers(items.slice(shown, end));
   shown = end;
   $("#loraMore").hidden = shown >= items.length;
   $("#loraTotal").textContent = `${items.length} / ${list.length} 個`;
@@ -89,9 +125,8 @@ function renderPage(reset = true) {
 }
 
 function card(l) {
-  const blur = app.state?.settings?.blur_nsfw && l.nsfw;
   return el("div", { class: "card" },
-    el("div", { class: "ph" + (blur ? " blur" : ""), style: preview(l) ? `background-image:${preview(l)}` : "" }, preview(l) ? "" : "沒有預覽圖"),
+    ph(l),
     el("div", { class: "bd" },
       el("div", { class: "t" }, (l.fav ? "★ " : "") + title(l), modelLabel(l) ? el("span", { class: "badge fam" }, modelLabel(l)) : null),
       el("div", { class: "st" }, l.name),
@@ -184,10 +219,10 @@ function renderPicker() {
   const usable = pickAll ? list : list.filter(fits);
   if (!usable.length) g.append(el("div", { class: "muted pad" }, "還沒有這個模型能用的 LoRA。到「Civitai」分頁搜尋下載（記得選對基底模型）。"));
   const matches = usable.filter((x) => match(x, q));
+  askCovers(matches.slice(0, pickShown + 80));
   for (const l of matches.slice(0, pickShown + 80)) {
-    const blur = app.state?.settings?.blur_nsfw && l.nsfw;
     g.append(el("div", { class: "card pick", onclick: () => { pickCb(l, $("#lpTrig").checked); closeModal("#loraPicker"); } },
-      el("div", { class: "ph" + (blur ? " blur" : ""), style: preview(l) ? `background-image:${preview(l)};aspect-ratio:1` : "aspect-ratio:1" }, preview(l) ? "" : "無預覽"),
+      ph(l, { style: "aspect-ratio:1" }),
       el("div", { class: "bd" }, el("div", { class: "t" }, title(l)), l.triggers?.length ? el("div", { class: "trig" }, l.triggers.slice(0, 4).join(", ")) : null,
         l.note ? el("div", { class: "pick-note", title: l.note }, l.note) : null)));
   }

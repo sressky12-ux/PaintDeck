@@ -312,6 +312,169 @@ pub async fn lora_preview(State(app): State<Shared>, UrlPath(file): UrlPath<Stri
     .await
 }
 
+// ---------------------------------------------------------------- LoRA 封面（2026-11-07，純邏輯在 crate::lora_cover）
+/// 正在抓的名稱（同一個 LoRA 不重複抓）、抓不到的名稱和時間（30 分鐘內不再試，免得每次打開 LoRA 庫都去敲 C 站）
+static COVER_BUSY: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+static COVER_FAILED: Mutex<Option<HashMap<String, std::time::Instant>>> = Mutex::new(None);
+const COVER_RETRY: std::time::Duration = std::time::Duration::from_secs(30 * 60);
+
+fn cover_http() -> &'static reqwest::Client {
+    static C: std::sync::OnceLock<reqwest::Client> = std::sync::OnceLock::new();
+    C.get_or_init(|| {
+        reqwest::Client::builder()
+            .proxy(crate::net::proxy())
+            .user_agent("Mozilla/5.0 (anima-app lora-cover)")
+            // 連不上的來源（例如大陸連 C 站）8 秒就換下一個
+            .connect_timeout(std::time::Duration::from_secs(8))
+            .timeout(std::time::Duration::from_secs(40))
+            .build()
+            .expect("建立 HTTP client")
+    })
+}
+
+/// 抓一張圖：要是真的圖、不超過 15MB。回傳錯誤時第二個值＝連不上這台主機（這一批後面的就跳過它）
+async fn cover_get(url: &str) -> Result<Vec<u8>, (String, bool)> {
+    let r = cover_http().get(url).send().await.map_err(|e| (crate::net::explain(&e, url), e.is_connect() || e.is_timeout()))?;
+    if !r.status().is_success() {
+        return Err((format!("HTTP {}", r.status().as_u16()), false));
+    }
+    if r.content_length().is_some_and(|n| n > 15 << 20) {
+        return Err(("圖太大".into(), false));
+    }
+    let b = r.bytes().await.map_err(|e| (crate::net::explain(&e, url), e.is_timeout()))?;
+    if b.len() > 15 << 20 || !crate::lora_cover::is_image(&b) {
+        return Err(("不是圖片".into(), false));
+    }
+    Ok(b.to_vec())
+}
+
+fn host_of(url: &str) -> String {
+    url.split("://").nth(1).and_then(|r| r.split('/').next()).unwrap_or("").to_lowercase()
+}
+
+/// 照來源順序試，第一個抓得到的 → (圖, 尺度等級)
+async fn cover_fetch(app: &Shared, sources: &[crate::lora_cover::Source], down: &Mutex<std::collections::HashSet<String>>) -> Option<(Vec<u8>, Option<i64>)> {
+    use crate::lora_cover::{pick_civitai, Source, CIVITAI_API};
+    let is_down = |h: &str| down.lock().map(|d| d.contains(h)).unwrap_or(false);
+    let mark = |h: String| {
+        if let Ok(mut d) = down.lock() {
+            d.insert(h);
+        }
+    };
+    for s in sources {
+        let (url, nsfw) = match s {
+            Source::Img { url, nsfw } => (url.clone(), *nsfw),
+            Source::CivitaiVersion(id) => {
+                if is_down("civitai.com") {
+                    continue;
+                }
+                // 走 civitai.rs（有填金鑰就帶，跟下載中心看到的一樣）
+                match app.civitai.get_json(&format!("{CIVITAI_API}/model-versions/{id}"), &[]).await {
+                    Ok(v) => match pick_civitai(&v) {
+                        Some((u, n)) => (u, Some(n)),
+                        None => continue,
+                    },
+                    Err(e) => {
+                        if !e.starts_with("Civitai 回應") {
+                            mark("civitai.com".into());
+                        }
+                        continue;
+                    }
+                }
+            }
+        };
+        let host = host_of(&url);
+        if is_down(&host) {
+            continue;
+        }
+        match cover_get(&url).await {
+            Ok(b) => return Some((b, nsfw)),
+            Err((_, unreachable)) => {
+                if unreachable {
+                    mark(host);
+                }
+            }
+        }
+    }
+    None
+}
+
+/// POST /api/loras/covers {names:[…]}：網頁打開 LoRA 庫時，把沒有預覽圖、有封面來源的 LoRA（/api/state 的 cover: true）送來。
+/// 背景照 lora_covers.json 的順序抓（C 站 → 魔塔 → Hugging Face），存進 <資料>\previews\、寫回 LoRA 資訊的 preview／preview_nsfw，
+/// 每抓完一個廣播 {type:"lora_cover", name, preview, nsfw}（抓不到是 failed: true）。回 {queued}：這次真的排進去幾個
+pub async fn lora_covers(State(app): State<Shared>, Body(body): Body) -> ApiResult {
+    let names: Vec<String> = body["names"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).take(2000).collect();
+    let covers = crate::lora_cover::load(&app.paths.res);
+    let meta = app.db.lora_meta()?;
+    let roots = app.paths.lora_roots();
+    let previews = app.paths.previews.clone();
+    let mut todo: Vec<(String, Vec<crate::lora_cover::Source>)> = vec![];
+    {
+        let mut busy = COVER_BUSY.lock().unwrap_or_else(|e| e.into_inner());
+        let busy = busy.get_or_insert_with(Default::default);
+        let mut failed = COVER_FAILED.lock().unwrap_or_else(|e| e.into_inner());
+        let failed = failed.get_or_insert_with(Default::default);
+        failed.retain(|_, at| at.elapsed() < COVER_RETRY);
+        for n in names {
+            if busy.contains(&n) || failed.contains_key(&n) || lora_file(&roots, &n).is_err() {
+                continue;
+            }
+            let m = meta.get(&n);
+            if m.and_then(|m| m["preview"].as_str()).is_some_and(|p| previews.join(basename(p)).is_file()) {
+                continue;
+            }
+            let s = covers.sources(&n, m);
+            if !s.is_empty() {
+                busy.insert(n.clone());
+                todo.push((n, s));
+            }
+        }
+    }
+    let queued = todo.len();
+    if queued > 0 {
+        tokio::spawn(async move {
+            use futures_util::StreamExt;
+            let _ = tokio::fs::create_dir_all(&previews).await;
+            let down = Mutex::new(std::collections::HashSet::new());
+            let (app, down, previews) = (&app, &down, &previews);
+            futures_util::stream::iter(todo)
+                .for_each_concurrent(4, |(name, sources)| async move {
+                    let got = cover_fetch(app, &sources, down).await;
+                    let saved = match got {
+                        Some((bytes, nsfw)) => {
+                            // 寫回前重讀一次（使用者可能剛改了觸發詞），只動 preview／preview_nsfw
+                            let cur = app.db.lora_meta().ok().and_then(|m| m.get(&name).cloned());
+                            let file = crate::lora_cover::file_name(&name, cur.as_ref(), previews);
+                            let mut m = cur.and_then(|v| v.as_object().cloned()).unwrap_or_default();
+                            if tokio::fs::write(previews.join(&file), &bytes).await.is_ok() {
+                                m.insert("preview".into(), json!(file));
+                                m.insert("preview_nsfw".into(), json!(nsfw.unwrap_or(1)));
+                                app.db.set_lora_meta(&name, &Value::Object(m)).ok().map(|_| (file, nsfw.unwrap_or(1)))
+                            } else {
+                                None
+                            }
+                        }
+                        None => None,
+                    };
+                    match &saved {
+                        Some((file, nsfw)) => app.hub.send(json!({"type": "lora_cover", "name": name, "preview": file, "nsfw": nsfw})),
+                        None => {
+                            if let Ok(mut f) = COVER_FAILED.lock() {
+                                f.get_or_insert_with(Default::default).insert(name.clone(), std::time::Instant::now());
+                            }
+                            app.hub.send(json!({"type": "lora_cover", "name": name, "failed": true}));
+                        }
+                    }
+                    if let Ok(mut b) = COVER_BUSY.lock() {
+                        b.get_or_insert_with(Default::default).remove(&name);
+                    }
+                })
+                .await;
+        });
+    }
+    ok(json!({"queued": queued}))
+}
+
 // ---------------------------------------------------------------- Civitai
 pub async fn civitai_search(
     State(app): State<Shared>,

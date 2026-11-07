@@ -622,6 +622,11 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .card .ph.blur { filter: blur(18px); transition: filter .2s; }
 .card:hover .ph.blur { filter: none; }
 .card .ph.zoom { cursor: zoom-in; }
+/* LoRA 卡片：圖用 <img> 蓋滿；沒有圖時寫名字，比整片黑好找（2026-11-07） */
+.card .ph .ph-img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; border-radius: inherit; }
+.card .ph:has(.ph-name) { align-content: center; gap: 6px; padding: 10px; }
+.card .ph .ph-name { color: #d8cfb8; font-size: 15px; font-weight: 600; line-height: 1.35; text-align: center; word-break: break-word; }
+.card .ph .ph-note { font-size: 11px; }
 #hubTags { flex-wrap: nowrap; overflow-x: auto; padding-bottom: 6px; }  /* 魔塔分類：一行，多的左右捲（網頁版也是一行） */
 #hubTags .chip { flex: none; }
 /* 下載中心「看樣張大圖」（hub.js view） */

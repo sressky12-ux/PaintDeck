@@ -486,6 +486,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/loras/delete", post(api_misc::lora_delete))
         .route("/lora_preview/{file}", get(api_misc::lora_preview))
         .route("/api/loras/local-preview", get(api_misc::lora_local_preview))
+        .route("/api/loras/covers", post(api_misc::lora_covers))
         .route("/api/features/strip", get(api_misc::feature_strip))
         .route("/api/features/strip/install", post(api_misc::feature_strip_install))
         .route("/api/civitai/bases", get(api_misc::civitai_bases))

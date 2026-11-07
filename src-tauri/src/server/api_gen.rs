@@ -75,6 +75,7 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
         .map(|n| (n.clone(), json!(families::family_of(&unet_roots, n))))
         .collect();
     let turbo = |n: &str| graphs::is_turbo_lora(n) && lfam[n] == ANIMA;
+    let covers = crate::lora_cover::load(&p.res);
     let loras: Vec<Value> = loras_all
         .iter()
         .filter(|n| !turbo(n))
@@ -88,6 +89,10 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
                 m.remove("preview");
                 if super::api_misc::local_lora_preview(&lora_roots, n).is_some() {
                     m.insert("local_preview".into(), json!(true));
+                } else if !covers.sources(n, meta.get(n)).is_empty() {
+                    // 抓得到封面（lora_covers.json 或下載過的 versionId）：網頁打開 LoRA 庫時送 /api/loras/covers 去抓
+                    m.insert("cover".into(), json!(true));
+                    m.insert("cover_nsfw".into(), json!(covers.nsfw(n)));
                 }
             }
             m.insert("family".into(), json!(lfam[n.as_str()]));

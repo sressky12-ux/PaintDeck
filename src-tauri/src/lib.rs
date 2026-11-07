@@ -27,6 +27,7 @@ pub mod hub;
 pub mod image_wf;
 pub mod imgmeta;
 pub mod launcher;
+pub mod lora_cover;
 pub mod modelhub;
 pub mod maint;
 pub mod model_dirs;

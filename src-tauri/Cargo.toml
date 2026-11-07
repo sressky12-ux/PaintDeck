@@ -1,6 +1,6 @@
 [package]
 name = "anima-app"
-version = "26.1107.1"
+version = "26.1108.1"
 description = "繪匣 PaintDeck：本機 AI 生圖（ComfyUI 前端）"
 edition = "2021"
 default-run = "anima-app"

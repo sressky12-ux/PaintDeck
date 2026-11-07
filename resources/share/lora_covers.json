@@ -1,0 +1,1601 @@
+{
+ "_說明": "LoRA 庫卡片的封面來源，由 tools/lora_covers.py 產生（別手改，改 MANUAL 再重跑）。後端照 civitai → modelscope → hf 的順序抓圖，存進 <資料>/previews/。",
+ "generated": "2026-11-07",
+ "covers": {
+  "anima-turbo-lora-v0.2.safetensors": {
+   "title": "anima-turbo-lora-v0.2",
+   "civitai": {
+    "model": 2560840,
+    "version": 2979642,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f5c2c926-b326-45e9-9496-1154c44010d2/width=450/131920852.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Turbo-ANIMA-v4.safetensors": {
+   "title": "TURBO for ANIMA (less steps)",
+   "civitai": {
+    "model": 2619830,
+    "version": 3334160,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d8ac686d-6eaf-4f1e-aff5-334f62961d3e/width=450/143040284.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Turbo-ANIMA-v2.9.safetensors": {
+   "title": "TURBO for ANIMA (less steps)",
+   "civitai": {
+    "model": 2619830,
+    "version": 3139645,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/dd840b7c-1b38-40f1-bc98-581a9f5e184a/width=450/137015432.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-highres-aesthetic-boost.safetensors": {
+   "title": "Anima Highres/Aesthetic Boost",
+   "civitai": {
+    "model": 2540444,
+    "version": 2855073,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/91519397-ca49-4771-a3d6-c06bbae06b25/width=450/127347641.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-rl-v0.1.safetensors": {
+   "title": "Anima RL",
+   "civitai": {
+    "model": 2583128,
+    "version": 2901967,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ded24429-1914-41ee-a3f4-b1645c2d7099/width=450/128948640.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-base-1-masterpiece-v51.safetensors": {
+   "title": "Aesthetic Quality Modifiers - Masterpiece",
+   "civitai": {
+    "model": 929497,
+    "version": 2961717,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/52fc411e-a343-4ed2-8dfd-f27d5bdf6cd5/width=450/131287900.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima_context_detailer_base10.safetensors": {
+   "title": "Anima Detail Tweaker",
+   "civitai": {
+    "model": 2620171,
+    "version": 2945421,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bce68866-aa99-4b9a-854d-f9765d1825cc/width=450/130704526.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima_base_slider_step800.safetensors": {
+   "title": "Anima Quality Enhance Slider",
+   "civitai": {
+    "model": 2612570,
+    "version": 2945328,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/63d5ea73-85c4-40ce-afb1-7073c5ad8d53/width=450/130701498.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Anima_colorfix_v1_by_Volnovik.safetensors": {
+   "title": "Anima Colorfix",
+   "civitai": {
+    "model": 2435207,
+    "version": 2974168,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/11d2a3f5-d29c-4b4c-bdfd-f1bf9a38d8da/width=450/131721052.jpeg",
+    "nsfw": 1
+   }
+  },
+  "gpt-image-2_anima-base1_v1-1.safetensors": {
+   "title": "Style > gpt-image-2",
+   "civitai": {
+    "model": 2564225,
+    "version": 2998634,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/eb04c719-1d9e-4309-9f06-c49b2cc6ba1f/width=450/132699696.jpeg",
+    "nsfw": 1
+   }
+  },
+  "zodaplus_v2_anima.safetensors": {
+   "title": "ZodaPlus 🍾 – Detailer",
+   "civitai": {
+    "model": 2632704,
+    "version": 3201207,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f8554bf8-b89e-4d69-8576-57f1a1c6db0c/width=450/138852685.jpeg",
+    "nsfw": 1
+   }
+  },
+  "zoda_v3_anima.safetensors": {
+   "title": "Zoda 🥤 – NSFW Detailer",
+   "civitai": {
+    "model": 1879987,
+    "version": 3130764,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e1890e44-3753-4f96-a15a-28e5cb43163d/width=450/138162728.jpeg",
+    "nsfw": 2
+   }
+  },
+  "lighting_slider-step00000300.safetensors": {
+   "title": "Anima Lighting Atmosphere Enhancer",
+   "civitai": {
+    "model": 2628200,
+    "version": 3082260,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c2f927d2-884c-47e0-a6d1-35db44ee1b4c/width=450/135254753.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Dark_Slider_Anima.safetensors": {
+   "title": "Lighting / darkness slider",
+   "civitai": {
+    "model": 1280702,
+    "version": 3078972,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3e54eec9-ebcb-40c7-8473-ca308db8fa42/width=450/135153158.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-base-1-light-concepts-v31.safetensors": {
+   "title": "Light Concepts",
+   "civitai": {
+    "model": 2459979,
+    "version": 2952873,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c96f65e0-bca3-4f17-8cfb-ba018c250a75/width=450/130983369.jpeg",
+    "nsfw": 1
+   }
+  },
+  "S1_Dramatic Lighting Anima_V2.safetensors": {
+   "title": "S1 Dramatic Lighting",
+   "civitai": {
+    "model": 661736,
+    "version": 3126711,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/73e333c1-5911-4f39-a5ae-f01e21504753/width=450/136618912.jpeg",
+    "nsfw": 2
+   }
+  },
+  "sky02v6.safetensors": {
+   "title": "sky02 Light and shadow Style [Anima]",
+   "civitai": {
+    "model": 2652568,
+    "version": 3340256,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d3ffb5de-302d-42fa-b70a-25a1d3950d9f/width=450/143229364.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Flar_ANIMA_BASE.safetensors": {
+   "title": "Anime Flat Style",
+   "civitai": {
+    "model": 1952560,
+    "version": 2985705,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/530df819-8596-46f6-a61e-b82d9d805a9c/width=450/132149008.jpeg",
+    "nsfw": 4
+   }
+  },
+  "anima-base-1-flat-color-v3.safetensors": {
+   "title": "Flat Color - Style",
+   "civitai": {
+    "model": 1132089,
+    "version": 2947255,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/93efdf2a-2454-4465-b079-991c3f56acb4/width=450/130774994.jpeg",
+    "nsfw": 1
+   }
+  },
+  "mixed_styles_anima-base1_v6.safetensors": {
+   "title": "AI styles dump (Anima/Illustrious/RouWei/Noob)",
+   "civitai": {
+    "model": 723360,
+    "version": 3334415,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/83f787f1-8228-4fc9-9a8d-c0661e5f4b7e/width=450/143046921.jpeg",
+    "nsfw": 1
+   }
+  },
+  "firedotinc_old-dataset_anima-b1_v6.safetensors": {
+   "title": "Firedotinc style (Anima/Newbie-0.1)",
+   "civitai": {
+    "model": 2256925,
+    "version": 2965829,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7b557d1c-13a2-42aa-96df-989789366f97/width=450/131426959.jpeg",
+    "nsfw": 1
+   }
+  },
+  "MeMaAni V2 C.safetensors": {
+   "title": "MeMaAni Flat Anime Style - Anima",
+   "civitai": {
+    "model": 2483826,
+    "version": 3309374,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7c191e09-ebc6-4f63-8e04-18bf31138765/width=450/142236483.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Anima_NIJI_SWEET_SPOT_v5.safetensors": {
+   "title": "Niji Sweet Spot",
+   "civitai": {
+    "model": 2554999,
+    "version": 3256481,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/1e2beabf-054e-48f1-9209-67c5b6d4710c/width=450/140527220.jpeg",
+    "nsfw": 2
+   }
+  },
+  "Eop_anima_anima_3253810_epoch_20.safetensors": {
+   "title": "Niji oil painting drawing",
+   "civitai": {
+    "model": 1188058,
+    "version": 3273180,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/911a427d-704e-4133-8339-b5fad9ca34b6/width=450/141126301.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-base-1-painterly-v2.safetensors": {
+   "title": "Impasto, Impressionism, Chiaroscuro - Painterly Styles",
+   "civitai": {
+    "model": 1478417,
+    "version": 2955844,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/47b39897-7430-49d7-aac6-93eadd551e14/width=450/131093777.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-greg-rutkowski-style.safetensors": {
+   "title": "Greg Rutkowski Style - Anima",
+   "civitai": {
+    "model": 2536147,
+    "version": 2850290,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/900ce442-5b1d-4020-827b-7379f8d80197/width=450/127170629.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Anima_in_real_update_v2_epoch_20.safetensors": {
+   "title": "Anime in real",
+   "civitai": {
+    "model": 1979448,
+    "version": 3202009,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3afa0d4d-ff86-4813-b37e-b50870c9a4e5/width=450/138916848.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anima-base-1-photo-background-v4.safetensors": {
+   "title": "Photo Background - 2d Compositing｜写真背景・二次元合成",
+   "civitai": {
+    "model": 1252497,
+    "version": 2959007,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/288871df-fb56-484d-b4c1-227f5a9f474b/width=450/131196989.jpeg",
+    "nsfw": 1
+   }
+  },
+  "anime_shiny_skin_v2.5.safetensors": {
+   "title": "Anime Shiny Skin Style - Anima & Illustrious",
+   "civitai": {
+    "model": 2597738,
+    "version": 3142637,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/42867350-7463-4b78-827c-f75a8e981b0f/width=450/137119121.jpeg",
+    "nsfw": 2
+   }
+  },
+  "MatureFemaleSliderAnima.safetensors": {
+   "title": "Mature slider",
+   "civitai": {
+    "model": 2118055,
+    "version": 2979797,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5d2c6faf-c74d-4009-8741-c04b5b9f745a/width=450/131926293.jpeg",
+    "nsfw": 2
+   }
+  },
+  "Breasts_Size_SliderAnima6.safetensors": {
+   "title": "Breasts slider",
+   "civitai": {
+    "model": 2100839,
+    "version": 2974098,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b57f5a72-59b7-4310-85b8-8d4a203132c0/width=450/131718491.jpeg",
+    "nsfw": 4
+   }
+  },
+  "Hips-slider-AnimaV2_5cap1000-x2.safetensors": {
+   "title": "Hips slider",
+   "civitai": {
+    "model": 2546450,
+    "version": 3246403,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/72ef2fe8-c67c-4c3b-b0db-c41bac59c4ff/width=450/140193357.jpeg",
+    "nsfw": 4
+   }
+  },
+  "Body-WeightSliderAnimaCaut.safetensors": {
+   "title": "Body weight slider. (Skinny ===> Fat slider)",
+   "civitai": {
+    "model": 2513759,
+    "version": 3014212,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b95d0b77-bd44-4888-b2f3-70e74c8f747f/width=450/133168387.jpeg",
+    "nsfw": 2
+   }
+  },
+  "Meion_anima_style_lokr_2-000034.safetensors": {
+   "title": "铭音 meion style 【krea2&anima&il】",
+   "civitai": {
+    "model": 2533943,
+    "version": 3011314,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9121b43b-4375-423a-b480-50b9390886b5/width=450/133065469.jpeg",
+    "nsfw": 2
+   }
+  },
+  "Thigh-Anima-protect-x1.5.safetensors": {
+   "title": "Thighs slider",
+   "civitai": {
+    "model": 2535632,
+    "version": 3264980,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/efe6d518-1ea4-4a53-9888-2b6f0b21987d/width=450/140780051.jpeg",
+    "nsfw": 1
+   }
+  },
+  "Hyperrealistic_Anima.safetensors": {
+   "title": "Hyperrealistic [Pony | Illustrious | Anima]",
+   "civitai": {
+    "model": 626603,
+    "version": 3047431,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/fd59b253-8da1-4c2e-832d-d7da37b15592/width=450/134196961.jpeg",
+    "nsfw": 1
+   }
+  },
+  "hinaAnimaBase_R_Tweaker_v4.safetensors": {
+   "title": "[Anima] R Tweaker Lora",
+   "civitai": {
+    "model": 2399952,
+    "version": 2963594,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/910135e8-672f-4609-a260-8d50ef923d65/width=450/137259163.jpeg",
+    "nsfw": 2
+   }
+  },
+  "nicegirls_anima.safetensors": {
+   "title": "NiceGirls UltraReal",
+   "civitai": {
+    "model": 1862761,
+    "version": 2882216,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/579e97a5-61cf-4c2e-b714-c426147305e5/width=450/128306142.jpeg",
+    "nsfw": 1
+   }
+  },
+  "lenovo_ultrareal_anima_base1.safetensors": {
+   "title": "Lenovo UltraReal",
+   "civitai": {
+    "model": 1662740,
+    "version": 2973386,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ad31e735-a7d1-42d7-99ff-f0fa50267650/width=450/131820489.jpeg",
+    "nsfw": 1
+   }
+  },
+  "deadpurityv2anima_v1_1-step00004000.safetensors": {
+   "title": "Deadpurity | Style",
+   "civitai": {
+    "model": 2505374,
+    "version": 2961237,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/60d6a2cd-8ef3-4275-8269-8b81b7b354f9/width=450/131271907.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\Anime2Real _Alpha.safetensors": {
+   "title": "Anime2Real（Qwen 2.1）",
+   "civitai": {
+    "model": 2960136,
+    "version": 3368916,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/36aefd8d-2d45-4de2-bb27-ac9ccff7018a/width=450/144187505.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\Qwen2.1_Anything2RealCharacters.safetensors": {
+   "title": "Anything2RealCharacters（Qwen 2.1）",
+   "civitai": {
+    "model": 2808492,
+    "version": 3363600,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5bf46279-1bad-4833-990e-7f86d2f27b4f/width=450/143993937.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "zhouwenbin1994/Qwen2.1_Anything2RealCharacters",
+    "img": "https://resources.modelscope.cn/cover-images/7ae4e662-e1d2-43ae-aca4-2a5ee79d4929.png?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "qwen21\\NSFW Qwen by TheseAlpacas V2.safetensors": {
+   "title": "NSFW（Qwen 2.1）",
+   "civitai": {
+    "model": 2958918,
+    "version": 3357315,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ec30a4d6-9710-4bca-9f4c-e2f09d6a746f/width=450/143792881.jpeg",
+    "nsfw": 8
+   }
+  },
+  "qwen21\\FlatAnime_Qwen_2.1.safetensors": {
+   "title": "Anime Flat Style（Qwen 2.1）",
+   "civitai": {
+    "model": 1952560,
+    "version": 3361221,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/42e57d26-2e32-47d3-86ac-8ba675b60fed/width=450/143916980.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\lenovo_qwen21.safetensors": {
+   "title": "Lenovo UltraReal（Qwen 2.1）",
+   "civitai": {
+    "model": 1662740,
+    "version": 3349565,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/0a89a58a-1810-454f-a289-8787e4827c72/width=450/143722504.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\nicegirls_v2_qwen21.safetensors": {
+   "title": "NiceGirls v2（Qwen 2.1）",
+   "civitai": {
+    "model": 1862761,
+    "version": 3352079,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/db730aad-019f-40ef-a8ca-afdec14525a9/width=450/143610075.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\niceasians_qwen21.safetensors": {
+   "title": "NiceAsians（Qwen 2.1）",
+   "civitai": {
+    "model": 1862761,
+    "version": 3349898,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c1dfc8d3-1693-4584-95c8-fc89b12dd4ab/width=450/143531982.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "Danrisi-ai/niceasians_qwen2.1",
+    "img": "https://resources.modelscope.cn/cover-images/586c8120-12bb-4fd6-b8e2-f4af9ebe564e.png?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "qwen21\\samsung_qwen21.safetensors": {
+   "title": "SamsungCam UltraReal（Qwen 2.1）",
+   "civitai": {
+    "model": 1551668,
+    "version": 3354434,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/14fd5478-b7d9-41c5-b871-ce3f7db3a084/width=450/143690890.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\qwen-image-2.1-consistency.safetensors": {
+   "title": "Consistency 不跑位（Qwen 2.1）",
+   "civitai": {
+    "model": 2969143,
+    "version": 3364470,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bc5935f1-f0a1-4204-888d-2f26352f14ae/width=450/144286332.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "ausboss/Qwen-Image-2.1-Consistency-LoRA",
+    "img": "https://resources.modelscope.cn/cover-images/533d1bbb-eb2f-48fe-8a2c-061c2ad0ef0a.jpeg?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "qwen21\\Pornmaster_QI2.1_Breasts_Slider_V1.safetensors": {
+   "title": "胸部大小滑桿（Pornmaster）",
+   "civitai": {
+    "model": 2954355,
+    "version": 3346363,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3aafa6b6-19d4-4c85-a687-7b211d80d5ba/width=450/143567051.jpeg",
+    "nsfw": 4
+   },
+   "modelscope": {
+    "id": "bozoyan/Pornmaster_Breasts_Slider",
+    "img": "https://resources.modelscope.cn/cover-images/d811757f-82f3-4629-ac9e-ac16180642df.png?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "qwen21\\qwen21_v2_000002750.safetensors": {
+   "title": "女性私處細節（Qwen 2.1）",
+   "civitai": {
+    "model": 2960871,
+    "version": 3354330,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/44740b42-4034-4205-ab81-51e6c86a4fc9/width=450/143688010.jpeg",
+    "nsfw": 8
+   }
+  },
+  "qwen21\\p_qwen_image_2.1_8step_v0.1.safetensors": {
+   "title": "Pruna 加速 8 步（Qwen 2.1）",
+   "civitai": {
+    "model": 2958738,
+    "version": 3362701,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7ce596d8-d228-47ad-a4ea-4e5e12d2c8a9/width=450/143970359.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\p_qwen_image_2.1_5step_v0.1.safetensors": {
+   "title": "Pruna 加速 5 步（Qwen 2.1）",
+   "civitai": {
+    "model": 2958738,
+    "version": 3362704,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f14f9165-9fda-48d2-85ae-36ebb1a71057/width=450/143971415.jpeg",
+    "nsfw": 2
+   }
+  },
+  "qwen21\\fwaun-style_qwen_image_2_1_v50.safetensors": {
+   "title": "Fwaun Style",
+   "civitai": {
+    "model": 2593831,
+    "version": 3373050,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c54b5d49-c8c2-4a3f-bc58-72d3cdb585c2/width=450/144324303.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\Qwen-Image-2.1-viggle-turbo-4step-lora-r64.safetensors": {
+   "title": "[ Accelerator LoRAs ] Applicable to QW21 | Minimax H3 | HYVideo TURBO/LIGHTNING/DMD/FAST",
+   "civitai": {
+    "model": 1063735,
+    "version": 3351025,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/39085bac-bce9-4ed3-bf02-2d57b690f587/width=450/148023680.jpeg",
+    "nsfw": 1
+   }
+  },
+  "qwen21\\pussyV2.safetensors": {
+   "title": "qwen 2.1 阴道|vagina",
+   "civitai": {
+    "model": 2976277,
+    "version": 3377365,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9a217810-50ad-4297-b686-406bf34eaa61/width=450/144463237.jpeg",
+    "nsfw": 8
+   }
+  },
+  "moss\\Excellent-Loras\\SFT伪影修复\\moss_image_sft_banding_fix_L37-41_bf16.safetensors": {
+   "title": "MOSS 去色帶（主）",
+   "civitai": {
+    "model": 3007759,
+    "version": 3412889,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ae18b852-5da3-4f04-9ef3-6031cd9b2740/width=450/146014525.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\SFT伪影修复\\moss_image_sft_banding_fix_L32-36_extra_bf16.safetensors": {
+   "title": "MOSS 去色帶（加強）",
+   "civitai": {
+    "model": 3007759,
+    "version": 3412889,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ae18b852-5da3-4f04-9ef3-6031cd9b2740/width=450/146014525.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\moss_image_sft_4step_v2.0.safetensors": {
+   "title": "MOSS 4 步加速",
+   "civitai": {
+    "model": 3006599,
+    "version": 3414934,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f182e7bb-6e37-43f8-8f08-fc8f0573e506/width=450/146112590.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "bozoyan/MOSS-Image-SFT-4-steps",
+    "img": "https://resources.modelscope.cn/cover-images/765e3fd8-5980-43c5-afe5-bccb99c02dd9.png?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\lodestones-8-steps-dmd2-lora.safetensors": {
+   "title": "MOSS 8 步加速（DMD2）",
+   "civitai": {
+    "model": 3006599,
+    "version": 3420002,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c46d12fb-f3d5-493d-94b7-f4742faaabf1/width=450/146351991.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\lora_latest_step8_0.7.safetensors": {
+   "title": "MOSS 8 步加速（latest）",
+   "civitai": {
+    "model": 3006599,
+    "version": 3420002,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c46d12fb-f3d5-493d-94b7-f4742faaabf1/width=450/146351991.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\加速LoRA\\MOSS-Image-16step-cfg1-BF16.safetensors": {
+   "title": "MOSS 16 步 CFG1",
+   "civitai": {
+    "model": 3013773,
+    "version": 3433282,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9c66ca25-b2e9-473c-b048-99fc38d579c7/width=450/147011144.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\美妆滤镜滑块_beautyFilter_-3to3.safetensors": {
+   "title": "美顏濾鏡滑桿",
+   "civitai": {
+    "model": 3021908,
+    "version": 3431367,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/08664298-f1e1-4e76-9ed6-2ce4b74fb79d/width=450/146902694.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\体重滑块weight_slider_moss_v5_W_-5+5.safetensors": {
+   "title": "體重滑桿",
+   "civitai": {
+    "model": 3009566,
+    "version": 3415231,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9de8aa5b-4aa8-4fd2-ba70-4addb0689db9/width=450/146128105.jpeg",
+    "nsfw": 4
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\waist_slider_-3_+3.safetensors": {
+   "title": "腰圍滑桿",
+   "civitai": {
+    "model": 2777139,
+    "version": 3415839,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e539ae3c-22c0-4f4f-97b9-3cc09c3befd7/width=450/136635939.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\肤色滑块skin_tone_W_-3+3.safetensors": {
+   "title": "膚色滑桿",
+   "civitai": {
+    "model": 2743912,
+    "version": 3418509,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bfbdd3c7-97b4-40e3-92b0-4700b3d262ff/width=450/135371038.jpeg",
+    "nsfw": 4
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\mossbase质量增强滑块_anima_pure_text_slider_rank16.safetensors": {
+   "title": "畫質增強滑桿",
+   "civitai": {
+    "model": 3008688,
+    "version": 3414043,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ac4d08bc-72e6-45f0-94c3-da8f2e6f7701/width=450/146071567.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\细节滑块-0.75-+0.75.safetensors": {
+   "title": "細節滑桿",
+   "civitai": {
+    "model": 3007815,
+    "version": 3412961,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/87811d92-e1c7-4739-a331-cd2f5e287543/width=450/146035771.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\细节imagefinish-sft-epoch0150-W-2+2.safetensors": {
+   "title": "細節滑桿（finish）",
+   "civitai": {
+    "model": 3011866,
+    "version": 3428931,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e98f0438-6edc-4244-b3e3-355e645bbcd2/width=450/146785052.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\细节target-epoch0150-W-0.75+0.75.safetensors": {
+   "title": "細節滑桿（target）",
+   "civitai": {
+    "model": 3007815,
+    "version": 3429070,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3403870a-34d7-41ac-89f9-fc170a35ee8d/width=450/146791334.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\moss_vector滑块_-2+2.safetensors": {
+   "title": "向量／線稿感滑桿",
+   "civitai": {
+    "model": 3011752,
+    "version": 3418113,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ad78e825-978f-49ef-b166-2fb21860b209/width=450/146262150.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\moss_lighting_slider_-1+1.safetensors": {
+   "title": "光線滑桿",
+   "civitai": {
+    "model": 3010015,
+    "version": 3415785,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ca3843f4-d2e7-4a46-8b9a-90ddcc368e5d/width=450/146158240.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\contrast_HDR_slider--3+2.5.safetensors": {
+   "title": "對比／HDR 滑桿",
+   "civitai": {
+    "model": 3016367,
+    "version": 3424087,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/37ac71e8-5647-450e-959c-1b73302be3b3/width=450/146551496.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\white_balance_slide_-3+3_v1.safetensors": {
+   "title": "白平衡滑桿",
+   "civitai": {
+    "model": 3016502,
+    "version": 3424302,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2290ea7-57df-402a-a1d9-b456773d3a17/width=450/146560597.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\背景清晰度_BackgroundSharpness_MOSS-sft_v1.safetensors": {
+   "title": "背景清晰度滑桿",
+   "civitai": {
+    "model": 3013808,
+    "version": 3420774,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/0e5889ff-1885-4cb9-af7f-b9c6da17aaa5/width=450/146386905.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\滑块\\photo and illustrations_Slider_MOSS-sft_-2+2.safetensors": {
+   "title": "照片↔插畫滑桿",
+   "civitai": {
+    "model": 3016364,
+    "version": 3424082,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d086f75e-1ad3-4382-8fac-0a05c41c5b8b/width=450/146551308.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\EDIT\\MOSS_CAOTICA_REMIX_000000050.safetensors": {
+   "title": "CAOTICA 混搭編輯",
+   "civitai": {
+    "model": 3007513,
+    "version": 3412571,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f3a4045e-e907-4f04-a711-9472c8c23e74/width=450/145999823.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\EDIT\\moss_image_charref_v2.safetensors": {
+   "title": "角色參考 v2",
+   "civitai": {
+    "model": 3015656,
+    "version": 3423172,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/58fc1bc3-7dc8-42e7-9a41-b0045328ae8d/width=450/146502368.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\真漫转换\\NO1.anime2real.safetensors": {
+   "title": "動漫轉寫實 NO1",
+   "civitai": {
+    "model": 3007986,
+    "version": 3413167,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/4c3bd520-a0bf-4d81-9d6c-a84ae3a94350/width=450/146029162.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\真漫转换\\Moss_SFT_Edit_A2R_v1_000006000.safetensors": {
+   "title": "動漫轉寫實 A2R（6000 步）",
+   "civitai": {
+    "model": 3009913,
+    "version": 3418510,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/bf44b0a9-87e0-4ce8-b8d7-b487fe838e73/width=450/146280801.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\真漫转换\\漫转真Moss_SFT_Edit_A2R_v1_000003000.safetensors": {
+   "title": "動漫轉寫實 A2R（3000 步）",
+   "civitai": {
+    "model": 3009913,
+    "version": 3415659,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/02553e78-1127-4570-b2aa-48cc2fa21e51/width=450/146150001.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2000_moss.safetensors": {
+   "title": "2000 年手機照",
+   "civitai": {
+    "model": 2537408,
+    "version": 3417503,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5c2249d0-182f-4708-8027-fd03b14b0841/width=450/146236875.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2007_moss.safetensors": {
+   "title": "2007 年手機照",
+   "civitai": {
+    "model": 2537408,
+    "version": 3419744,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5444251f-18e3-4cb4-a9cd-1383fcde1e4a/width=450/146340756.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2020_moss.safetensors": {
+   "title": "2020 年手機照",
+   "civitai": {
+    "model": 2537408,
+    "version": 3422106,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/611372f2-7b50-4775-a1d2-c3778aa4bb25/width=450/146447943.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\Phone Photography (2000-2025)\\phone_photography_2025_moss.safetensors": {
+   "title": "2025 年手機照",
+   "civitai": {
+    "model": 2537408,
+    "version": 3426517,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6d1e4b04-ca10-4a38-930c-d64aff84d937/width=450/146669321.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\lenovo_moss.safetensors": {
+   "title": "通用人像臉模",
+   "civitai": {
+    "model": 1662740,
+    "version": 3410543,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/06c17425-5372-44f5-93be-a423764d02cb/width=450/145909037.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\nicegirls_v2_moss.safetensors": {
+   "title": "甜美女性臉模",
+   "civitai": {
+    "model": 1862761,
+    "version": 3410486,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/aa3db66b-a912-4a30-8e9e-f5a9fe21fe5d/width=450/146877915.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\ultra_real_moss_sft_v1_pro_Weight_0.6_0.8.safetensors": {
+   "title": "超寫實人像 pro",
+   "civitai": {
+    "model": 2462105,
+    "version": 3411421,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/db007c07-01f7-44ce-afa4-cf6279fe5915/width=450/145943194.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\ultra_real_moss_v2.safetensors": {
+   "title": "超寫實人像 v2",
+   "civitai": {
+    "model": 2462105,
+    "version": 3416438,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a2969fd3-9bde-4525-b07a-4c0b150926b7/width=450/146183227.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\亚洲写实NexBlend01MossImage.safetensors": {
+   "title": "亞洲寫實臉 NexBlend01",
+   "civitai": {
+    "model": 3009787,
+    "version": 3415499,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/66990388-699b-401f-8bc3-8e1eb331db19/width=450/146143364.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\韩系写实NexBlend02Moss.safetensors": {
+   "title": "韓系寫實臉 NexBlend02",
+   "civitai": {
+    "model": 3014674,
+    "version": 3421863,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/72120c97-721d-40ef-98ae-84d400a26d93/width=450/146438528.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\Japanese AI girl_T_kz_yuuko.safetensors": {
+   "title": "日系 AI 女孩 yuuko",
+   "civitai": {
+    "model": 2672519,
+    "version": 3420041,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/188b0e33-2030-4484-8ed0-e35d445bf55f/width=450/146354779.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\Japanese AI girl_T_ kz_miyuka_W_1±0.2.safetensors": {
+   "title": "日系 AI 女孩 miyuka",
+   "civitai": {
+    "model": 2760906,
+    "version": 3428534,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/140070d7-1d50-453b-a149-3a8185af9270/width=450/146767128.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\realistic-moss-nikastyle-moss-image-base-epoch-20.safetensors": {
+   "title": "寫實臉 nikastyle",
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\ViRealismMoss_V1_T_virealism.safetensors": {
+   "title": "ViRealism 寫實",
+   "civitai": {
+    "model": 2896580,
+    "version": 3436862,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/943bb4b7-5a93-4137-a47b-5b1317bb631b/width=450/147195908.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\南宫婉Face.safetensors": {
+   "title": "南宮婉臉模",
+   "civitai": {
+    "model": 3019477,
+    "version": 3428192,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/05a37b9f-5794-43d7-a7e3-5b09fb77ddce/width=450/146752287.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\脸模等\\中国大叔moss-cn-uncle.safetensors": {
+   "title": "中年大叔臉",
+   "civitai": {
+    "model": 2272911,
+    "version": 3424596,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d60c72e6-7869-4840-ba17-065c47bf6a3d/width=450/146579746.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\2.5D 动画风格Impasto Anime Style.safetensors": {
+   "title": "2.5D 厚塗動畫風",
+   "civitai": {
+    "model": 2230912,
+    "version": 3412725,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/d09c1293-be19-423b-a450-1a8ef991aa80/width=450/146008127.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\CGI style.safetensors": {
+   "title": "CGI 3D 渲染風",
+   "civitai": {
+    "model": 2543841,
+    "version": 3415950,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/db230901-9eb2-4120-897c-50a30a72c5ff/width=450/146160557.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\Illustration style_numoss.safetensors": {
+   "title": "插畫風 numoss",
+   "civitai": {
+    "model": 3007040,
+    "version": 3411943,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a359ba0c-a173-4a22-a783-4d83fe1a541c/width=450/145968055.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\Nyalia_moss_v1_lokr.safetensors": {
+   "title": "Nyalia 畫風",
+   "civitai": {
+    "model": 3006584,
+    "version": 3411356,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/4a603af7-14b6-43a4-9d25-3379930b1b0b/width=450/145939633.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\TJFilmMoss_V1_T_vifilm.safetensors": {
+   "title": "電影感 vifilm",
+   "civitai": {
+    "model": 2840370,
+    "version": 3413455,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9b9bc95e-90d1-44c7-a9fb-126e8fe8f843/width=450/146039876.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\anireal_moss_lora_v1.safetensors": {
+   "title": "動漫寫實化 anireal",
+   "civitai": {
+    "model": 3006790,
+    "version": 3411644,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5102ca68-4640-40d0-9242-528f07261289/width=450/145954149.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\blue-archive-style.safetensors": {
+   "title": "蔚藍檔案動畫風",
+   "civitai": {
+    "model": 3010579,
+    "version": 3416570,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ef34c158-3635-4120-a642-f0b83b7c005b/width=450/146191030.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\dlss5风格（鸣潮、终末地、异环）T_@DLSS5.safetensors": {
+   "title": "鳴潮／終末地遊戲風",
+   "civitai": {
+    "model": 3004890,
+    "version": 3417401,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/0bf68606-372d-4410-b2cd-27e9b295a94b/width=450/146231613.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\iPhone15_W1to3.safetensors": {
+   "title": "iPhone 15 照片風",
+   "civitai": {
+    "model": 3021682,
+    "version": 3431057,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2cab417f-55e4-40ba-8af4-e1b5b2187bd0/width=450/146889232.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\instagram_aesthetic_v1.safetensors": {
+   "title": "IG 網美風",
+   "civitai": {
+    "model": 2851933,
+    "version": 3423768,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f249b29e-7268-422d-ae51-2f956f0fff30/width=450/146537750.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\krealistick_现实主义写实风格.safetensors": {
+   "title": "現實主義寫實",
+   "civitai": {
+    "model": 2994161,
+    "version": 3426835,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b3a869f6-0639-48cd-8ef1-712b7b4ef186/width=450/146682480.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\nu-moss semi-PVC style.safetensors": {
+   "title": "半 PVC 公仔風",
+   "civitai": {
+    "model": 3009866,
+    "version": 3416309,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/3443db55-daf7-4b07-a612-95c111e4226e/width=450/146176860.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\pseudo-3D matte anime style.safetensors": {
+   "title": "偽 3D 霧面動畫風",
+   "civitai": {
+    "model": 2635582,
+    "version": 3416446,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/de872b92-9921-4d96-884c-5485cf545ad5/width=450/146185801.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\rebelmidjourney_W_0.1-0.8.safetensors": {
+   "title": "Midjourney 感",
+   "civitai": {
+    "model": 2224836,
+    "version": 3419173,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/57ea6a8a-9e36-47fa-b677-69a21b2e9a49/width=450/146313893.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\reversesty_mossimage_style.safetensors": {
+   "title": "reversesty 畫風",
+   "civitai": {
+    "model": 3005908,
+    "version": 3410478,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a2a3c76d-f155-46c4-8b28-ef82272f2742/width=450/145905794.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\school-gal_dw_moss_Anima_v0_1.safetensors": {
+   "title": "日系辣妹制服",
+   "civitai": {
+    "model": 2566864,
+    "version": 3428181,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/09b32972-fb69-42cb-a094-44a7f83eeb9c/width=450/146751767.jpeg",
+    "nsfw": 4
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\动漫插画风格SepiaBlue_Luminous_T_qsv2style_W0.6-1_v1.safetensors": {
+   "title": "褐藍光感插畫風",
+   "civitai": {
+    "model": 3009753,
+    "version": 3415451,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/e0e53c3f-6322-4ce5-8a3c-c5bf485d09aa/width=450/146139936.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\半写实风格NexBlend Semi Realistic LoRA - MOSS Image.safetensors": {
+   "title": "半寫實風",
+   "civitai": {
+    "model": 3008562,
+    "version": 3413882,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5ed8a0be-b7c9-4afc-a8fa-21cca8720673/width=450/146058441.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\国风3DCG风格.safetensors": {
+   "title": "國風 3DCG",
+   "civitai": {
+    "model": 2722632,
+    "version": 3424198,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/4ee819df-9654-4a4a-b1a3-136612fd949a/width=450/146556179.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\小马美学风格duckymix-Anima_W0.7-1_T_@ducky.safetensors": {
+   "title": "小馬美學 duckymix",
+   "civitai": {
+    "model": 2963944,
+    "version": 3428283,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a6e8ad3f-4930-42e5-93f3-fe5eeb318f4c/width=450/146762909.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\彩色胶片快照风格_directflashfilmconcept.safetensors": {
+   "title": "彩色底片直閃快照",
+   "civitai": {
+    "model": 3013030,
+    "version": 3419791,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/46f1e3a5-d805-4d2b-8112-b3e098fc11c3/width=450/146343093.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\暗黑奇幻哥特风格Emberveil Gothic.safetensors": {
+   "title": "暗黑奇幻哥德風",
+   "civitai": {
+    "model": 3018961,
+    "version": 3427781,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2fe5d046-631f-4906-a765-c68ce2bf11e5/width=450/146732116.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\服装模特_female_mannequin_lora_v1.safetensors": {
+   "title": "服裝人台",
+   "civitai": {
+    "model": 3019474,
+    "version": 3428201,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/b2c4b80b-44a6-4bd4-b42a-b76e8b610948/width=450/146752362.jpeg",
+    "nsfw": 2
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\梦幻复古艺术风格.safetensors": {
+   "title": "夢幻復古藝術",
+   "civitai": {
+    "model": 2996892,
+    "version": 3412491,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/6024f21c-d316-4819-94bf-1f4a13a9c99c/width=450/145993036.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\水下镜头拍摄underwateractioncamconcept.safetensors": {
+   "title": "水下運動相機",
+   "civitai": {
+    "model": 3019299,
+    "version": 3427960,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/850a88d8-84c8-4769-a575-908ca8fba5cd/width=450/146739097.jpeg",
+    "nsfw": 8
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\水粉墨水风格_T_ral-gouache-ink.safetensors": {
+   "title": "水粉＋墨水",
+   "civitai": {
+    "model": 3021684,
+    "version": 3431063,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/a33e0422-ec16-4fa5-824d-583c7ed4706c/width=450/146889316.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\水粉温暖风格_T_ral-gouache-warm.safetensors": {
+   "title": "暖色水粉",
+   "civitai": {
+    "model": 3021684,
+    "version": 3431060,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/79b11916-6068-4081-bb88-6b26e03ad662/width=450/146889177.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\水粉粉彩风格_T_ral-gouache-pastel.safetensors": {
+   "title": "粉彩水粉",
+   "civitai": {
+    "model": 3021684,
+    "version": 3431067,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/9425a1ed-f23c-4618-b9e8-8763fc9b226c/width=450/146889471.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\瑜伽T_YogaBowPose.safetensors": {
+   "title": "瑜伽弓式姿勢",
+   "civitai": {
+    "model": 2987547,
+    "version": 3428836,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f03684ca-2d5f-4b40-8724-b4872b9207ac/width=450/146781734.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\粗犷水墨画风格SumiInk_moss_v1.safetensors": {
+   "title": "粗獷水墨畫",
+   "civitai": {
+    "model": 2952303,
+    "version": 3412942,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/84e452ee-acb0-4be5-8eb6-6459cdd73e1b/width=450/146016641.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\线稿moss_Lineart_T_Lineart.safetensors": {
+   "title": "線稿",
+   "civitai": {
+    "model": 3018491,
+    "version": 3426919,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/f9007ebe-cb51-426f-a0bb-d1e0682316d9/width=450/146684435.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\网拍写实风格_cyber-shot_moss_NW.safetensors": {
+   "title": "網拍寫實",
+   "civitai": {
+    "model": 2854135,
+    "version": 3420864,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ce484ae4-524a-4079-bc16-481ea6e66310/width=450/146391272.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\网络摄像头风格_webcamviewconcept.safetensors": {
+   "title": "網路攝影機",
+   "civitai": {
+    "model": 3011740,
+    "version": 3418095,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/dd1cabda-7808-4a17-9b4d-d95c51cb9d46/width=450/146261607.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\美式几何漫画风格American_Geometric_Comic_MOSS.safetensors": {
+   "title": "美式幾何漫畫（jgdxstyle）",
+   "civitai": {
+    "model": 3006162,
+    "version": 3410862,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/844a4155-9e8b-4b1d-a194-e80492199961/width=450/145925611.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\西部牛仔风格_1950s_western_moss_200.safetensors": {
+   "title": "1950 西部片",
+   "civitai": {
+    "model": 1925404,
+    "version": 3428086,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/5bf758ac-03f0-4acd-b02e-a17fba78c0c0/width=450/146746330.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\铅笔画风格pencil_sketch_W_0.6-1_T_A pencil sketch on textured paper.safetensors": {
+   "title": "鉛筆素描",
+   "civitai": {
+    "model": 55047,
+    "version": 3431631,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/28192488-a1dd-46e5-8c1c-97e3dc004774/width=450/146915316.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\铅笔绘画风格Pencil style_bf16.safetensors": {
+   "title": "鉛筆繪畫",
+   "civitai": {
+    "model": 2389592,
+    "version": 3415163,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/2ac0c951-f6a1-4386-a0b0-ee2fadbcbb51/width=450/146150960.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\风格\\魔法光环aura-moss-image-sft-epoch-10_T_ 4ur4.safetensors": {
+   "title": "魔法光環",
+   "civitai": {
+    "model": 600793,
+    "version": 3429768,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/7728bfe9-25b7-4d52-a57d-56272987d403/width=450/146825183.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\4B文本编码适配器\\mossImage4BTextEncoder_1600Fit.safetensors": {
+   "title": "（不是 LoRA）4B 轉接器",
+   "civitai": {
+    "model": 3021928,
+    "version": 3431398,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/dc8f4d07-4ed6-4800-80ab-f4d7b13c522b/width=450/146904320.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\Excellent-Loras\\model_patches\\moss-color-depth-control.safetensors": {
+   "title": "MOSS 色彩／深度控制",
+   "civitai": {
+    "model": 3010285,
+    "version": 3416153,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ede48a9a-728e-4254-a19a-599781782bf8/width=450/146169387.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "gordonz/Excellent-Loras-for-MossImage",
+    "img": "https://www.modelscope.cn/models/gordonz/Excellent-Loras-for-MossImage/resolve/master/banner.jpg"
+   }
+  },
+  "moss\\moss_speed_dmd_lodestones.safetensors": {
+   "title": "MOSS 快速",
+   "civitai": {
+    "model": 3006599,
+    "version": 3420002,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/c46d12fb-f3d5-493d-94b7-f4742faaabf1/width=450/146351991.jpeg",
+    "nsfw": 1
+   },
+   "modelscope": {
+    "id": "lodestones/MOSS-Image-SFT-8-steps-dmd",
+    "img": "https://resources.modelscope.cn/cover-images/ec449c6e-274a-43c6-a23f-586521e389a4.webp?x-oss-process=image/resize,w_500/format,webp/quality,Q_60"
+   }
+  },
+  "moss\\moss_edit_chinoll.safetensors": {
+   "title": "MOSS 照指令改圖",
+   "hf": {
+    "img": "https://huggingface.co/chinoll/Moss-Image-Edit/resolve/main/assets/moss-image-edit-showcase.jpg"
+   }
+  },
+  "moss\\moss-color-depth-control.safetensors": {
+   "title": "MOSS 色彩／深度控制",
+   "civitai": {
+    "model": 3010285,
+    "version": 3416153,
+    "img": "https://image.civitai.com/xG1nkqKTMzGDvpLrqFT7WA/ede48a9a-728e-4254-a19a-599781782bf8/width=450/146169387.jpeg",
+    "nsfw": 1
+   }
+  }
+ }
+}

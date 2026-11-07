@@ -113,6 +113,7 @@ function connect() {
         break;
       }
       case "download": hub.onDownload(m); break;
+      case "lora_cover": loras.onCover(m); break;
       case "hubrun": hub.onRun(m); break;
       case "pe": if (app.state) app.state.pe = m; pe.onStatus(m); settings.onPe?.(m); deck.onPe(m); break;
     }
