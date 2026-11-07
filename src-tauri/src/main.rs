@@ -273,10 +273,10 @@ fn ask_yes_no(msg: &str) -> bool {
         };
         r == IDYES
     }
+    // Linux：zenity／kdialog；都沒有就照舊直接結束（系統列的「結束」本來就是使用者自己按的）
     #[cfg(not(windows))]
     {
-        let _ = msg;
-        true
+        anima_app::pe::win::ask_yes_no(TITLE, msg).unwrap_or(true)
     }
 }
 
@@ -693,6 +693,10 @@ fn open_external(u: &Url) {
             );
         }
     }
+    #[cfg(not(windows))]
+    {
+        let _ = anima_app::pe::win::xdg_open(std::ffi::OsStr::new(u.as_str()));
+    }
 }
 
 /// 跳出錯誤視窗後結束（正式版沒有黑視窗，eprintln 看不到）
@@ -712,5 +716,7 @@ fn fail(msg: &str) -> ! {
             );
         }
     }
+    #[cfg(not(windows))]
+    anima_app::pe::win::show_error(TITLE, msg);
     std::process::exit(1)
 }

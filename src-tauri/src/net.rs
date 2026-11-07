@@ -97,7 +97,9 @@ static WATCH: OnceLock<()> = OnceLock::new();
 /// 自動模式下 Hugging Face 連不上、改用鏡像下載成功過：之後先用鏡像
 static HF_MIRROR_ON: AtomicBool = AtomicBool::new(false);
 /// PAC 檔的內容不常變：同一個網址一分鐘抓一次（網址、抓的時間、找到的代理）
+#[cfg_attr(not(windows), allow(dead_code))] // 只有 Windows 用（Linux 沒有這個機制）
 type PacEntry = (String, Instant, Option<String>);
+#[cfg_attr(not(windows), allow(dead_code))] // 只有 Windows 用（Linux 沒有這個機制）
 static PAC_CACHE: LazyLock<Mutex<Option<PacEntry>>> = LazyLock::new(|| Mutex::new(None));
 
 /// 讀 net.json、開始偵測代理。設定檔放在 config.json 旁邊（一台電腦一份，換資料位置也跟著）
@@ -354,11 +356,13 @@ fn from_system(_: bool) -> Option<Found> {
     None
 }
 
+#[cfg_attr(not(windows), allow(dead_code))] // 只有 Windows 用（Linux 沒有這個機制）
 fn cached_pac(url: &str) -> Option<String> {
     PAC_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref().filter(|c| c.0 == url).and_then(|c| c.2.clone())
 }
 
 /// 抓 PAC 檔（本機的 http 網址或 file:///）找出第一個代理；一分鐘內同一個網址用上次的結果
+#[cfg_attr(not(windows), allow(dead_code))] // 只有 Windows 用（Linux 沒有這個機制）
 fn pac_proxy(url: &str) -> Option<String> {
     if let Some(c) = PAC_CACHE.lock().unwrap_or_else(|e| e.into_inner()).as_ref() {
         if c.0 == url && c.1.elapsed() < Duration::from_secs(60) {

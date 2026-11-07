@@ -1,9 +1,24 @@
 [package]
 name = "anima-app"
-version = "26.1106.1"
+version = "26.1107.1"
 description = "繪匣 PaintDeck：本機 AI 生圖（ComfyUI 前端）"
 edition = "2021"
 default-run = "anima-app"
+
+# desktop＝桌面版（Tauri 視窗、系統匣、App 內更新）。關掉（--no-default-features）＝只編 anima-server，
+# 完全不連 GTK／WebKit：給 Linux 純命令列的伺服器用（tools/linux_headless.sh）
+[features]
+default = ["desktop"]
+desktop = ["dep:tauri", "dep:tauri-plugin-updater"]
+
+[[bin]]
+name = "anima-app"
+path = "src/main.rs"
+required-features = ["desktop"]
+
+[[bin]]
+name = "anima-server"
+path = "src/bin/anima-server.rs"
 
 [lib]
 name = "anima_app"
@@ -13,7 +28,7 @@ path = "src/lib.rs"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = ["tray-icon"] }
+tauri = { version = "2", features = ["tray-icon"], optional = true }
 serde = { version = "1", features = ["derive"] }
 # float_roundtrip：解析小數要精確（預設的快速解析會差最後一位，存回資料庫就漂掉了）
 # preserve_order：物件保留原本的鍵順序，跟 Python dict 一樣（「第一個找到的節點」、寫回資料庫的 JSON 才會一致）
@@ -34,21 +49,29 @@ tower-http = { version = "0.7.1", features = ["fs"] }
 chrono = { version = "0.4.45", default-features = false, features = ["clock", "std"] }
 # 圖庫匯出用 Stored；第一次啟動精靈解 llama.cpp 的 zip 要 deflate
 zip = { version = "9.0.0", default-features = false, features = ["deflate-flate2-zlib-rs"] }
-windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Security_Cryptography", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_UI_Controls", "Win32_System_Diagnostics_ToolHelp"] }
 csv = "1.4.0"
 webp = "0.3.1"
 sha2 = "0.10.9"
 base64 = "0.22.1"
 # 反推（ONNX）：不在編譯時下載 onnxruntime，執行時載入 onnxruntime.dll（見 tagger.rs）
 ort = { version = "=2.0.0-rc.13", default-features = false, features = ["std", "load-dynamic", "api-28"] }
-# 安裝精靈、設定頁的「選資料夾」：Windows 原生的選資料夾視窗（Tauri 官方 dialog 外掛底層也是它）。
-# raw-window-handle 本來就在（tauri 用的），這裡直接用來把視窗掛在生圖站上面
-rfd = { version = "0.17.2", default-features = false }
-raw-window-handle = "0.6.2"
-tauri-plugin-updater = { version = "~2.14", default-features = false, features = ["native-tls"] }
+tauri-plugin-updater = { version = "~2.14", default-features = false, features = ["native-tls"], optional = true }
 semver = "1"
 # 生圖助手的工具在程式裡直接呼叫自己的 API（Router.oneshot）；axum 本來就用它，同一個版本
 tower = { version = "0.5.3", features = ["util"] }
+
+# Windows 才有的套件
+[target.'cfg(windows)'.dependencies]
+# Windows 原生 API（登錄檔、DPAPI、Job Object、ShellExecute…）
+windows-sys = { version = "0.61.2", features = ["Win32_UI_Shell", "Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_IO", "Win32_System_Threading", "Win32_UI_WindowsAndMessaging", "Win32_Security_Cryptography", "Win32_System_JobObjects", "Win32_System_Registry", "Win32_UI_Controls", "Win32_System_Diagnostics_ToolHelp"] }
+# 安裝精靈、設定頁的「選資料夾」：Windows 原生的選資料夾視窗（Tauri 官方 dialog 外掛底層也是它；Linux 用 zenity／kdialog，見 pe::win）。
+# raw-window-handle 本來就在（tauri 用的），這裡直接用來把視窗掛在生圖站上面
+rfd = { version = "0.17.2", default-features = false }
+raw-window-handle = "0.6.2"
+
+# Linux 版：程序（kill、flock）、磁碟剩餘空間（statvfs）
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2.190"
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

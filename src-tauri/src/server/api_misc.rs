@@ -222,7 +222,9 @@ pub async fn lora_meta(State(app): State<Shared>, Body(body): Body) -> ApiResult
 
 /// LoRA 檔在哪：name 是 ComfyUI 清單裡的名字（可能帶子資料夾，例 `sub\x.safetensors`），只能指到 LoRA 資料夾裡面
 fn lora_file(roots: &[PathBuf], name: &str) -> Result<PathBuf, String> {
-    let rel = Path::new(name);
+    // Windows 的 ComfyUI 給的 LoRA 名稱是 sub\x.safetensors；Linux 的 Path 不認 \，換成 /（..\ 一樣擋得到）
+    let norm = if cfg!(windows) { name.to_string() } else { name.replace('\\', "/") };
+    let rel = Path::new(&norm);
     if name.trim().is_empty() || rel.components().any(|c| !matches!(c, Component::Normal(_))) {
         return Err(format!("LoRA 名稱不對：{name}"));
     }

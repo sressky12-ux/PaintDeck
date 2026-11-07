@@ -2,9 +2,9 @@
 
 > 舊名「Anima 生圖站」，2026-10-24 改名開源。
 
-在自己的 Windows 電腦上畫圖的桌面程式：用 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 當引擎，把動漫（Anima）、寫實（Qwen-Image 2.1）、排版寫字（MOSS-Image）、影片（內建 LTX-2.3，也能換成自己的 ComfyUI 影片工作流）這幾套模型包成一個中文介面。圖都在本機畫、存在本機，不經過別人的伺服器。
+在自己的 Windows 或 Linux 電腦上畫圖的程式：用 [ComfyUI](https://github.com/comfyanonymous/ComfyUI) 當引擎，把動漫（Anima）、寫實（Qwen-Image 2.1）、排版寫字（MOSS-Image）、影片（內建 LTX-2.3，也能換成自己的 ComfyUI 影片工作流）這幾套模型包成一個中文介面。圖都在本機畫、存在本機，不經過別人的伺服器。
 
-> **English:** A Windows desktop front-end for local image/video generation on top of ComfyUI (Rust + Tauri 2, plain-JS web UI). The UI is Traditional Chinese with English and Simplified Chinese switches. Requires an NVIDIA GPU (AMD and Intel Arc GPUs: experimental, untested on real hardware; machines without a usable GPU can still install it and run ComfyUI on the CPU). Licensed under GPL-3.0.
+> **English:** A Windows/Linux front-end for local image/video generation on top of ComfyUI (Rust + Tauri 2, plain-JS web UI). On Linux it also runs as a headless server (no desktop needed) that you use from a browser. The UI is Traditional Chinese with English and Simplified Chinese switches. Requires an NVIDIA GPU (AMD and Intel Arc GPUs: experimental, untested on real hardware; machines without a usable GPU can still install it and run ComfyUI on the CPU). Licensed under GPL-3.0.
 
 ## 功能
 
@@ -33,7 +33,7 @@
 
 | 項目 | 需要 |
 |---|---|
-| 系統 | Windows 10／11（64 位元）。只支援 Windows：用到 DPAPI、Windows 程序管理，安裝精靈下載的是 Windows 版 ComfyUI 和 llama.cpp |
+| 系統 | Windows 10／11（64 位元）；或 x86_64 Linux（glibc 2.35 以上：Ubuntu 22.04、Debian 12 以後），有無頭版（純命令列）和桌面版（AppImage／deb）。Linux 版是新的，還沒有實機出圖測過 |
 | 顯示卡 | NVIDIA，顯存 8GB 以上（開發時用 RTX 3070 8GB 實測） |
 | A 卡（AMD） | **實驗性支援**：RX 5000 以後的獨顯、680M／780M／860M 以後的內顯，最新 AMD 驅動。精靈會改下載官方 AMD 版 ComfyUI 和 llama.cpp Vulkan 版，官方版沒附的架構再換成 AMD 的 ROCm 10 PyTorch；也認得 ZLUDA 版、DirectML 版 ComfyUI。還沒有 A 卡實測過 |
 | Intel 顯示卡 | **實驗性支援**：Arc 獨顯、Core Ultra 的 Arc 內顯（改下載官方 Intel 版 ComfyUI）；UHD、Iris Xe 不支援。還沒實測過 |
@@ -44,6 +44,18 @@
 ## 安裝（一般使用者）
 
 到 [Releases](https://github.com/sressky12-ux/PaintDeck/releases) 下載安裝檔 `PaintDeck_<版本>_x64-setup.exe` 雙擊安裝。安裝檔沒有付費簽章，Windows 可能跳出「Windows 已保護您的電腦」：按「其他資訊」→「仍要執行」。第一次打開會進安裝精靈，照畫面選資料放哪裡、要下載哪些模型就好。
+
+### Linux
+
+- **無頭版（純命令列，省記憶體）**：下載 `paintdeck-server-<版本>-linux-x64.tar.gz`，解開執行 `./anima-server`，用瀏覽器操作。
+  不用裝桌面環境，也不連 GTK／WebKit，記憶體都留給 ComfyUI 和模型。第一次會進網頁版安裝精靈：可攜式 Python 3.12、ComfyUI 原始碼、
+  PyTorch（N 卡 CUDA、A 卡 ROCm、Intel XPU、沒有顯示卡用 CPU）、模型都由精靈下載到你選的資料夾，不用 root。
+  - 別台電腦用：`ssh -N -L 8190:127.0.0.1:8190 使用者@伺服器`，再開 `http://127.0.0.1:8190/`（最安全）
+  - 區網直接連：`./anima-server --host 0.0.0.0 --allow-host 192.168.1.20`（沒有密碼，只在信任的網路用）
+  - 開機自動開：壓縮檔裡的 `paintdeck-server.service`（systemd 使用者服務）；其他參數看 `./anima-server --help`
+- **桌面版**：`PaintDeck_<版本>_amd64.AppImage`（`chmod +x` 後直接執行）或 `.deb`（`sudo apt install ./PaintDeck_<版本>_amd64.deb`），跟 Windows 版一樣有視窗和系統匣。
+- 兩種都要：N 卡驅動 570 以上（`nvidia-smi` 能用）；影音工作台要系統的 ffmpeg（`sudo apt install ffmpeg`）。桌面版的「選資料夾」要 zenity 或 kdialog。
+- Linux 版沒有 App 內更新：到 Releases 下載新版換掉；金鑰沒有 Windows 的 DPAPI 加密，是明文存在資料資料夾的 `data/`（只有自己能讀）。
 
 完整版有幾個模型放在 Civitai，要先在「設定」填 Civitai API key 才下載得到（手冊第 01 章有申請步驟）。
 
@@ -108,6 +120,20 @@ cargo run --bin anima-server
 ```
 
 然後用瀏覽器開 `http://127.0.0.1:8191`。伺服器只聽 127.0.0.1，也只接受本機頁面的請求。
+
+### Linux
+
+```bash
+# 系統套件（Ubuntu 22.04 以後；只編無頭版的話只要 libssl-dev、pkg-config）
+sudo apt install libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev libssl-dev libxdo-dev patchelf
+bash tools/fetch_vendor.sh                      # libonnxruntime.so，會比對 SHA-256
+cd src-tauri
+cargo test
+cargo tauri build --bundles deb,appimage        # 桌面版
+cd .. && bash tools/linux_headless.sh           # 無頭版 tar.gz（cargo build --no-default-features，不連 GTK／WebKit）
+```
+
+`.github/workflows/linux.yml` 在 Ubuntu 22.04 上跑同樣的步驟，再開起來做冒煙測試。
 
 ## 專案結構
 

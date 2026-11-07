@@ -1,0 +1,101 @@
+# Linux 版：Ubuntu 22.04 上編譯、跑測試、打包無頭版 tar.gz（純命令列，不連 GTK／WebKit）和桌面版 deb＋AppImage，
+# 再開起來做冒煙測試（不需要模型或 ComfyUI）。
+# 22.04（glibc 2.35）打的檔在比較新的發行版也能跑；Tauri 2 要 webkit2gtk-4.1，22.04 起才有。
+name: Linux
+
+on:
+  push:
+    branches: [main, linux-port]
+    tags: ["v*"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  linux:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 120
+    env:
+      # 測試連結時硬碟會爆（ld Bus error）：除錯資訊只留行號，快取和產出小很多
+      CARGO_PROFILE_DEV_DEBUG: line-tables-only
+      CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    steps:
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+
+      - uses: actions/checkout@v4
+
+      - name: System packages
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev \
+            libssl-dev libxdo-dev patchelf file xvfb
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+          # 失敗也存快取：不然每次修到一半都要從頭編全部套件（約 8 分鐘）
+          cache-on-failure: true
+
+      - name: Fetch vendor binaries
+        run: bash tools/fetch_vendor.sh
+
+      - name: Clippy
+        working-directory: src-tauri
+        run: cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Clippy (headless)
+        if: success() || failure()
+        working-directory: src-tauri
+        run: cargo clippy --no-default-features --lib --bin anima-server --locked -- -D warnings
+
+      - name: Test
+        if: success() || failure()
+        working-directory: src-tauri
+        run: cargo test --locked --no-fail-fast
+
+      - name: Check UI scripts
+        if: success() || failure()
+        run: |
+          bad=0
+          for f in ui/js/*.js; do node --check "$f" || bad=$((bad+1)); done
+          [ "$bad" = 0 ]
+
+      # 私人版才有：匯出公開版到暫存資料夾，在 Linux 再編一次（公開庫沒有 export_public.py，會跳過）
+      - name: Public export compiles
+        if: (success() || failure()) && hashFiles('tools/export_public.py') != ''
+        run: |
+          python3 -I -X utf8 tools/export_public.py "$RUNNER_TEMP/pub"
+          cp -r vendor "$RUNNER_TEMP/pub/"
+          cd "$RUNNER_TEMP/pub/src-tauri"
+          CARGO_TARGET_DIR="$GITHUB_WORKSPACE/src-tauri/target/pub" cargo clippy --all-targets --locked -- -D warnings
+
+      - name: Install tauri-cli
+        run: cargo install tauri-cli --version 2.12.1 --locked
+
+      - name: Bundle deb + AppImage
+        working-directory: src-tauri
+        run: cargo tauri build --ci --bundles deb,appimage
+
+      # 放在桌面版後面：target/release/anima-server 換成不連 GTK 的這份（冒煙測試兩種都測）
+      - name: Headless package (tar.gz)
+        run: bash tools/linux_headless.sh
+
+      - name: Smoke test
+        run: bash tools/linux_smoke.sh src-tauri/target/release
+
+      - uses: actions/upload-artifact@v4
+        if: success() || failure()
+        with:
+          name: paintdeck-linux
+          path: |
+            src-tauri/target/release/bundle/deb/*.deb
+            src-tauri/target/release/bundle/appimage/*.AppImage
+            src-tauri/target/release/headless/*.tar.gz
+          if-no-files-found: warn

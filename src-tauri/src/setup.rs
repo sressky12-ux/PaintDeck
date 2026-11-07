@@ -84,8 +84,87 @@ fn comfy_package(variant: &str, legacy: bool) -> (&'static str, u64) {
     }
 }
 
+/// Linux 版的 llama.cpp（同一版 b11505）：N 卡 CUDA 12.8（要驅動 570 以上）＋CUDA 執行檔，其他 Vulkan。
+/// 都是 .tar.gz、裡面一層資料夾（解開時拿掉那一層）。大小是 2026-11-07 用 GitHub API 查的
+const LLAMA_LINUX: &[(&str, u64)] = &[
+    ("https://github.com/ggml-org/llama.cpp/releases/download/b11505/llama-b11505-bin-ubuntu-cuda-12.8-x64.tar.gz", 172_008_023),
+    ("https://github.com/ggml-org/llama.cpp/releases/download/b11505/cudart-llama-b11505-bin-ubuntu-cuda-12.8-x64.tar.gz", 594_377_392),
+];
+const LLAMA_LINUX_VULKAN: &[(&str, u64)] =
+    &[("https://github.com/ggml-org/llama.cpp/releases/download/b11505/llama-b11505-bin-ubuntu-vulkan-x64.tar.gz", 31_741_729)];
+
+/// Linux 沒有 ComfyUI 免安裝版：精靈自己組一份同樣擺法的（<位置>/python 是可攜式 Python、<位置>/ComfyUI 是原始碼），
+/// comfy_layout 照「秋葉整合包」那條（外層 python）就認得，不用另外的偵測。
+/// 可攜式 Python：astral-sh/python-build-standalone 的 install_only 版（官方 CPython 編好的，含 pip）。SHA256 照它的 SHA256SUMS（2026-11-07）
+const LINUX_PYTHON: (&str, u64, &str) = (
+    "https://github.com/astral-sh/python-build-standalone/releases/download/20261026/cpython-3.12.16%2B20261026-x86_64-unknown-linux-gnu-install_only.tar.gz",
+    67_921_566,
+    "6a79e922e50006b601f29e688407659da1c2b86ebcd4e9c7254cf234be8b89de",
+);
+/// ComfyUI 原始碼（跟 Windows 免安裝版同一版）。GitHub 的 tag 壓縮檔是現場打包的，大小不固定：解開後看 main.py 在不在
+const COMFY_SRC_URL: &str = "https://github.com/Comfy-Org/ComfyUI/archive/refs/tags/v0.43.0.tar.gz";
+
+/// Linux 版 ComfyUI 要裝的 PyTorch（PyTorch 官方的 pip 套件庫）：N 卡照雲端那支一樣看驅動支援的 CUDA 版本（13.0 以上用 cu130，不然 cu128），
+/// 舊卡（GTX 10 以前）cu126；A 卡 ROCm、Intel XPU、沒有顯示卡用 CPU 版
+fn linux_torch_index(variant: &str, legacy: bool) -> String {
+    let idx = match variant {
+        "nvidia" if legacy => "cu126",
+        "nvidia" => {
+            let cuda = std::process::Command::new("nvidia-smi")
+                .output()
+                .ok()
+                .and_then(|o| {
+                    let s = String::from_utf8_lossy(&o.stdout).to_string();
+                    let v = s.split("CUDA Version:").nth(1)?.split_whitespace().next()?.to_string();
+                    let (a, b) = v.split_once('.')?;
+                    Some(a.parse::<u32>().ok()? * 100 + b.parse::<u32>().ok()?)
+                })
+                .unwrap_or(0);
+            if cuda >= 1300 { "cu130" } else { "cu128" }
+        }
+        "amd" => "rocm6.4",
+        "intel" => "xpu",
+        _ => "cpu",
+    };
+    format!("https://download.pytorch.org/whl/{idx}")
+}
+
+/// 解開 .tar.gz／.tar.xz（Linux 版的 llama.cpp、Python、ComfyUI 原始碼、Node.js）：用系統的 tar（每個 Linux 都有，認得符號連結和執行權限）。
+/// strip＝拿掉最上面幾層資料夾
+fn untar(archive: &Path, dir: &Path, strip: u32) -> Result<(), String> {
+    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+    let out = std::process::Command::new("tar")
+        .arg("-xf")
+        .arg(archive)
+        .arg("-C")
+        .arg(dir)
+        .arg(format!("--strip-components={strip}"))
+        .output()
+        .map_err(|e| format!("開不了 tar：{e}"))?;
+    if !out.status.success() {
+        return Err(format!("{}：{}", archive.display(), String::from_utf8_lossy(&out.stderr).trim()));
+    }
+    Ok(())
+}
+
+/// 解開一串壓縮檔到同一個資料夾：.zip 用 zip 套件（Windows 的檔），.tar.* 用 untar（Linux 的檔，拿掉最上面一層）
+fn unpack_all(files: &[PathBuf], dir: &Path) -> Result<(), String> {
+    for f in files {
+        let name = f.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default();
+        if name.ends_with(".zip") {
+            unzip_all(std::slice::from_ref(f), dir)?;
+        } else {
+            untar(f, dir, 1)?;
+        }
+    }
+    Ok(())
+}
+
 /// 要下載的 llama.cpp：N 卡照舊 CUDA 版，其他用 Vulkan 版
 fn llama_files(variant: &str) -> &'static [(&'static str, u64)] {
+    if !cfg!(windows) {
+        return if variant == "nvidia" { LLAMA_LINUX } else { LLAMA_LINUX_VULKAN };
+    }
     if variant == "nvidia" {
         LLAMA
     } else {
@@ -109,7 +188,12 @@ fn tagger_ok(dir: &Path) -> bool {
 }
 /// 影音工作台的工具（剪輯台 FableCut 要 Node.js；拆幀、接回影片、FableCut 快速匯出要 ffmpeg）。
 /// 大小是 2026-10-19 用 HEAD 查到的；解壓到 <資料>\data\tools\node、tools\ffmpeg（studio::find_node_in／find_ffmpeg_in 會找）
-const NODEJS: (&str, u64) = ("https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip", 37_618_919);
+const NODEJS: (&str, u64) = if cfg!(windows) {
+    ("https://nodejs.org/dist/v24.21.0/node-v24.21.0-win-x64.zip", 37_618_919)
+} else {
+    // Linux：同一版，.tar.xz（解到 tools/node，拿掉最上面那層 → tools/node/bin/node）。大小 2026-11-07 用 HEAD 查的
+    ("https://nodejs.org/dist/v24.21.0/node-v24.21.0-linux-x64.tar.xz", 31_890_184)
+};
 const FFMPEG: (&str, u64) = (
     "https://github.com/GyanD/codexffmpeg/releases/download/9.0.2/ffmpeg-9.0.2-essentials_build.zip",
     114_768_076,
@@ -190,7 +274,7 @@ fn comfy_src(dir: &Path, strict: bool) -> bool {
 
 /// 官方桌面版（舊版 Electron）選的資料夾：有 .venv、models，沒有 main.py（程式裝在別處）
 fn desktop_base(dir: &Path) -> bool {
-    dir.join(".venv").join("Scripts").join("python.exe").is_file()
+    crate::paths::venv_python(&dir.join(".venv")).is_file()
         && dir.join("models").is_dir()
         && !comfy_src(dir, false)
         && !comfy_src(&dir.join("ComfyUI"), false)
@@ -281,11 +365,11 @@ pub fn comfyui_dir(dir: &Path) -> PathBuf {
     }
 }
 
-/// 找 Python：d\name\python.exe 或 venv 的 d\name\Scripts\python.exe
+/// 找 Python：d\name\python.exe 或 venv 的 d\name\Scripts\python.exe（Linux 都是 d/name/bin/python，見 paths::python_paths）
 fn python_in(d: &Path, names: &[&str], venv: bool) -> Option<PathBuf> {
     names
         .iter()
-        .map(|n| if venv { d.join(n).join("Scripts").join("python.exe") } else { d.join(n).join("python.exe") })
+        .flat_map(|n| crate::paths::python_paths(&d.join(n), venv))
         .find(|p| p.is_file())
 }
 
@@ -329,7 +413,7 @@ fn layout_with(dir: &Path, desktop: impl Fn() -> Option<PathBuf>, opt: &PyOpt) -
     if desktop_base(&root) {
         return Some(ComfyLayout {
             main: desktop()?,
-            python: root.join(".venv").join("Scripts").join("python.exe"),
+            python: crate::paths::venv_python(&root.join(".venv")),
             cwd: root.clone(),
             root,
             portable: false,
@@ -748,6 +832,10 @@ pub fn vcredist_version() -> Option<(u32, u32, u32)> {
 
 /// VC++ 執行階段夠新、而且 msvcp140.dll 真的在系統資料夾
 pub fn vcredist_ok() -> bool {
+    // VC++ 執行階段只有 Windows 要
+    if !cfg!(windows) {
+        return true;
+    }
     let sys = std::env::var_os("SystemRoot").map(PathBuf::from).unwrap_or_else(|| PathBuf::from(r"C:\Windows"));
     vcredist_version().is_some_and(|(a, b, _)| (a, b) >= VCREDIST_MIN) && sys.join("System32").join("msvcp140.dll").is_file()
 }
@@ -927,9 +1015,22 @@ pub(crate) fn fixed_drives() -> Vec<PathBuf> {
         .map(PathBuf::from)
         .collect()
 }
+/// Linux：家目錄，加上外接硬碟常掛的位置（/media/<使用者>/*、/run/media/<使用者>/*、/mnt/*）
 #[cfg(not(windows))]
 pub(crate) fn fixed_drives() -> Vec<PathBuf> {
-    vec![]
+    let mut out: Vec<PathBuf> = std::env::var_os("HOME").map(PathBuf::from).filter(|h| h.is_dir()).into_iter().collect();
+    let user = std::env::var("USER").unwrap_or_default();
+    let mut parents = vec![PathBuf::from("/mnt")];
+    if !user.is_empty() {
+        parents.push(Path::new("/media").join(&user));
+        parents.push(Path::new("/run/media").join(&user));
+    }
+    for d in parents {
+        let mut subs: Vec<PathBuf> = std::fs::read_dir(&d).into_iter().flatten().flatten().map(|e| e.path()).filter(|p| p.is_dir()).collect();
+        subs.sort();
+        out.extend(subs);
+    }
+    out
 }
 
 /// 看起來是備份、垃圾桶、系統的資料夾：不往裡面找
@@ -1179,9 +1280,17 @@ pub fn scan(current: Option<&Config>) -> Value {
         })
         .max_by_key(|d| d["free"].as_u64().unwrap_or(0))
         .and_then(|d| d["drive"].as_str())
-        .unwrap_or("C:\\")
-        .to_string();
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            if cfg!(windows) {
+                "C:\\".into()
+            } else {
+                std::env::var("HOME").unwrap_or_else(|_| "/tmp".into())
+            }
+        });
     let base = PathBuf::from(best).join("AnimaStudio");
+    // Linux 沒有免安裝版，精靈自己組的那份就叫 ComfyUI
+    let fresh_comfy = if cfg!(windows) { "ComfyUI_windows_portable" } else { "ComfyUI" };
     // 顯示卡：偵測結果、自動判斷的版本、使用者在第二頁選過的（comfy.json）
     let guarded = gpu_job.join().ok().flatten();
     let detect_timeout = guarded.is_none();
@@ -1200,12 +1309,14 @@ pub fn scan(current: Option<&Config>) -> Value {
         // 時間內沒掃完的硬碟（找舊安裝）：精靈提醒「在那裡的話第二頁自己指定」
         "unscanned": unscanned.iter().map(|d| d.to_string_lossy()).collect::<Vec<_>>(),
         "comfy_min_version": COMFY_MIN_VERSION,
-        "variant": variant, "windows_build": gpu::windows_build(), "lite": lite_view(&gpus, ram_total()),
+        "os": std::env::consts::OS, "variant": variant, "windows_build": gpu::windows_build(), "lite": lite_view(&gpus, ram_total()),
         "detected": detected, "detect_timeout": detect_timeout, "gpu": plan.view(), "auto": gpu::auto_plan(&gpus, detected).view(),
         "prefs": prefs, "amd_choices": gpu::AMD_GFX_CHOICES.iter().map(|(g, l)| json!({"gfx": g, "label": l})).collect::<Vec<_>>(),
         "vcredist": {"ok": vcredist_ok(), "version": vcredist_version().map(|(a, b, c)| format!("{a}.{b}.{c}"))},
-        "fresh": {"data_root": base.join("anima_data").to_string_lossy(), "comfy_dir": base.join("ComfyUI_windows_portable").to_string_lossy()},
-        "comfy_download": {"version": COMFY_VERSION, "size": comfy_package(variant, plan.legacy).1, "variant": variant, "legacy": plan.legacy},
+        "fresh": {"data_root": base.join("anima_data").to_string_lossy(), "comfy_dir": base.join(fresh_comfy).to_string_lossy()},
+        // Linux 是 Python＋原始碼＋pip 裝的 PyTorch：大小只能估（PyTorch 依顯示卡約 1～4GB）
+        "comfy_download": {"version": COMFY_VERSION, "size": if cfg!(windows) { comfy_package(variant, plan.legacy).1 } else { LINUX_PYTHON.1 + 3_500_000_000 },
+                           "variant": variant, "legacy": plan.legacy, "linux": !cfg!(windows)},
     })
 }
 
@@ -1240,7 +1351,8 @@ impl Plan {
     /// 偵測失敗（unknown）不知道是哪張卡：有裝就算，不去蓋掉別人的 CUDA 版
     fn llama_ok(&self, variant: &str) -> bool {
         let bin = self.node().join("bin");
-        bin.join("llama-server.exe").is_file() && (matches!(variant, "nvidia" | "unknown") || bin.join("ggml-vulkan.dll").is_file())
+        let vulkan = if cfg!(windows) { "ggml-vulkan.dll" } else { "libggml-vulkan.so" };
+        bin.join(crate::paths::exe("llama-server")).is_file() && (matches!(variant, "nvidia" | "unknown") || bin.join(vulkan).is_file())
     }
 }
 
@@ -1251,7 +1363,9 @@ fn studio_tools(p: &Plan) -> [StudioTool; 2] {
     let t = p.tools();
     [
         ("tools/node", NODEJS, "node", "Node.js 24（剪輯台）", crate::studio::find_node_in(&t).is_some()),
-        ("tools/ffmpeg", FFMPEG, "ffmpeg", "ffmpeg 9.0.2（拆幀、接影片）", crate::studio::find_ffmpeg_in(&t).is_some()),
+        // Linux 不下載 ffmpeg（沒有固定版本的官方編好的檔）：系統有裝就算有（install_tools 會叫使用者用套件管理員裝）
+        ("tools/ffmpeg", FFMPEG, "ffmpeg", "ffmpeg 9.0.2（拆幀、接影片）",
+         crate::studio::find_ffmpeg_in(&t).is_some() || (!cfg!(windows) && crate::studio::system_ffmpeg().is_some())),
     ]
 }
 
@@ -1928,7 +2042,8 @@ fn check(res: &Path, p: &Plan, g: &gpu::GpuPlan) -> Value {
                   "moss_problem": comfy.then(|| moss_support(&p.comfy_dir).problem()).flatten().filter(|_| !comfy_upgradable(&p.comfy_dir)),
                   // 官方免安裝版比 COMFY_VERSION 舊：安裝與修復會升級（精靈 ComfyUI 卡顯示）
                   "upgrade_to": comfy_upgradable(&p.comfy_dir).then_some(COMFY_VERSION),
-                  "exists": p.comfy_dir.exists(), "free": free_comfy, "download_size": comfy_package(variant, g.legacy).1},
+                  "exists": p.comfy_dir.exists(), "free": free_comfy,
+                  "download_size": if cfg!(windows) { comfy_package(variant, g.legacy).1 } else { LINUX_PYTHON.1 + 3_500_000_000 }},
         "variant": variant,
         "gpu": g.view(),
         "rocm10": {"need": rocm10_need, "devices": g.rocm10, "bytes": if g.rocm10.is_empty() { 0 } else { gpu::rocm10_bytes(&g.rocm10) }},
@@ -2630,7 +2745,14 @@ impl Setup {
         let variant = g.variant;
         let llama = llama_files(variant);
         let need_comfy = !comfy_ok(&p.comfy_dir);
-        if need_comfy && !g.own && variant != "unknown" {
+        if need_comfy && !g.own && variant != "unknown" && !cfg!(windows) {
+            // Linux：可攜式 Python＋原始碼＋pip 裝 PyTorch（install_comfy_linux）
+            self.add_item("comfy.python", "下載可攜式 Python 3.12", LINUX_PYTHON.1);
+            self.add_item("comfy.src", &format!("下載 ComfyUI {COMFY_VERSION} 原始碼"), 0);
+            self.add_item("comfy.unpack", "解壓縮", 0);
+            self.add_item("comfy.torch", "安裝 PyTorch", 0);
+            self.add_item("comfy.req", "安裝 ComfyUI 要的 Python 套件", 0);
+        } else if need_comfy && !g.own && variant != "unknown" {
             match variant {
                 "amd" => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0（AMD 版，實驗性）", COMFY_AMD_SIZE),
                 "intel" => self.add_item("comfy.7z", "下載 ComfyUI 0.43.0（Intel 版，實驗性）", COMFY_INTEL_SIZE),
@@ -2648,10 +2770,12 @@ impl Setup {
             self.add_item("comfy_upgrade", &format!("把 ComfyUI 升級到 {COMFY_VERSION}"), 0);
         }
         // 免安裝版沒有這張 A 卡的架構（RX 5000／6000、780M…）：裝完再換成 ROCm 10 PyTorch
-        let rocm10 = match comfy_layout(&p.comfy_dir) {
-            Some(l) => gpu::rocm10_needed(&l, &g),
-            None => need_comfy && variant == "amd" && !g.own && !g.rocm10.is_empty(),
-        };
+        // Linux 的 A 卡直接裝 PyTorch 官方的 ROCm 版（install_comfy_linux），不走 Windows 那套 ROCm 10 換裝
+        let rocm10 = cfg!(windows)
+            && match comfy_layout(&p.comfy_dir) {
+                Some(l) => gpu::rocm10_needed(&l, &g),
+                None => need_comfy && variant == "amd" && !g.own && !g.rocm10.is_empty(),
+            };
         if rocm10 {
             self.add_item("rocm10", "下載支援這張 A 卡的 PyTorch（ROCm 10，實驗性）", gpu::rocm10_bytes(&g.rocm10));
             self.add_item("rocm10.install", "換上新的 PyTorch", 0);
@@ -2725,7 +2849,12 @@ impl Setup {
                 self.problem("偵測不到這台電腦的顯示卡，不知道該下載哪一版 ComfyUI：回第二頁在「ComfyUI 版本」選一個".into());
                 return Ok(());
             }
-            if let Err(e) = self.install_comfy(p, variant, g.legacy).await {
+            let r = if cfg!(windows) {
+                self.install_comfy(p, variant, g.legacy).await
+            } else {
+                self.install_comfy_linux(p, variant, g.legacy).await
+            };
+            if let Err(e) = r {
                 self.check_cancel()?;
                 self.problem(format!("ComfyUI：{e}"));
                 return Ok(());
@@ -2806,7 +2935,7 @@ impl Setup {
                 self.set_status("llama.unpack", "run", None);
                 let bin = p.node().join("bin");
                 let zs = zips.clone();
-                match tokio::task::spawn_blocking(move || unzip_all(&zs, &bin))
+                match tokio::task::spawn_blocking(move || unpack_all(&zs, &bin))
                     .await
                     .unwrap_or_else(|e| Err(e.to_string()))
                 {
@@ -2951,6 +3080,11 @@ impl Setup {
         let mut used = vec![];
         for (key, (u, n), sub, label, _) in todo {
             self.check_cancel()?;
+            if !cfg!(windows) && sub == "ffmpeg" {
+                self.set_status(key, "error", Some("要用系統的套件管理員裝".into()));
+                self.problem("Linux 版用系統的 ffmpeg：請先用套件管理員裝（Ubuntu／Debian：sudo apt install ffmpeg；Fedora：sudo dnf install ffmpeg；Arch：sudo pacman -S ffmpeg），裝好再按一次安裝".into());
+                continue;
+            }
             let z = p.dl().join(basename(u));
             if let Err(e) = self.fetch(key, u, &z, Some(n), &p.data_root).await {
                 self.check_cancel()?;
@@ -2961,7 +3095,7 @@ impl Setup {
             self.set_status(key, "run", None);
             self.say(format!("解壓縮 {}", basename(u)));
             let (zs, dir) = (vec![z.clone()], p.tools().join(sub));
-            match tokio::task::spawn_blocking(move || unzip_all(&zs, &dir))
+            match tokio::task::spawn_blocking(move || unpack_all(&zs, &dir))
                 .await
                 .unwrap_or_else(|e| Err(e.to_string()))
             {
@@ -3175,6 +3309,86 @@ impl Setup {
     }
 
     /// variant＝gpu::GpuPlan 的 variant："amd"、"intel" 下載各自的免安裝包（資料夾結構、啟動方式跟 NVIDIA 版一樣）
+    /// Linux 版的「下載 ComfyUI」：可攜式 Python＋ComfyUI 原始碼，在旁邊的暫存資料夾組好（pip 裝 PyTorch、ComfyUI 要的套件），
+    /// 全部成功才搬到選的位置（失敗留下的半成品不會擋住下次安裝）。擺法跟秋葉整合包一樣（外層 python、ComfyUI 資料夾），comfy_layout 認得
+    async fn install_comfy_linux(&self, p: &Plan, variant: &str, legacy: bool) -> Result<(), String> {
+        if p.comfy_dir.exists()
+            && (!p.comfy_dir.is_dir() || std::fs::read_dir(&p.comfy_dir).map(|mut d| d.next().is_some()).unwrap_or(true))
+        {
+            return Err(format!("{} 已經有東西但不是完整的 ComfyUI；請換一個位置，或先把它移走", p.comfy_dir.display()));
+        }
+        let parent = p.comfy_dir.parent().ok_or("ComfyUI 位置不對")?.to_path_buf();
+        let dl = parent.join("_anima_dl");
+        let build = dl.join("comfy_build");
+        let (py_url, py_size, py_sha) = LINUX_PYTHON;
+        let py_tar = dl.join("cpython-3.12-linux-x64.tar.gz");
+        let src_tar = dl.join("ComfyUI-src.tar.gz");
+        self.phase("下載可攜式 Python 3.12（約 70MB）");
+        self.fetch_checked("comfy.python", py_url, &py_tar, Some(py_size), Some(py_sha), false, &p.data_root)
+            .await
+            .inspect_err(|e| self.set_status("comfy.python", "error", Some(e.clone())))?;
+        self.phase(&format!("下載 ComfyUI {COMFY_VERSION} 原始碼"));
+        self.fetch("comfy.src", COMFY_SRC_URL, &src_tar, None, &p.data_root)
+            .await
+            .inspect_err(|e| self.set_status("comfy.src", "error", Some(e.clone())))?;
+        self.check_cancel().map_err(|_| "已停止".to_string())?;
+        self.set_status("comfy.unpack", "run", None);
+        if build.exists() {
+            // 上次沒裝完的半成品（只會是自己建的暫存資料夾）
+            std::fs::remove_dir_all(&build).map_err(|e| format!("清掉上次沒裝完的 {} 失敗：{e}", build.display()))?;
+        }
+        let (pt, st, b) = (py_tar.clone(), src_tar.clone(), build.clone());
+        let r = tokio::task::spawn_blocking(move || -> Result<(), String> {
+            untar(&pt, &b, 0)?; // 裡面是 python/…
+            untar(&st, &b.join("ComfyUI"), 1)?; // 裡面是 ComfyUI-0.43.0/…
+            Ok(())
+        })
+        .await
+        .unwrap_or_else(|e| Err(e.to_string()));
+        let python = build.join("python").join("bin").join("python3");
+        if let Err(e) = r.and_then(|_| {
+            if !python.is_file() || !build.join("ComfyUI").join("main.py").is_file() {
+                return Err("解開了，但裡面找不到 python 或 ComfyUI 的 main.py".into());
+            }
+            Ok(())
+        }) {
+            let _ = std::fs::remove_file(&src_tar); // 原始碼壓縮檔是現場打包的，壞了就丟掉重抓
+            self.set_status("comfy.unpack", "error", Some(e.clone()));
+            return Err(format!("解壓縮失敗：{e}"));
+        }
+        self.set_status("comfy.unpack", "done", None);
+        let pip = |extra: &[&str]| -> Vec<String> {
+            ["-s", "-m", "pip", "install", "--disable-pip-version-check", "--no-input", "--no-warn-script-location"]
+                .iter()
+                .chain(extra)
+                .map(|s| s.to_string())
+                .collect()
+        };
+        let index = linux_torch_index(variant, legacy);
+        self.phase(&format!("安裝 PyTorch（從 {index}，約 1～4GB，要一段時間）"));
+        self.set_status("comfy.torch", "run", None);
+        if let Err(e) = self.pip_blocking(&python, pip(&["torch", "torchvision", "torchaudio", "--index-url", &index]), None, true).await {
+            self.set_status("comfy.torch", "error", Some(e.clone()));
+            return Err(format!("裝 PyTorch 失敗：{e}"));
+        }
+        self.set_status("comfy.torch", "done", None);
+        self.phase("安裝 ComfyUI 要的 Python 套件");
+        self.set_status("comfy.req", "run", None);
+        let req = build.join("ComfyUI").join("requirements.txt").to_string_lossy().to_string();
+        if let Err(e) = self.pip_blocking(&python, pip(&["-r", &req]), None, true).await {
+            self.set_status("comfy.req", "error", Some(e.clone()));
+            return Err(format!("裝 ComfyUI 的套件失敗：{e}"));
+        }
+        self.set_status("comfy.req", "done", None);
+        if p.comfy_dir.exists() {
+            let _ = std::fs::remove_dir(&p.comfy_dir); // 只會是空資料夾（上面檢查過）
+        }
+        maint::move_path(&build, &p.comfy_dir).map_err(|e| format!("搬到 {} 失敗：{e}", p.comfy_dir.display()))?;
+        self.stash(&[py_tar, src_tar], &p.data_root);
+        let _ = std::fs::remove_dir(&dl);
+        Ok(())
+    }
+
     async fn install_comfy(&self, p: &Plan, variant: &str, legacy: bool) -> Result<(), String> {
         if p.comfy_dir.exists()
             && (!p.comfy_dir.is_dir()
@@ -3676,11 +3890,15 @@ fn plan_from(body: &Value) -> Result<Plan, String> {
         let s = body[k].as_str().map(str::trim).unwrap_or("");
         let p = PathBuf::from(s);
         if s.is_empty() || !p.is_absolute() {
-            let (what, eg) = if k == "data_root" {
-                ("資料資料夾", "D:\\AnimaStudio\\anima_data")
-            } else {
-                ("ComfyUI 資料夾", "D:\\AnimaStudio\\ComfyUI_windows_portable")
+            let (what, eg) = match (k == "data_root", cfg!(windows)) {
+                (true, true) => ("資料資料夾", "D:\\AnimaStudio\\anima_data"),
+                (false, true) => ("ComfyUI 資料夾", "D:\\AnimaStudio\\ComfyUI_windows_portable"),
+                (true, false) => ("資料資料夾", "/home/你的名字/AnimaStudio/anima_data"),
+                (false, false) => ("ComfyUI 資料夾", "/home/你的名字/AnimaStudio/ComfyUI"),
             };
+            if !cfg!(windows) {
+                return Err(format!("「{what}」要填完整的路徑（從 / 開始，例如 {eg}）"));
+            }
             return Err(format!("「{what}」要填完整的路徑（從磁碟代號開始，例如 {eg}）"));
         }
         Ok(p)
@@ -3781,9 +3999,10 @@ pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
     }
     d.pick_folder()
 }
+/// Linux：zenity／kdialog（pe::win::pick_folder）
 #[cfg(not(windows))]
-pub fn pick_folder(_title: &str, _start: Option<&Path>) -> Option<PathBuf> {
-    None
+pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
+    crate::pe::win::pick_folder(title, start)
 }
 
 /// 跳出 Windows 的「另存新檔」視窗（存 JSON），選好回傳完整路徑、取消回傳 None（一樣會卡住，要在 spawn_blocking 裡叫）。
@@ -3801,8 +4020,11 @@ pub fn save_json_dialog(title: &str, name: &str, start: Option<&Path>) -> Option
     d.save_file()
 }
 #[cfg(not(windows))]
-pub fn save_json_dialog(_title: &str, _name: &str, _start: Option<&Path>) -> Option<PathBuf> {
-    None
+pub fn save_json_dialog(title: &str, name: &str, start: Option<&Path>) -> Option<PathBuf> {
+    if let Ok(f) = std::env::var("ANIMA_FAKE_SAVE") {
+        return (f != "cancel").then(|| PathBuf::from(f).join(name));
+    }
+    crate::pe::win::save_file(title, name, start)
 }
 
 /// Windows 原生的檔案對話框，掛在目前的前景視窗上（使用者剛在生圖站按了按鈕，前景就是生圖站），才不會跑到後面去
@@ -4148,6 +4370,62 @@ pub async fn setup_page(page: PathBuf) -> Response {
 
 #[cfg(test)]
 mod tests {
+    /// Linux 的擺法（2026-11-07）：精靈自己組的（外層 python/bin/python3＋ComfyUI）、git clone＋venv、
+    /// site-packages 在 lib/python3.X、Python 檔名、反斜線的名字
+    #[cfg(not(windows))]
+    #[test]
+    fn linux_layouts() {
+        use super::*;
+        let d = std::env::temp_dir().join(format!("anima_linux_layouts_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        let touch = |p: PathBuf| {
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, "").unwrap();
+        };
+        // 精靈組的：<位置>/python/bin/python3、<位置>/ComfyUI
+        let ours = d.join("AnimaStudio").join("ComfyUI");
+        touch(ours.join("python").join("bin").join("python3"));
+        touch(ours.join("ComfyUI").join("main.py"));
+        touch(ours.join("ComfyUI").join("nodes.py"));
+        let l = comfy_layout_with(&ours, &PyOpt::default()).expect("精靈組的認得");
+        assert_eq!((l.root.clone(), l.python.clone(), l.portable), (ours.join("ComfyUI"), ours.join("python").join("bin").join("python3"), false));
+        assert!(comfy_install(&ours), "掃硬碟算一份安裝");
+        assert_eq!(comfyui_dir(&ours), ours.join("ComfyUI"));
+        // git clone＋venv
+        let git = d.join("ComfyUI");
+        touch(git.join("main.py"));
+        touch(git.join("nodes.py"));
+        touch(git.join("venv").join("bin").join("python"));
+        let l = comfy_layout_with(&git, &PyOpt::default()).expect("clone 的認得");
+        assert_eq!((l.root.clone(), l.python.clone()), (git.clone(), git.join("venv").join("bin").join("python")));
+        // site-packages：好幾個 python3.X 時挑有 torch 的
+        let venv = git.join("venv");
+        std::fs::create_dir_all(venv.join("lib").join("python3.13").join("site-packages")).unwrap();
+        std::fs::create_dir_all(venv.join("lib").join("python3.12").join("site-packages").join("torch")).unwrap();
+        std::fs::create_dir_all(venv.join("lib").join("python3.12").join("site-packages").join("torch-2.9.1+cu128.dist-info")).unwrap();
+        assert_eq!(gpu::site_packages(&l.python), Some(venv.join("lib").join("python3.12").join("site-packages")));
+        assert_eq!(gpu::torch_build(&l.python).as_deref(), Some("cu128"));
+        assert_eq!(gpu::torch_kind(&l.python), Some("cuda"));
+        // 手動指定的 Python
+        assert!(gpu::check_python("/nope/python.exe").unwrap_err().contains("python3"));
+        assert!(gpu::check_python("/nope/python3").unwrap_err().contains("找不到"));
+        assert!(gpu::check_python(&l.python.to_string_lossy()).is_ok());
+        assert!(crate::paths::is_python_name("python3.12") && crate::paths::is_python_name("python") && !crate::paths::is_python_name("python3.x"));
+        assert_eq!(crate::paths::exe("llama-server"), "llama-server");
+        assert_eq!(crate::server::basename("..\\a.png"), "a.png");
+        // 路徑要從 / 開始
+        assert!(plan_from(&json!({"data_root": "/a", "comfy_dir": "/b"})).is_ok());
+        assert!(plan_from(&json!({"data_root": "D:\\a", "comfy_dir": "/b"})).err().unwrap().contains("從 / 開始"));
+        // tar.gz 解開（拿掉最上面一層）
+        let src = d.join("src").join("top");
+        touch(src.join("bin").join("x"));
+        let tgz = d.join("t.tar.gz");
+        assert!(std::process::Command::new("tar").arg("-czf").arg(&tgz).arg("-C").arg(d.join("src")).arg("top").status().unwrap().success());
+        unpack_all(std::slice::from_ref(&tgz), &d.join("out")).unwrap();
+        assert!(d.join("out").join("bin").join("x").is_file());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
     #[test]
     fn install_key_is_encrypted_blank_preserves_and_invalid_input_never_echoes() {
         let root = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../待刪除")
@@ -4191,6 +4469,7 @@ mod tests {
     }
 
     /// 免安裝版、自己 clone 的（venv）、選到免安裝版裡面那層、只有 main.py 沒有 Python、隨便一個有 main.py 的專案
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn comfy_layouts() {
         let d = std::env::temp_dir().join(format!("anima_layout_test_{}", std::process::id()));
@@ -4250,7 +4529,7 @@ mod tests {
         let read = |p: PathBuf| std::fs::read_to_string(p).unwrap_or_default();
         let port = d.join("ComfyUI_windows_portable");
         let code = port.join("ComfyUI");
-        write(port.join("python_embeded").join("python.exe"), "");
+        write(crate::paths::python_paths(&port.join("python_embeded"), false).swap_remove(0), "");
         write(code.join("main.py"), "");
         write(code.join("comfyui_version.py"), "__version__ = \"0.38.0\"\n");
         write(code.join("nodes.py"), r#""type": (["stable_diffusion", "moss_image"], ),"#);
@@ -4300,6 +4579,7 @@ mod tests {
     }
 
     /// 2026-10-31 升級到 0.43：只有官方免安裝版（python_embeded＋git）、版本比 COMFY_VERSION 舊的才由精靈升級
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn comfy_upgradable_only_old_portable_git() {
         let d = std::env::temp_dir().join(format!("anima_comfy_upgradable_{}", std::process::id()));
@@ -4506,6 +4786,7 @@ mod tests {
     }
 
     /// 2026-10-30 有人回報精靈第一步一直「超過 240 秒沒有回應」：找舊安裝要有時間上限，時間到就回傳找到的，沒掃完的硬碟另外列
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn find_installs_has_a_time_limit() {
         let d = std::env::temp_dir().join(format!("anima_find_test_{}", std::process::id()));
@@ -4550,6 +4831,7 @@ mod tests {
 
     /// 各家整合包、啟動器的擺法（照 2026-10-21 查到的資料夾結構做假的）：
     /// （名字, 要建的檔, 使用者選的資料夾, main.py 那層, Python, 工作資料夾, 免安裝版?, 掃硬碟時算一份安裝?）
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn distro_layouts() {
         let d = std::env::temp_dir().join(format!("anima_distro_test_{}", std::process::id()));
@@ -4761,7 +5043,7 @@ mod tests {
         std::fs::write(&d, b"abc").unwrap();
         assert_eq!(sha256_file(&d).unwrap(), "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
         let _ = std::fs::remove_file(&d);
-        let m = changed_msg(Path::new(r"D:\m\loras\zodaplus_v2_anima.safetensors.part"), 34798680, 34803536);
+        let m = changed_msg(Path::new("D:/m/loras/zodaplus_v2_anima.safetensors.part"), 34798680, 34803536);
         assert!(m.contains("「zodaplus_v2_anima.safetensors」") && m.contains("34798680") && m.contains("重試"), "{m}");
         assert!(sha_mismatch_msg(Path::new(r"D:\m\x.gguf"), "https://huggingface.co/x").contains("huggingface.co"));
     }
@@ -4848,6 +5130,7 @@ mod tests {
         }
     }
 
+    #[cfg(windows)] // 用 D:\ 這種 Windows 路徑（Linux 不算絕對路徑、沒有磁碟根目錄）
     #[test]
     fn plan_needs_absolute_paths() {
         assert!(plan_from(&json!({"data_root": "anima", "comfy_dir": "C:\\x"})).is_err());
@@ -4855,6 +5138,7 @@ mod tests {
         assert!(plan_from(&json!({"data_root": "D:\\a", "comfy_dir": "D:\\b"})).is_ok());
     }
 
+    #[cfg(windows)] // 用 D:\ 這種 Windows 路徑（Linux 不算絕對路徑、沒有磁碟根目錄）
     #[test]
     fn config_roundtrip() {
         let dir = std::env::temp_dir().join(format!("anima_cfg_test_{}", std::process::id()));
@@ -4869,6 +5153,7 @@ mod tests {
     }
 
     /// 路徑填錯的訊息講白話（不露出 data_root、comfy_dir 欄位名）
+    #[cfg(windows)] // 用 D:\ 這種 Windows 路徑（Linux 不算絕對路徑、沒有磁碟根目錄）
     #[test]
     fn plan_error_is_plain() {
         let e = plan_from(&json!({"data_root": "anima", "comfy_dir": "C:\\x"})).err().unwrap();
@@ -5000,6 +5285,7 @@ mod tests {
     }
 
     /// 解壓暫存：磁碟根目錄底下的短名字（比最後位置短）；沒有根目錄可用就放在旁邊；別人的同名資料夾不去動
+    #[cfg(windows)] // 用 D:\ 這種 Windows 路徑（Linux 不算絕對路徑、沒有磁碟根目錄）
     #[test]
     fn unpack_dir_is_short() {
         assert!(is_drive_root(Path::new(r"D:\")) && is_drive_root(Path::new("c:/")));

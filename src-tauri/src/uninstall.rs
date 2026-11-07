@@ -361,6 +361,7 @@ fn processes() -> Vec<(u32, PathBuf)> {
 }
 
 // ---------------------------------------------------------------- 視窗文字（跟著移除程式的語言）
+#[cfg_attr(not(windows), allow(dead_code))] // 確認視窗只有 Windows 版（NSIS 移除程式叫的）
 struct Text {
     title: &'static str,
     instruction: &'static str,
@@ -613,6 +614,7 @@ mod tests {
         std::fs::create_dir_all(path.parent().unwrap()).unwrap();
         std::fs::write(path, b"fixture bytes").unwrap();
     }
+    #[cfg(windows)]
     fn junction(link: &Path, target: &Path) -> bool {
         std::fs::create_dir_all(link.parent().unwrap()).unwrap();
         std::process::Command::new("cmd").args(["/c", "mklink", "/J"]).arg(link).arg(target).output().is_ok_and(|o| o.status.success())
@@ -655,6 +657,7 @@ mod tests {
         (env, cfg)
     }
 
+    #[cfg(windows)] // 解除安裝清理只有 Windows（NSIS 移除程式叫的）
     #[test]
     fn deletes_everything_but_keeps_images_and_junction_targets() {
         let base = root("keep");
@@ -713,6 +716,7 @@ mod tests {
         let _ = std::fs::remove_dir_all(&base);
     }
 
+    #[cfg(windows)] // 解除安裝清理只有 Windows（NSIS 移除程式叫的）
     #[test]
     fn protected_locations_are_refused() {
         assert!(dangerous(Path::new("D:\\"), &[]));

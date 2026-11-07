@@ -159,9 +159,9 @@ pub async fn blocking<T: Send + 'static>(f: impl FnOnce() -> T + Send + 'static)
     crate::diagnostics::blocking(f).await
 }
 
-/// 只留檔名（擋掉 ..\ 之類的路徑）
+/// 只留檔名（擋掉 ..\ 之類的路徑）。\ 和 / 都當分隔：Linux 的 Path 只認 /，網頁、Windows 的 ComfyUI 送來的名字常是 \
 pub fn basename(name: &str) -> String {
-    Path::new(name)
+    Path::new(name.rsplit(['/', '\\']).next().unwrap_or(name))
         .file_name()
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_default()
@@ -274,8 +274,21 @@ async fn no_stale_static(req: Request, next: Next) -> Response {
     r
 }
 
+/// 無頭版的 --allow-host：除了本機名稱，網址還可以用這些（區網 IP、主機名）。沒設＝只收本機
+static ALLOW_HOSTS: std::sync::OnceLock<Vec<String>> = std::sync::OnceLock::new();
+
+pub fn allow_hosts(hosts: Vec<String>) {
+    let _ = ALLOW_HOSTS.set(hosts.into_iter().map(|h| h.trim().trim_start_matches('[').trim_end_matches(']').to_lowercase()).collect());
+}
+
+fn allowed_host(host: &str) -> bool {
+    let h = host.trim_start_matches('[').trim_end_matches(']').to_lowercase();
+    ALLOW_HOSTS.get().is_some_and(|v| v.contains(&h))
+}
+
 /// 限制本機服務只接受以本機名稱開啟的頁面及同源瀏覽器請求。
 /// 否則其他網站可以透過 DNS rebinding 或表單向本機 API 送出指令。
+/// 無頭版明確用 --allow-host 列出來的名稱也算（同樣要同源）
 pub(crate) fn local_request(req: &Request) -> bool {
     let Some(host) = req
         .headers()
@@ -290,7 +303,8 @@ pub(crate) fn local_request(req: &Request) -> bool {
     if !matches!(
         authority.host(),
         "127.0.0.1" | "localhost" | "[::1]" | "::1"
-    ) {
+    ) && !allowed_host(authority.host())
+    {
         return false;
     }
     if authority.port_u16().is_none() {
@@ -738,6 +752,12 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
         .map_err(|e| format!("保護 Civitai 金鑰失敗：{e}"))?;
     for d in [&paths.thumbs, &paths.previews, &paths.input] {
         std::fs::create_dir_all(d).map_err(|e| format!("建立 {} 失敗：{e}", d.display()))?;
+    }
+    // Linux 沒有 DPAPI，金鑰（Civitai、雲端、外部 AI…）是明文存在 data/ 裡的設定檔：整個 data/ 只給自己讀（0700）
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&paths.data, std::fs::Permissions::from_mode(0o700));
     }
     // 外部模型資料夾（model_dirs.rs）要比 AI 改寫早讀：AI 改寫的語言模型可能放在外部資料夾
     crate::model_dirs::init(&paths.data);

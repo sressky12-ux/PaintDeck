@@ -826,6 +826,7 @@ mod tests {
     }
 
     /// 啟動指令：N 卡沒改設定時跟以前一模一樣；CPU、DirectML、額外參數、ZLUDA
+    #[cfg(windows)] // 免安裝版、ZLUDA、gfx103X 都是 Windows 的 ComfyUI
     #[test]
     fn launch_commands() {
         let d = std::env::temp_dir().join(format!("anima_launch_test_{}", std::process::id()));

@@ -1,10 +1,23 @@
 //! 本體更新：私人版永遠手動；公開版只安裝官方 updater 驗過簽章的版本。
 //! 不開放外掛的原生 IPC，所有操作經本機 API 的頻道、佇列與更新鎖檢查。
+//! 沒有 desktop 功能（Linux 純命令列的無頭版，不連 Tauri）：永遠手動更新，畫面只給 Releases 的連結。
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
-use std::sync::{atomic::{AtomicBool, Ordering}, Mutex, OnceLock};
+#[cfg(feature = "desktop")]
+use std::sync::atomic::Ordering;
+use std::sync::{atomic::AtomicBool, Mutex, OnceLock};
+#[cfg(feature = "desktop")]
 use std::time::Duration;
+#[cfg(feature = "desktop")]
 use tauri_plugin_updater::{Update, Updater, UpdaterExt};
+
+/// 無頭版沒有更新外掛：放一個同名的空殼（永遠不會有值）
+#[cfg(not(feature = "desktop"))]
+#[allow(dead_code)]
+pub struct Update {
+    pub version: String,
+    pub body: Option<String>,
+}
 
 // 匯出公開版時只改這個常數；不能用環境變數或使用者設定繞過。
 pub const CHANNEL: &str = "public";
@@ -35,8 +48,10 @@ pub struct Service {
     /// 安裝取得寫鎖；一般修改 API 在整個 handler 期間持讀鎖，避免檢查和送工之間的競態。
     pub gate: tokio::sync::RwLock<()>,
     operation: tokio::sync::Mutex<()>,
+    #[cfg(feature = "desktop")]
     app: OnceLock<tauri::AppHandle>,
     pub setup_busy: OnceLock<Box<dyn Fn() -> bool + Send + Sync>>,
+    #[cfg_attr(not(feature = "desktop"), allow(dead_code))]
     before_exit: OnceLock<Box<dyn Fn() + Send + Sync>>,
 }
 
@@ -48,17 +63,25 @@ impl Service {
         Self {
             file, status: Mutex::new(Status { auto, phase: "idle", pending: None, done: 0, total: None }),
             installing: AtomicBool::new(false), gate: tokio::sync::RwLock::new(()),
-            operation: tokio::sync::Mutex::new(()), app: OnceLock::new(),
+            operation: tokio::sync::Mutex::new(()),
+            #[cfg(feature = "desktop")]
+            app: OnceLock::new(),
             setup_busy: OnceLock::new(), before_exit: OnceLock::new(),
         }
     }
 
+    #[cfg(feature = "desktop")]
     pub fn bind(&self, app: tauri::AppHandle, before_exit: impl Fn() + Send + Sync + 'static) {
         let _ = self.app.set(app);
         let _ = self.before_exit.set(Box::new(before_exit));
     }
 
-    pub fn enabled(&self) -> bool { allowed(CHANNEL, self.app.get().is_some()) }
+    /// Linux 版先不開 App 內更新：Release 的 latest.json 還沒有 linux-x86_64 的簽章檔，打開只會一直報「找不到這個平台」。
+    /// 畫面照私人版一樣只給 Releases 的連結，自己下載新的 AppImage／deb
+    #[cfg(feature = "desktop")]
+    pub fn enabled(&self) -> bool { cfg!(windows) && allowed(CHANNEL, self.app.get().is_some()) }
+    #[cfg(not(feature = "desktop"))]
+    pub fn enabled(&self) -> bool { allowed(CHANNEL, false) }
 
     pub fn auto_check(&self) -> bool {
         self.enabled() && self.status.lock().unwrap_or_else(|e| e.into_inner()).auto
@@ -82,6 +105,7 @@ impl Service {
         Ok(())
     }
 
+    #[cfg(feature = "desktop")]
     fn updater(&self) -> Result<Updater, String> {
         if !self.enabled() { return Err("這是私人版或瀏覽器測試站，請手動安裝更新".into()); }
         let app = self.app.get().ok_or("請用桌面版更新")?;
@@ -107,10 +131,13 @@ impl Service {
         if !self.enabled() { return self.view(); }
         let Ok(_op) = self.operation.try_lock() else { return self.view() };
         self.phase("checking");
+        #[cfg(feature = "desktop")]
         let result = match self.updater() {
             Ok(u) => u.check().await.ok(),
             Err(_) => None,
         };
+        #[cfg(not(feature = "desktop"))]
+        let result = None;
         self.checked(result);
         self.view()
     }
@@ -131,6 +158,12 @@ impl Service {
         self.status.lock().unwrap_or_else(|e| e.into_inner()).phase = phase;
     }
 
+    #[cfg(not(feature = "desktop"))]
+    pub async fn install(&self, _app: &crate::server::Shared, _version: &str) -> Result<(), String> {
+        Err(format!("無頭版請到 {RELEASES} 下載新版，手動換掉"))
+    }
+
+    #[cfg(feature = "desktop")]
     pub async fn install(&self, app: &crate::server::Shared, version: &str) -> Result<(), String> {
         // 私人版在伺服器擋住，不接受指定 endpoint、key 或頻道。
         let updater = self.updater()?;
@@ -166,6 +199,7 @@ impl Service {
     }
 }
 
+#[cfg(feature = "desktop")]
 use tauri::Manager;
 
 #[cfg(test)]

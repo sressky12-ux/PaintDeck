@@ -20,7 +20,10 @@ import urllib.error
 import urllib.request
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-BIN = os.path.join(HERE, "bin", "llama-server.exe")
+WIN = os.name == "nt"
+BIN = os.path.join(HERE, "bin", "llama-server.exe" if WIN else "llama-server")
+# Windows：開子程序不跳主控台視窗（CREATE_NO_WINDOW）；Linux 沒有這個旗標
+NO_WINDOW = 0x08000000 if WIN else 0
 PROMPTS = os.path.join(HERE, "prompts")
 STATE = os.path.join(HERE, "server_state.json")
 LOCK = os.path.join(HERE, "server.lock")
@@ -124,6 +127,12 @@ def system_prompt(task):
 def _pid_alive(pid):
     if not pid:
         return False
+    if not WIN:
+        try:
+            with open(f"/proc/{int(pid)}/stat", encoding="utf-8", errors="replace") as f:
+                return f.read().rsplit(")", 1)[-1].split()[0] not in ("Z", "X")  # 殭屍、已結束不算
+        except (OSError, ValueError, IndexError):
+            return False
     k32 = ctypes.windll.kernel32
     h = k32.OpenProcess(0x1000, False, int(pid))  # PROCESS_QUERY_LIMITED_INFORMATION
     if not h:
@@ -173,13 +182,17 @@ class _FileLock:
         self.path, self.timeout, self.f = path, timeout, None
 
     def __enter__(self):
-        import msvcrt
         self.f = open(self.path, "a+")
         t0 = time.time()
         while True:
             try:
-                self.f.seek(0)
-                msvcrt.locking(self.f.fileno(), msvcrt.LK_NBLCK, 1)
+                if WIN:
+                    import msvcrt
+                    self.f.seek(0)
+                    msvcrt.locking(self.f.fileno(), msvcrt.LK_NBLCK, 1)
+                else:
+                    import fcntl  # 跟生圖站（pe.rs）一樣用 flock
+                    fcntl.flock(self.f.fileno(), fcntl.LOCK_EX | fcntl.LOCK_NB)
                 return self
             except OSError:
                 if time.time() - t0 > self.timeout:
@@ -188,10 +201,14 @@ class _FileLock:
                 time.sleep(0.2)
 
     def __exit__(self, *a):
-        import msvcrt
         try:
-            self.f.seek(0)
-            msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+            if WIN:
+                import msvcrt
+                self.f.seek(0)
+                msvcrt.locking(self.f.fileno(), msvcrt.LK_UNLCK, 1)
+            else:
+                import fcntl
+                fcntl.flock(self.f.fileno(), fcntl.LOCK_UN)
         finally:
             self.f.close()
 
@@ -206,10 +223,12 @@ def health(timeout=1.5):
 
 def _port_owner():
     """8199 被誰占用（沒有狀態檔的孤兒程序）。只回傳 llama-server.exe 的 pid。"""
+    if not WIN:
+        return _port_owner_linux()
     try:
         # 主控台輸出是系統的 OEM 字碼頁（繁中 cp950、簡中 GBK）；ComfyUI 用 UTF-8 模式開時 text=True 會照 UTF-8 解而出錯
         out = subprocess.run(["netstat", "-ano", "-p", "TCP"], capture_output=True, text=True, encoding="oem", errors="replace",
-                             timeout=10, creationflags=0x08000000).stdout
+                             timeout=10, creationflags=NO_WINDOW).stdout
     except Exception:
         return None
     for line in out.splitlines():
@@ -218,16 +237,55 @@ def _port_owner():
             pid = int(parts[4])
             try:
                 img = subprocess.run(["tasklist", "/FI", f"PID eq {pid}", "/FO", "CSV", "/NH"], capture_output=True,
-                                     text=True, encoding="oem", errors="replace", timeout=10, creationflags=0x08000000).stdout
+                                     text=True, encoding="oem", errors="replace", timeout=10, creationflags=NO_WINDOW).stdout
             except Exception:
                 return None
             return pid if "llama-server" in img.lower() else None
     return None
 
 
+def _port_owner_linux():
+    """Linux：/proc/net/tcp(6) 找 LISTEN 在 PORT 的 socket inode，再到 /proc/<pid>/fd 找誰開著它，程式名要是 llama-server。"""
+    inodes = set()
+    for fn in ("/proc/net/tcp", "/proc/net/tcp6"):
+        try:
+            with open(fn, encoding="ascii", errors="replace") as f:
+                for line in f.readlines()[1:]:
+                    parts = line.split()
+                    if len(parts) > 9 and parts[3] == "0A" and int(parts[1].rsplit(":", 1)[1], 16) == PORT:
+                        inodes.add(parts[9])
+        except (OSError, ValueError):
+            pass
+    if not inodes:
+        return None
+    for d in os.listdir("/proc"):
+        if not d.isdigit():
+            continue
+        try:
+            fds = os.listdir(f"/proc/{d}/fd")
+        except OSError:
+            continue
+        for fd in fds:
+            try:
+                link = os.readlink(f"/proc/{d}/fd/{fd}")
+            except OSError:
+                continue
+            if link.startswith("socket:[") and link[8:-1] in inodes:
+                try:
+                    with open(f"/proc/{d}/comm", encoding="utf-8", errors="replace") as f:
+                        comm = f.read().strip()
+                except OSError:
+                    return None
+                return int(d) if "llama-server" in comm else None
+    return None
+
+
 def _no_throttle(pid):
     """關掉 Windows 對這個程序的節能限速（EcoQoS／Power Throttling）。
-    從背景程序（沒有視窗的生圖站伺服器、ComfyUI）啟動的 llama-server 會被當成背景工作降速，實測 57 → 26 token／秒。"""
+    從背景程序（沒有視窗的生圖站伺服器、ComfyUI）啟動的 llama-server 會被當成背景工作降速，實測 57 → 26 token／秒。
+    Linux 沒有這種限速，直接當成功。"""
+    if not WIN:
+        return True
     class _State(ctypes.Structure):
         _fields_ = [("Version", ctypes.c_ulong), ("ControlMask", ctypes.c_ulong), ("StateMask", ctypes.c_ulong)]
     k32 = ctypes.windll.kernel32
@@ -250,7 +308,20 @@ def _no_throttle(pid):
 
 
 def _kill(pid):
-    subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, creationflags=0x08000000)
+    if WIN:
+        subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True, creationflags=NO_WINDOW)
+    else:
+        import signal
+        for sig, wait in ((signal.SIGTERM, 30), (signal.SIGKILL, 20)):
+            try:
+                os.kill(int(pid), sig)
+            except OSError:
+                return
+            for _ in range(wait):
+                if not _pid_alive(pid):
+                    return
+                time.sleep(0.1)
+        return
     for _ in range(50):
         if not _pid_alive(pid):
             return
@@ -321,13 +392,15 @@ def ensure(kind, ngl=99, before_start=None, timeout=180, quant=None):
             if int(ngl) == 0:
                 args += ["--no-mmproj-offload"]
         env = dict(os.environ)
+        if not WIN:  # Linux 官方編好的 llama.cpp：.so 都在 llama-server 旁邊
+            env["LD_LIBRARY_PATH"] = os.path.dirname(BIN) + (":" + env["LD_LIBRARY_PATH"] if env.get("LD_LIBRARY_PATH") else "")
         if int(ngl) == 0:
             args += ["--device", "none"]  # 真正的 CPU 模式：連提示詞處理都不碰顯卡
         _log("start " + " ".join(os.path.basename(a) if os.path.isabs(a) else a for a in args))
         logf = open(LOG, "a", encoding="utf-8", errors="replace")
         t0 = time.time()
         proc = subprocess.Popen(args, stdout=logf, stderr=subprocess.STDOUT, cwd=os.path.dirname(BIN), env=env,
-                                creationflags=0x08000000)  # CREATE_NO_WINDOW
+                                creationflags=NO_WINDOW)
         logf.close()
         try:
             _no_throttle(proc.pid)

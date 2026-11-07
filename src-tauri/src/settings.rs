@@ -2,6 +2,7 @@
 //!
 //! Civitai API key 存在這個檔裡：任何回傳給網頁、匯出、記錄的東西都必須經過 public_view() 或 without_key()，
 //! 絕對不能把金鑰本身送出去或印出來。
+#[cfg(windows)]
 use base64::Engine;
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -114,7 +115,10 @@ pub fn defaults() -> Map<String, Value> {
 pub fn load(path: &Path) -> Map<String, Value> {
     let mut s = defaults();
     if let Ok(text) = std::fs::read_to_string(path) {
-        if let Ok(Value::Object(mut file)) = serde_json::from_str::<Value>(&text) {
+        if let Ok(Value::Object(file)) = serde_json::from_str::<Value>(&text) {
+            // 金鑰只有 Windows 加密（DPAPI）；Linux 是明文，整個 data/ 只給自己讀（server::start）
+            #[cfg(windows)]
+            let mut file = file;
             #[cfg(windows)]
             if let Some(blob) = file.get(PROTECTED_KEY).and_then(Value::as_str) {
                 if let Ok(key) = unprotect(blob) {
@@ -146,7 +150,9 @@ pub fn to_text(v: &Value) -> String {
 
 pub fn save(path: &Path, s: &Map<String, Value>) -> io::Result<()> {
     // 先寫暫存檔再換名，寫到一半當機也不會弄壞設定檔
-    let mut disk = s.clone();
+    let disk = s.clone();
+    #[cfg(windows)]
+    let mut disk = disk;
     #[cfg(windows)]
     {
         let key = disk
@@ -163,6 +169,7 @@ pub fn save(path: &Path, s: &Map<String, Value>) -> io::Result<()> {
 }
 
 /// 舊版明文設定在第一次啟動時就轉存；若失敗，不啟動以免繼續暴露金鑰。
+#[cfg_attr(not(windows), allow(unused_variables))]
 pub fn migrate_plaintext_key(path: &Path) -> io::Result<()> {
     #[cfg(windows)]
     if let Ok(bytes) = std::fs::read(path) {

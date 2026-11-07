@@ -104,15 +104,7 @@ pub async fn reveal(Body(body): Body) -> ApiResult {
     if !is_json || is_unc(raw) || !path.is_absolute() || !path.is_file() {
         return Err(bad("找不到這個檔，可能被搬走或刪掉了"));
     }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // 路徑有空白時 /select, 後面要整段加引號，不能交給 Command 自己加（explorer 認不得）
-        std::process::Command::new("explorer.exe")
-            .raw_arg(format!("/select,\"{}\"", path.display()))
-            .spawn()
-            .map_err(|e| bad(format!("打不開檔案總管：{e}")))?;
-    }
+    crate::pe::win::reveal(&path).map_err(|e| bad(format!("打不開檔案總管：{e}")))?;
     ok(json!({"ok": true}))
 }
 

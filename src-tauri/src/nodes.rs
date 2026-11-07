@@ -670,6 +670,8 @@ mod tests {
         let disk = std::fs::read_to_string(d.join(FILE)).unwrap();
         #[cfg(windows)]
         assert!(!disk.contains("TOKEN-SECRET-1"));
+        #[cfg(not(windows))]
+        let _ = disk;
         assert_eq!(Cfg::load(&d), c);
         assert!(!c.view().to_string().contains("TOKEN-SECRET-1"));
         assert_eq!(c.view()["nodes"][1]["has_token"], true);

@@ -133,7 +133,7 @@ async function loadScan() {
   else if (nvNoDriver.length) lines.push(`<span class="r">GPU  <span class="a">${esc(nvNoDriver[0].name)}</span>  <span class="zh">NVIDIA 顯示卡的驅動沒有裝好</span></span>`);
   else lines.push(`<span class="r">GPU  <span class="zh">找不到顯示卡</span></span>`);
   if (scan.lite?.ram) lines.push(`RAM  <span class="${scan.lite.tiny_ram ? "r" : "a"}">${gb(scan.lite.ram)}</span>`);
-  lines.push(scan.vcredist.ok ? `VC++ <span class="a">${esc(scan.vcredist.version)}</span>`
+  if (!isLinux()) lines.push(scan.vcredist.ok ? `VC++ <span class="a">${esc(scan.vcredist.version)}</span>`
     : `<span class="r">VC++ <span class="zh">${scan.vcredist.version ? `${esc(scan.vcredist.version)} 太舊` : "沒有裝"}，安裝時會一起裝</span></span>`);
   for (const d of scan.disks) lines.push(`DISK ${esc(d.drive)}  <span class="zh">可用</span> <span class="a">${gb(d.free)}</span> / ${gb(d.total)}`);
   lines.push(`<span class="zh">找到舊版生圖站資料</span> <span class="a">${scan.data.length}</span>  <span class="zh">找到 ComfyUI</span> <span class="a">${scan.comfy.length}</span>`);
@@ -235,7 +235,7 @@ function renderPlaces() {
     h += opt("comfy", c.path, pick.comfy === c.path, `<b>沿用這個 ComfyUI</b>${c.version ? `（${esc(c.version)}）` : ""}<div class="path">${esc(c.path)}</div>`);
   // 掃描只看每顆硬碟往下三層（加上幾個啟動器的固定位置）：沒被找到的，自己貼路徑
   h += opt("comfy", "manual", pick.comfy === "manual",
-    `<b>自己指定 ComfyUI 資料夾</b><div class="muted sm">選整包的最外層就好：官方免安裝版、秋葉整合包、StabilityMatrix、Pinokio、SwarmUI、自己 git clone 的（venv）都認得；官方桌面版選它的資料夾（有 .venv 和 models 的那個）。可以在檔案總管的網址列複製路徑貼上。</div><div class="pickrow"><input type="text" id="comfyManual" value="${esc(pick.comfyManual)}" placeholder="例如 D:\\ComfyUI" aria-label="ComfyUI 資料夾位置" spellcheck="false"><button class="akey sm" type="button" data-pick="comfyManual">選資料夾…</button></div>` +
+    `<b>自己指定 ComfyUI 資料夾</b><div class="muted sm">選整包的最外層就好：官方免安裝版、秋葉整合包、StabilityMatrix、Pinokio、SwarmUI、自己 git clone 的（venv）都認得；官方桌面版選它的資料夾（有 .venv 和 models 的那個）。可以在檔案總管的網址列複製路徑貼上。</div><div class="pickrow"><input type="text" id="comfyManual" value="${esc(pick.comfyManual)}" placeholder="例如 ${isLinux() ? "/home/你的名字/ComfyUI" : "D:\\ComfyUI"}" aria-label="ComfyUI 資料夾位置" spellcheck="false"><button class="akey sm" type="button" data-pick="comfyManual">選資料夾…</button></div>` +
     `<div class="pickrow"><input type="text" id="comfyPy" value="${esc(pick.python)}" placeholder="Python 位置：找不到它的 Python 時才填（conda、放在外面的 venv…的 python.exe）" aria-label="Python 位置" spellcheck="false"></div>` +
     `<span class="check sm"><input type="checkbox" id="comfyExt"${pick.external ? " checked" : ""}> 我自己開這份 ComfyUI（用它自己的啟動器；生圖站只連過去，不找它的 Python）</span>`);
   h += opt("comfy", "new", pick.comfy === "new",
@@ -269,8 +269,15 @@ function manualPick() {
   F("comfyManual").closest("label").querySelector("input[type=radio]").checked = true;
 }
 
+// Linux 版（setup.rs scan 的 os）：沒有 VC++、沒有 Windows 免安裝版，ComfyUI 由精靈用可攜式 Python＋pip 組
+const isLinux = () => scan?.os === "linux";
+
 // 「自動下載」那一項的說明：照要下載的版本（legacy＝N 卡舊卡版）
 function dlNote(variant, size, legacy) {
+  if (isLinux() && variant !== "unknown") {
+    const torch = variant === "nvidia" ? (legacy ? "CUDA 12.6 舊卡版" : "CUDA 版") : variant === "amd" ? "ROCm 版（實驗性）" : variant === "intel" ? "XPU 版（實驗性）" : "CPU 版";
+    return `（約 ${gb(size)}：可攜式 Python 3.12＋ComfyUI 原始碼，再用 pip 裝 PyTorch ${torch}，裝好後約 6～8GB）`;
+  }
   if (variant === "nvidia" && legacy) return `（${gb(size)}，官方 Windows 免安裝版的舊卡版（CUDA 12.6，給 GTX 10 系列以前），解壓縮後約 5GB）`;
   if (variant === "amd") return `（${gb(size)}，官方 Windows 免安裝版的 AMD 版，實驗性，解壓縮後約 6GB）`;
   if (variant === "intel") return `（${gb(size)}，官方 Windows 免安裝版的 Intel 版，實驗性，解壓縮後約 5.3GB）`;
@@ -439,7 +446,7 @@ function renderCheck() {
     ["AI 改寫節點", yes(c.node)],
     ["llama.cpp（AI 改寫用）", yes(c.llama, "已經有了", vulkan ? "勾「AI 改寫」會下載 Vulkan 版，約 30MB" : "勾「AI 改寫」會下載約 0.6GB")],
     ["反推模型", yes(c.tagger, "已經有了", "會下載約 1.2GB")],
-    ["Visual C++ 執行階段", yes(c.vcredist, "已經有了", "會下載約 18MB 並安裝（會跳出系統確認視窗）")],
+    isLinux() ? null : ["Visual C++ 執行階段", yes(c.vcredist, "已經有了", "會下載約 18MB 並安裝（會跳出系統確認視窗）")],
     ["影音工作台工具（Node.js、ffmpeg）", yes(c.studio_tools, "已經有了", "勾「影音工作台」會下載約 150MB")],
     ["ComfyUI 工作流程", yes(!c.workflows_missing, "已經有了", `會放入 ${c.workflows_missing} 個`)],
     c.loras_bundled ? ["程式附帶的畫風 LoRA", yes(!c.loras_missing, "已經有了", `會放入 ${c.loras_missing} 個`)] : null,

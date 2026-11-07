@@ -219,13 +219,21 @@ fn find_dll(model_dir: &Path) -> Option<PathBuf> {
     if let Some(p) = std::env::var_os("ORT_DYLIB_PATH").filter(|p| !p.is_empty()) {
         c.push(PathBuf::from(p));
     }
+    // Linux 是 libonnxruntime.so（tauri.linux.conf.json 放在附帶檔案的資料夾：/usr/lib/<產品名>/）
+    let lib = if cfg!(windows) { "onnxruntime.dll" } else { "libonnxruntime.so" };
     if let Some(dir) = std::env::current_exe()
         .ok()
         .and_then(|e| e.parent().map(Path::to_path_buf))
     {
-        c.push(dir.join("onnxruntime.dll"));
+        c.push(dir.join(lib));
     }
-    c.push(model_dir.join("onnxruntime.dll"));
+    if let Some(dir) = crate::paths::linux_lib_dir() {
+        c.push(dir.join(lib));
+    }
+    if cfg!(debug_assertions) {
+        c.push(Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("vendor").join("onnxruntime").join(lib));
+    }
+    c.push(model_dir.join(lib));
     c.into_iter().find(|p| p.is_file())
 }
 
@@ -233,7 +241,11 @@ fn init_ort(model_dir: &Path) -> Result<(), String> {
     ORT_READY
         .get_or_init(|| {
             let dll = find_dll(model_dir)
-                .ok_or("找不到 onnxruntime.dll（放在程式旁邊，或設環境變數 ORT_DYLIB_PATH）")?;
+                .ok_or(if cfg!(windows) {
+                    "找不到 onnxruntime.dll（放在程式旁邊，或設環境變數 ORT_DYLIB_PATH）"
+                } else {
+                    "找不到 libonnxruntime.so（重新安裝繪匣，或設環境變數 ORT_DYLIB_PATH）"
+                })?;
             ort::init_from(&dll)
                 .map_err(|e| format!("載入 {} 失敗：{e}", dll.display()))?
                 .with_name("anima-tagger")

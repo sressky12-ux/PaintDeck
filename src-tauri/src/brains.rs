@@ -971,8 +971,11 @@ mod tests {
         assert_eq!(g.provider, "deepseek");
         assert_eq!(g.vision_known(), Some(false));
         let disk = std::fs::read_to_string(d.join(PROFILES_FILE)).unwrap();
+        // Linux 沒有 DPAPI：金鑰是明文（data/ 只給自己讀）
         #[cfg(windows)]
         assert!(!disk.contains("sk-SECRET-TEST"), "金鑰要加密");
+        #[cfg(not(windows))]
+        let _ = disk;
         // 重新讀一次，金鑰解得回來
         let again = Profiles::load(&d, &Map::new());
         assert_eq!(again.get(DEFAULT_ID).unwrap().key.as_deref(), Some("sk-SECRET-TEST"));

@@ -1037,7 +1037,7 @@ impl Core {
             models: models.to_path_buf(),
             model_dirs: vec![],
             search_external: false,
-            bin: node_dir.join("bin").join("llama-server.exe"),
+            bin: node_dir.join("bin").join(crate::paths::exe("llama-server")),
             state: node_dir.join("server_state.json"),
             lock: node_dir.join("server.lock"),
             log: node_dir.join("llama-server.log"),
@@ -1692,6 +1692,17 @@ impl Core {
             .stdin(std::process::Stdio::null())
             .current_dir(self.bin.parent().unwrap_or(&self.dir));
         win::no_window(&mut cmd);
+        // Linux 官方編好的 llama.cpp：libllama、libggml-*、CUDA 執行檔都放在 llama-server 旁邊，要讓它找得到（同雲端那支 LD_LIBRARY_PATH=$PWD）
+        if !cfg!(windows) {
+            if let Some(dir) = self.bin.parent() {
+                let mut v = dir.as_os_str().to_os_string();
+                if let Some(old) = std::env::var_os("LD_LIBRARY_PATH").filter(|o| !o.is_empty()) {
+                    v.push(":");
+                    v.push(old);
+                }
+                cmd.env("LD_LIBRARY_PATH", v);
+            }
+        }
         let mut child = cmd
             .spawn()
             .map_err(|e| PeError(format!("llama-server 啟動失敗：{e}")))?;
@@ -1889,7 +1900,7 @@ fn health(timeout: Duration) -> bool {
 
 // ================================================================ Windows：程序、檔案鎖
 #[cfg(windows)]
-pub(crate) mod win {
+pub mod win {
     use super::PeError;
     use std::os::windows::io::AsRawHandle;
     use std::os::windows::process::CommandExt;
@@ -1911,6 +1922,19 @@ pub(crate) mod win {
 
     pub fn no_window(cmd: &mut std::process::Command) {
         cmd.creation_flags(CREATE_NO_WINDOW);
+    }
+
+    /// 檔案總管打開資料夾
+    pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+        std::process::Command::new("explorer.exe").arg(dir).spawn().map(|_| ())
+    }
+
+    /// 檔案總管打開檔案所在的資料夾、選取它。路徑有空白時 /select, 後面要整段加引號，不能交給 Command 自己加（explorer 認不得）
+    pub fn reveal(file: &Path) -> std::io::Result<()> {
+        std::process::Command::new("explorer.exe")
+            .raw_arg(format!("/select,\"{}\"", file.display()))
+            .spawn()
+            .map(|_| ())
     }
 
     pub fn pid_alive(pid: i64) -> bool {
@@ -2055,26 +2079,223 @@ pub(crate) mod win {
     }
 }
 
+/// Linux（和其他 Unix）：同一組函式用 /proc 和 POSIX 訊號做。跟 ComfyUI 那邊的 pe_core.py 同一套作法（flock、/proc/net/tcp）
 #[cfg(not(windows))]
-pub(crate) mod win {
+pub mod win {
     use super::PeError;
-    use std::path::Path;
-    use std::time::Duration;
+    use std::os::unix::io::AsRawFd;
+    use std::path::{Path, PathBuf};
+    use std::time::{Duration, Instant};
+
     pub fn no_window(_cmd: &mut std::process::Command) {}
-    pub fn pid_alive(_pid: i64) -> bool {
-        false
+
+    /// 用桌面環境的預設程式開（資料夾＝檔案管理員、網址＝瀏覽器）：xdg-open
+    pub fn xdg_open(target: &std::ffi::OsStr) -> std::io::Result<()> {
+        std::process::Command::new("xdg-open")
+            .arg(target)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map(|_| ())
     }
+
+    /// 檔案管理員打開資料夾
+    pub fn open_folder(dir: &Path) -> std::io::Result<()> {
+        xdg_open(dir.as_os_str())
+    }
+
+    /// 桌面的對話框：GNOME／Xfce 有 zenity、KDE 有 kdialog（用外部程式，不在別的執行緒碰 Tauri 正在用的 GTK）。
+    /// 回傳 (結束代碼是 0, 標準輸出)；兩個都沒有＝None
+    fn dialog(zenity: &[&str], kdialog: &[&str]) -> Option<(bool, String)> {
+        for (prog, args) in [("zenity", zenity), ("kdialog", kdialog)] {
+            if let Ok(o) = std::process::Command::new(prog).args(args).stdin(std::process::Stdio::null()).stderr(std::process::Stdio::null()).output() {
+                return Some((o.status.success(), String::from_utf8_lossy(&o.stdout).trim_end_matches('\n').to_string()));
+            }
+        }
+        None
+    }
+
+    /// 選資料夾（取消、沒有對話框程式＝None）
+    pub fn pick_folder(title: &str, start: Option<&Path>) -> Option<PathBuf> {
+        let start = start.and_then(|s| s.ancestors().find(|a| a.is_dir())).map(|s| format!("{}/", s.display())).unwrap_or_default();
+        let (ok, out) = dialog(
+            &["--file-selection", "--directory", "--title", title, "--filename", &start],
+            &["--getexistingdirectory", if start.is_empty() { "." } else { &start }, "--title", title],
+        )?;
+        (ok && !out.is_empty()).then(|| PathBuf::from(out))
+    }
+
+    /// 另存新檔（JSON）
+    pub fn save_file(title: &str, name: &str, start: Option<&Path>) -> Option<PathBuf> {
+        let initial = start.filter(|s| s.is_dir()).map(|s| s.join(name)).unwrap_or_else(|| PathBuf::from(name));
+        let initial = initial.display().to_string();
+        let (ok, out) = dialog(
+            &["--file-selection", "--save", "--confirm-overwrite", "--title", title, "--filename", &initial, "--file-filter", "JSON | *.json"],
+            &["--getsavefilename", &initial, "*.json", "--title", title],
+        )?;
+        (ok && !out.is_empty()).then(|| PathBuf::from(out))
+    }
+
+    /// 是／否。沒有對話框程式＝None（呼叫的人決定預設）
+    pub fn ask_yes_no(title: &str, msg: &str) -> Option<bool> {
+        dialog(
+            &["--question", "--no-markup", "--title", title, "--text", msg, "--default-cancel"],
+            &["--yesno", msg, "--title", title],
+        )
+        .map(|(ok, _)| ok)
+    }
+
+    /// 錯誤訊息（沒有對話框程式就算了，訊息已經印在終端機）
+    pub fn show_error(title: &str, msg: &str) {
+        let _ = dialog(&["--error", "--no-markup", "--title", title, "--text", msg], &["--error", msg, "--title", title]);
+    }
+
+    /// 檔案管理員打開檔案所在的資料夾並選取它：先問 freedesktop 的 FileManager1（Nautilus、Dolphin、Nemo 都有），不行就只開資料夾
+    pub fn reveal(file: &Path) -> std::io::Result<()> {
+        let uri = format!("file://{}", file.display().to_string().replace('%', "%25").replace(' ', "%20").replace('#', "%23"));
+        let shown = std::process::Command::new("dbus-send")
+            .args(["--session", "--print-reply", "--dest=org.freedesktop.FileManager1", "/org/freedesktop/FileManager1",
+                   "org.freedesktop.FileManager1.ShowItems"])
+            .arg(format!("array:string:{uri}"))
+            .arg("string:")
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .is_ok_and(|s| s.success());
+        if shown {
+            return Ok(());
+        }
+        open_folder(file.parent().unwrap_or(file))
+    }
+
+    /// /proc/<pid>/stat 的狀態欄（第三欄；程式名在括號裡、可能有空白，從最後一個「)」後面算）
+    fn state(pid: i64) -> Option<char> {
+        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        s.rsplit_once(')')?.1.split_whitespace().next()?.chars().next()
+    }
+
+    /// 父程序 pid（/proc/<pid>/stat 第四欄）
+    fn ppid(pid: i64) -> Option<i64> {
+        let s = std::fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+        s.rsplit_once(')')?.1.split_whitespace().nth(1)?.parse().ok()
+    }
+
+    pub fn pid_alive(pid: i64) -> bool {
+        // 殭屍（Z）、已結束（X）不算活著
+        pid > 0 && state(pid).is_some_and(|c| c != 'Z' && c != 'X')
+    }
+
+    /// Linux 沒有 Windows 那種背景節能限速
     pub fn no_throttle(_pid: i64) -> bool {
         true
     }
-    pub fn port_owner(_port: u16) -> Option<i64> {
+
+    fn procs() -> Vec<i64> {
+        std::fs::read_dir("/proc")
+            .into_iter()
+            .flatten()
+            .flatten()
+            .filter_map(|e| e.file_name().to_str()?.parse().ok())
+            .collect()
+    }
+
+    /// port 被誰占用：/proc/net/tcp(6) 找 LISTEN（0A）在這個 port 的 socket inode，再找開著它的程序。只回傳 llama-server 的 pid
+    pub fn port_owner(port: u16) -> Option<i64> {
+        let mut inodes = vec![];
+        for f in ["/proc/net/tcp", "/proc/net/tcp6"] {
+            let Ok(text) = std::fs::read_to_string(f) else { continue };
+            for line in text.lines().skip(1) {
+                let p: Vec<&str> = line.split_whitespace().collect();
+                let local = p.get(1).and_then(|a| a.rsplit_once(':')).and_then(|(_, h)| u16::from_str_radix(h, 16).ok());
+                if p.len() > 9 && p[3] == "0A" && local == Some(port) {
+                    inodes.push(format!("socket:[{}]", p[9]));
+                }
+            }
+        }
+        if inodes.is_empty() {
+            return None;
+        }
+        for pid in procs() {
+            let Ok(fds) = std::fs::read_dir(format!("/proc/{pid}/fd")) else { continue };
+            let owns = fds.flatten().any(|fd| {
+                std::fs::read_link(fd.path()).is_ok_and(|l| inodes.iter().any(|i| l.as_os_str() == i.as_str()))
+            });
+            if owns {
+                let comm = std::fs::read_to_string(format!("/proc/{pid}/comm")).unwrap_or_default();
+                return comm.contains("llama-server").then_some(pid);
+            }
+        }
         None
     }
-    pub fn kill(_pid: i64) {}
-    pub struct FileLock;
+
+    fn signal(pid: i64, sig: i32) {
+        if let Ok(p) = i32::try_from(pid) {
+            if p > 0 {
+                unsafe { libc::kill(p, sig) };
+            }
+        }
+    }
+
+    /// 連子程序一起關（同 Windows 的 taskkill /T /F）：先 SIGTERM，等一下還在的再 SIGKILL
+    pub fn kill(pid: i64) {
+        if pid <= 0 {
+            return;
+        }
+        let mut tree = vec![pid];
+        let all = procs();
+        let mut i = 0;
+        while i < tree.len() {
+            let parent = tree[i];
+            let kids: Vec<i64> = all.iter().copied().filter(|&c| ppid(c) == Some(parent) && !tree.contains(&c)).collect();
+            tree.extend(kids);
+            i += 1;
+        }
+        for &p in tree.iter().rev() {
+            signal(p, libc::SIGTERM);
+        }
+        let t0 = Instant::now();
+        while tree.iter().any(|&p| pid_alive(p)) && t0.elapsed() < Duration::from_secs(3) {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        for &p in tree.iter().filter(|&&p| pid_alive(p)) {
+            signal(p, libc::SIGKILL);
+        }
+        for _ in 0..20 {
+            if !pid_alive(pid) {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
+
+    /// 跨程序互斥：flock（pe_core.py 在 Linux 也用 fcntl.flock，兩邊鎖同一個檔才會互斥）
+    pub struct FileLock(std::fs::File);
+
     impl FileLock {
-        pub fn acquire(_path: &Path, _timeout: Duration) -> Result<FileLock, PeError> {
-            Ok(FileLock)
+        pub fn acquire(path: &Path, timeout: Duration) -> Result<FileLock, PeError> {
+            let f = std::fs::OpenOptions::new()
+                .create(true)
+                .append(true)
+                .read(true)
+                .open(path)
+                .map_err(|e| PeError(format!("開不了 {}：{e}", path.display())))?;
+            let t0 = Instant::now();
+            loop {
+                if unsafe { libc::flock(f.as_raw_fd(), libc::LOCK_EX | libc::LOCK_NB) } == 0 {
+                    return Ok(FileLock(f));
+                }
+                if t0.elapsed() > timeout {
+                    return Err(PeError("等 llama-server 啟動／關閉逾時（另一邊卡住了？）".into()));
+                }
+                std::thread::sleep(Duration::from_millis(200));
+            }
+        }
+    }
+
+    impl Drop for FileLock {
+        fn drop(&mut self) {
+            unsafe { libc::flock(self.0.as_raw_fd(), libc::LOCK_UN) };
         }
     }
 }

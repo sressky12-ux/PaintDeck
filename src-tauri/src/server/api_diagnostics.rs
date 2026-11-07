@@ -178,12 +178,7 @@ pub async fn save(
     })
     .await
     .map_err(|e| bad(e.to_string()))?;
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        // 路徑有空白時 /select, 後面要整段加引號（同 api_wf::reveal）
-        let _ = std::process::Command::new("explorer.exe").raw_arg(format!("/select,\"{}\"", dest.display())).spawn();
-    }
+    let _ = crate::pe::win::reveal(&dest);
     ok(json!({"ok": true, "path": dest.to_string_lossy()}))
 }
 

@@ -1,10 +1,24 @@
-//! 不開視窗、只跑網頁伺服器（開發、跟舊版比對 API 用）。
-//! 環境變數：ANIMA_ROOT（必填）、ANIMA_WEB、COMFY_ROOT、ANIMA_PORT（預設 8191，舊版佔 8190）、COMFY_URL（預設 http://127.0.0.1:8188）
+//! 不開視窗、只跑網頁伺服器。兩種用法：
+//! - 無頭版（沒設 ANIMA_ROOT）：正式站，給 Linux 純命令列用。自己讀設定、開 ComfyUI、沒設定就跑精靈（headless.rs）。anima-server --help 看參數
+//! - 開發模式（設了 ANIMA_ROOT）：只開網頁伺服器，不開 ComfyUI（開發、跟舊版比對 API 用）。
+//!   環境變數：ANIMA_ROOT（必填）、ANIMA_WEB、COMFY_ROOT、ANIMA_PORT（預設 8191，舊版佔 8190）、COMFY_URL（預設 http://127.0.0.1:8188）
 #[tokio::main]
 async fn main() {
     let Some(paths) = anima_app::paths::Paths::from_env() else {
-        eprintln!("要設環境變數 ANIMA_ROOT（生圖站資料根目錄）");
-        std::process::exit(2);
+        let args: Vec<String> = std::env::args().skip(1).collect();
+        let opts = match anima_app::headless::parse_args(&args) {
+            Ok(o) => o,
+            Err(msg) => {
+                let help = args.iter().any(|a| a == "-h" || a == "--help");
+                eprintln!("{msg}");
+                std::process::exit(if help { 0 } else { 2 });
+            }
+        };
+        if let Err(e) = anima_app::headless::run(opts).await {
+            eprintln!("{e}");
+            std::process::exit(1);
+        }
+        return;
     };
     let port: u16 = std::env::var("ANIMA_PORT")
         .ok()

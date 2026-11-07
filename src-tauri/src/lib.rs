@@ -19,6 +19,7 @@ pub mod feature_strip;
 pub mod film_takes;
 pub mod gpu;
 pub mod h3;
+pub mod headless;
 pub mod h3chain;
 pub mod h3_takes;
 pub mod graphs;

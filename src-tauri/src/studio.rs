@@ -54,14 +54,24 @@ fn first_with(dir: &Path, rel: &[&str]) -> Option<PathBuf> {
 }
 
 /// 安裝精靈放的 Node.js（只看 tools 資料夾）
+/// （Windows：tools\node\<版本資料夾>\node.exe；Linux：tools/node/bin/node）
 pub fn find_node_in(tools: &Path) -> Option<PathBuf> {
-    first_with(&tools.join("node"), &["node.exe"])
+    if cfg!(windows) {
+        first_with(&tools.join("node"), &["node.exe"])
+    } else {
+        first_with(&tools.join("node"), &["bin", "node"])
+    }
 }
 
 /// 安裝精靈放的 ffmpeg（ffprobe.exe 也要在旁邊）
 pub fn find_ffmpeg_in(tools: &Path) -> Option<PathBuf> {
-    first_with(&tools.join("ffmpeg"), &["bin", "ffmpeg.exe"])
-        .filter(|f| f.with_file_name("ffprobe.exe").is_file())
+    let (ffmpeg, ffprobe) = (crate::paths::exe("ffmpeg"), crate::paths::exe("ffprobe"));
+    first_with(&tools.join("ffmpeg"), &["bin", &ffmpeg]).filter(|f| f.with_file_name(&ffprobe).is_file())
+}
+
+/// 系統裝的 ffmpeg（PATH 上、ffprobe 也在旁邊）。Linux 的精靈不下載 ffmpeg，用套件管理員裝的這份
+pub fn system_ffmpeg() -> Option<PathBuf> {
+    on_path(&crate::paths::exe("ffmpeg")).filter(|f| f.with_file_name(crate::paths::exe("ffprobe")).is_file())
 }
 
 fn on_path(exe: &str) -> Option<PathBuf> {
@@ -80,11 +90,9 @@ pub struct Tools {
 /// data＝<資料>\data
 pub fn tools(data: &Path) -> Tools {
     let t = data.join("tools");
-    let node = find_node_in(&t).or_else(|| on_path("node.exe"));
-    let ffmpeg = find_ffmpeg_in(&t).or_else(|| {
-        on_path("ffmpeg.exe").filter(|f| f.with_file_name("ffprobe.exe").is_file())
-    });
-    let ffprobe = ffmpeg.as_ref().map(|f| f.with_file_name("ffprobe.exe"));
+    let node = find_node_in(&t).or_else(|| on_path(&crate::paths::exe("node")));
+    let ffmpeg = find_ffmpeg_in(&t).or_else(system_ffmpeg);
+    let ffprobe = ffmpeg.as_ref().map(|f| f.with_file_name(crate::paths::exe("ffprobe")));
     Tools {
         node,
         ffmpeg,
@@ -515,11 +523,7 @@ impl Studio {
             _ => return Err("沒有這個資料夾".into()),
         };
         std::fs::create_dir_all(&d).map_err(|e| e.to_string())?;
-        Command::new("explorer.exe")
-            .arg(&d)
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("打不開檔案總管：{e}"))
+        crate::pe::win::open_folder(&d).map_err(|e| format!("打不開檔案總管：{e}"))
     }
 
     pub fn export_path(&self, name: &str) -> Option<PathBuf> {

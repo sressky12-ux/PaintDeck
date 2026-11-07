@@ -220,8 +220,7 @@ pub async fn remove(State(app): State<Shared>, Body(body): Body) -> ApiResult {
 pub async fn open(State(app): State<Shared>) -> ApiResult {
     let dir = skills::root(&app.paths.data);
     std::fs::create_dir_all(&dir).map_err(internal)?;
-    #[cfg(windows)]
-    std::process::Command::new("explorer.exe").arg(&dir).spawn().map_err(|e| bad(format!("打不開檔案總管：{e}")))?;
+    crate::pe::win::open_folder(&dir).map_err(|e| bad(format!("打不開檔案總管：{e}")))?;
     ok(json!({"ok": true, "dir": dir.display().to_string()}))
 }
 

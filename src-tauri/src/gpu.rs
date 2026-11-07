@@ -178,6 +178,7 @@ pub fn nv_legacy(name: &str, cap: Option<&str>) -> bool {
 /// WMI 列出現在插著的顯示卡（Win32_VideoController），顯存另外從顯示卡類別的登錄檔讀：
 /// AdapterRAM 是 32 位元，4GB 以上的卡都只顯示 4GB；驅動寫的 HardwareInformation.qwMemorySize（舊驅動是 MemorySize）才準。
 /// AMD 驅動另外寫了 RadeonSoftwareVersion（Adrenalin 的版號，比 Windows 的驅動版號好認）
+#[cfg_attr(not(windows), allow(dead_code))] // 只有 Windows 用（Linux 沒有這個機制）
 const WMI_GPUS: &str = r#"$ErrorActionPreference='SilentlyContinue'
 [Console]::OutputEncoding=[Text.Encoding]::UTF8
 $cls='HKLM:\SYSTEM\CurrentControlSet\Control\Class\{4d36e968-e325-11ce-bfc1-08002be10318}'
@@ -224,9 +225,57 @@ pub(crate) fn wmi_json() -> Option<Value> {
     let v: Value = serde_json::from_slice(&b[start..]).ok()?;
     v["vc"].is_array().then_some(v)
 }
+/// Linux 沒有 WMI：照 sysfs（/sys/bus/pci/devices 裡顯示類的裝置）組出一樣格式的結果，後面 gpus_from_wmi 照用。
+/// 名字問 lspci（沒裝就用「廠商 顯示卡 (vvvv:dddd)」），顯存只有 amdgpu 有（mem_info_vram_total），驅動版號看 /sys/module
 #[cfg(not(windows))]
 pub(crate) fn wmi_json() -> Option<Value> {
-    None
+    let rd = |p: &Path| std::fs::read_to_string(p).ok().map(|s| s.trim().to_string());
+    let hex = |s: Option<String>| s.map(|v| v.trim_start_matches("0x").to_lowercase());
+    let mut vc = vec![];
+    let mut reg = vec![];
+    for e in std::fs::read_dir("/sys/bus/pci/devices").ok()?.flatten() {
+        let d = e.path();
+        // PCI class 0x03xxxx＝顯示控制器
+        if !rd(&d.join("class")).is_some_and(|c| c.starts_with("0x03")) {
+            continue;
+        }
+        let (Some(ven), Some(dev)) = (hex(rd(&d.join("vendor"))), hex(rd(&d.join("device")))) else { continue };
+        let slot = e.file_name().to_string_lossy().to_string();
+        let name = std::process::Command::new("lspci")
+            .args(["-mm", "-s", &slot])
+            .output()
+            .ok()
+            .and_then(|o| lspci_name(&String::from_utf8_lossy(&o.stdout)))
+            .unwrap_or_else(|| {
+                let brand = match ven.as_str() {
+                    "10de" => "NVIDIA",
+                    "1002" => "AMD Radeon",
+                    "8086" => "Intel",
+                    _ => "",
+                };
+                format!("{brand} 顯示卡 ({ven}:{dev})").trim().to_string()
+            });
+        let driver = std::fs::read_link(d.join("driver"))
+            .ok()
+            .and_then(|l| l.file_name().map(|n| n.to_string_lossy().to_string()))
+            .map(|drv| rd(&Path::new("/sys/module").join(&drv).join("version")).map(|v| format!("{drv} {v}")).unwrap_or(drv))
+            .unwrap_or_default();
+        let pnp = format!("PCI\\VEN_{}&DEV_{}", ven.to_uppercase(), dev.to_uppercase());
+        vc.push(json!({"name": name, "pnp": pnp, "vendor": "", "driver": driver, "ram": null}));
+        if let Some(bytes) = rd(&d.join("mem_info_vram_total")).and_then(|s| s.parse::<u64>().ok()) {
+            reg.push(json!({"id": format!("pci\\ven_{ven}&dev_{dev}"), "desc": "", "qw": bytes, "mem": null, "radeon": ""}));
+        }
+    }
+    Some(json!({"vc": vc, "reg": reg}))
+}
+
+/// `lspci -mm -s <slot>` 的一行（slot "class" "vendor" "device" …）→「vendor device」，例如 "Advanced Micro Devices, Inc. [AMD/ATI] Navi 31 [Radeon RX 7900 XT/7900 XTX]"
+#[cfg(not(windows))]
+fn lspci_name(line: &str) -> Option<String> {
+    let f: Vec<&str> = line.split('"').collect();
+    // f = [slot, class, " ", vendor, " ", device, ...]
+    let (vendor, device) = (f.get(3)?.trim(), f.get(5)?.trim());
+    (!device.is_empty()).then(|| format!("{vendor} {device}"))
 }
 
 /// 顯示卡是哪一家：PCI 的廠商代號（VEN_10DE＝NVIDIA、VEN_1002＝AMD、VEN_8086＝Intel），沒有再看名字。
@@ -809,8 +858,12 @@ pub fn check_python(s: &str) -> Result<String, String> {
         return Ok(String::new());
     }
     let p = Path::new(s);
-    if !p.file_name().is_some_and(|n| n.eq_ignore_ascii_case("python.exe")) {
-        return Err(format!("Python 位置要選 python.exe 這個檔（你填的是 {s}）：conda 環境通常在 …\\envs\\環境名稱\\python.exe，venv 在 …\\Scripts\\python.exe"));
+    if !p.file_name().is_some_and(|n| crate::paths::is_python_name(&n.to_string_lossy())) {
+        return Err(if cfg!(windows) {
+            format!("Python 位置要選 python.exe 這個檔（你填的是 {s}）：conda 環境通常在 …\\envs\\環境名稱\\python.exe，venv 在 …\\Scripts\\python.exe")
+        } else {
+            format!("Python 位置要選 python（或 python3）這個檔（你填的是 {s}）：conda 環境通常在 …/envs/環境名稱/bin/python，venv 在 …/venv/bin/python")
+        });
     }
     if !p.is_file() {
         return Err(format!("找不到這個 python.exe：{s}。請確認路徑對不對（可以用旁邊的「選檔案…」選）"));
@@ -885,12 +938,30 @@ pub fn split_args(s: &str) -> Result<Vec<String>, String> {
 
 // ---------------------------------------------------------------- 認得 ComfyUI 用的是哪一種 PyTorch
 /// Python 旁邊的 Lib\site-packages（venv 的 python.exe 在 Scripts 裡，要再往上一層）
+/// Linux：<環境>/bin/python 配 <環境>/lib/python3.X/site-packages（有好幾個就挑有 torch 的，再挑版本新的）
 pub fn site_packages(python: &Path) -> Option<PathBuf> {
     let mut base = python.parent()?;
-    if base.file_name().is_some_and(|n| n.eq_ignore_ascii_case("Scripts")) {
+    if cfg!(windows) {
+        if base.file_name().is_some_and(|n| n.eq_ignore_ascii_case("Scripts")) {
+            base = base.parent()?;
+        }
+        return Some(base.join("Lib").join("site-packages"));
+    }
+    if base.file_name().is_some_and(|n| n == "bin") {
         base = base.parent()?;
     }
-    Some(base.join("Lib").join("site-packages"))
+    let lib = base.join("lib");
+    let minor = |p: &Path| -> Option<u32> { p.parent()?.file_name()?.to_str()?.strip_prefix("python3.")?.parse().ok() };
+    let mut found: Vec<PathBuf> = std::fs::read_dir(&lib)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("python3"))
+        .map(|e| e.path().join("site-packages"))
+        .filter(|p| p.is_dir())
+        .collect();
+    found.sort_by_key(|p| (p.join("torch").is_dir(), minor(p)));
+    found.pop().or_else(|| Some(lib.join("python3").join("site-packages")))
 }
 
 /// site-packages 裡 <名稱>-<版本>.dist-info 的版本（名稱用 pip 的寫法，- 和 _ 都認）
@@ -1301,6 +1372,7 @@ mod tests {
     }
 
     /// PyTorch 是哪一種：免安裝版（python_embeded）、venv（Scripts 外一層）、沒裝 torch、DirectML、ZLUDA、ROCm 10 的架構套件
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn torch_kinds() {
         let d = std::env::temp_dir().join(format!("anima_torch_test_{}", std::process::id()));
@@ -1410,6 +1482,7 @@ mod tests {
 
     /// A 卡好幾張：內顯排 0 號、PyTorch 沒編它的架構 → 挑獨顯（2026-11-04 回報 invalid kernel file）
     /// 2026-11-05：RX 6000（gfx103x）改裝 gfx103X 專用 PyTorch；裝好的判斷、要移掉的舊 ROCm 套件、要不要換
+    #[cfg(windows)] // 測的是 Windows 的擺法（python.exe、Scripts、Lib\site-packages）；Linux 的在 linux_layouts
     #[test]
     fn gfx103_stack() {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
