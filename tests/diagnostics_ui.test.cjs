@@ -6,6 +6,8 @@ function harness(handler=async()=>({available:true,policy:{success_days:1,error_
   function el(tag,attrs={},...children) {return Object.assign({tag,children,value:'',hidden:false,disabled:false,append(...v){this.children.push(...v);},replaceChildren(...v){this.children=v;},focus(){},click(){links.push(this);},remove(){}},attrs);}
   const $=id=>{if(!nodes.has(id))nodes.set(id,el('div'));return nodes.get(id);};
   const context=vm.createContext({$,el,api:async(url,opts={})=>{calls.push([url,opts]);return handler(url,opts);},toast:(m,k)=>messages.push([m,k]),fmtBytes:n=>`${n} B`,openModal:id=>opened.push(id),closeModal(){},
+    // 2026-11-05 起本機（127.0.0.1）改成直接存進下載資料夾；這幾個測試驗的是「瀏覽器下載」那條路，當成從別台電腦開的
+    location:{hostname:'remote.example'},
     document:{documentElement:{lang:'en'},body:el('body'),addEventListener:(n,fn)=>listeners[n]=fn},
     fetch:async()=>{throw Error('fixture network');},AbortController,setTimeout:()=>1,clearTimeout(){},URL:{createObjectURL:()=> 'blob:fixture',revokeObjectURL(){}},confirm:()=>false,console});
   const source=fs.readFileSync(path.join(__dirname,'../ui/js/diagnostics.js'),'utf8').replace(/^import .*;\r?\n/gm,'').replace(/^export /gm,'');

@@ -310,6 +310,21 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 工作記在哪台：job 的 `params._node`（沒有＝main）。停止／取消／重試照這個打對台；「全停」打全部。非主節點的存檔前綴加標記（`AnimaWeb/txt2img_g1_…`、遠端 `_r…`），遠端的成品用 `/view` 抓回本機 output 再進圖庫，輸入圖會先傳上去。
 - 本機多卡只支援 N 卡；卡號照 nvidia-smi 順序（開多卡時設 `CUDA_DEVICE_ORDER=PCI_BUS_ID`），每張卡用自己的 ComfyUI 資料庫（`data\comfy_nodes\gpu<卡號>.db`），紀錄檔 `data\logs\comfyui_gpu<卡號>.log`。
 
+## 訓練台：煉 LoRA（2026-11-11）
+
+選單「訓練」。一個專案＝一包訓練圖＋描述＋參數，六步：專案 → 訓練圖 → 描述 → 參數 → 在哪煉 → 訓練與驗收。資料在 `<資料>\data\train\<代號>\`（`project.json`、`images\`、`captions\`、`out\`），代號是 `t`＋12 位十六進位。訓練圖一律複製進專案，原圖不動。
+
+- `GET /api/train` → `{projects, families, trainer, vram_gb, training}`。家族：`anima`、`sdxl`（描述用 tag）、`qwen21`、`moss`、`krea2`、`h3`（描述用英文句子；`h3` 的素材是影片）。
+- `POST /api/train {name, kind: style|character|concept, family, trigger?}`：觸發詞只收英數、底線、連字號 2～32 字，沒給就自動產生。
+- `GET /api/train/{id}` → `{project, report, captions, running, family}`；`POST /api/train/{id} {name?, kind?, trigger?, level?: light|std|full, params?, samples?}`；`DELETE /api/train/{id} {confirm:true}`（搬到 `待刪除\訓練專案\`，煉好的 LoRA 不動）。
+- 訓練圖：`POST /api/train/{id}/images {paths:[檔或資料夾]} | {gallery_ids:[…]} | {file_name, data_b64}` → 多回 `added`、`skipped:[{name, why}]`；圖會縮到約 100 萬像素（不放大）、存成 `0001.png`…。`…/images/set {files, off}`（先不用這張）、`…/images/remove {files}`。`report` 有張數、偏小的、幾乎一樣的圖（`dupes`）、長寬比分布和提醒。
+- 描述：`POST /api/train/{id}/caption {mode: auto|tags|sentence, only_empty}` 背景打標（tag＝站內反推＋自動整理；句子＝站內語言模型看圖寫）；`POST /api/train/{id}/captions {file, text} | {add} | {drop:[…]}`（觸發詞自動留在最前面）；`GET /api/train/{id}/traits`（角色每張都有的固定外觀，建議拿掉）。
+- 參數：`GET /api/train/{id}/params?level=` → 自動算的 `params`（步數＝張數 × 每張看幾次，畫風 20、角色 30、概念 25；`why` 是那句算式）和 4 句樣張提示詞，不存檔；要存用上面的 `POST /api/train/{id}`。
+- 報價：`POST /api/train/{id}/quote {target:"runpod"}` → 每張雲端顯卡的估計時數和價錢；`{target:"civitai", upload_ok:true}` → C 站試算要幾 Buzz（**會先把訓練圖和描述上傳到 C 站**，試算本身不扣點）。
+- 開始：`POST /api/train/{id}/start {target, …}`（**先問使用者**）。`local`（要先 `POST /api/train/trainer/install` 裝訓練器，約 8GB；`model`＝SDXL 整包模型的檔名，其他家族用官方底模、第一次會下載）、`remote {url, token}`（自己的訓練機，跑 `resources\train\agent.py`）、`runpod {gpu, confirm:true}`（租機、煉完自動關機）、`civitai {confirm:true, max_cost}`、`modelscope {confirm:true}`（只在本機包好資料集壓縮檔，回 `{manual:true, zip, url}`，要到魔塔網頁送出）。`POST /api/train/{id}/stop` 停止（沒在跑時＝把還開著的 RunPod 訓練機關掉）。
+- 進度：websocket `{"type":"train", id, phase:"caption|train|install", state:"running|done|error|stopped", step, total, loss, log, msg, new}`。每存好一版就抓回 `loras\<家族資料夾>\<觸發詞>\<觸發詞>_e<N>.safetensors`，樣張在 `GET /api/train/{id}/sample/{file}`。專案的 `run.state` 另有 `interrupted`（本機訓練時繪匣被關掉）和 `detached`（雲端／C 站還在外面跑，再按開始會接回去）。
+- 驗收：`POST /api/train/{id}/compare {params, strengths?, epochs?}`（`params`＝一組生圖參數；每一版 × 每個強度、同種子各排一張，回 `cells:[{epoch, strength, job}]`）；`POST /api/train/{id}/adopt {epoch, strength}`（寫好 LoRA 資訊：觸發詞、建議強度、底模）。
+
 ## 系統、設定、雲端
 
 - `GET /api/system`：版本、顯示卡、顯存、記憶體、硬碟。`GET /api/state`：`anima_status` 的原始資料。

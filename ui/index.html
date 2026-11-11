@@ -55,7 +55,7 @@
       <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">06</span><span class="led"></span>導演</button>
       <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">07</span><span class="led"></span>漫畫</button>
       <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">08</span><span class="led"></span>助手</button>
-      <button class="pkey" data-page="train" data-ic="punch" type="button" disabled title="訓練之後的版本才有"><span class="n">09</span><span class="led"></span>訓練</button>
+      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">09</span><span class="led"></span>訓練</button>
       <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">10</span><span class="led"></span>API</button>
       <span class="sp"></span>
       <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">11</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
@@ -158,8 +158,8 @@
       <div id="genAssets" class="adr-slot"></div>
       <div id="lkRow" class="row wrap lk-row" hidden></div>
       <div class="scr prompt-scr">
-        <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="6" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div>
-        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
+        <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="6" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
+        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
         <div class="pzh" id="promptZh" hidden></div>
       </div>
       <div class="warn-line sm" id="promptWarn" hidden></div>
@@ -236,7 +236,7 @@
     <section class="group">
       <div class="lbl" data-silk="CART">LoRA 卡匣<button class="act" id="addLora" type="button">＋插入</button></div>
       <div id="loraStack" class="lora-stack"><div class="muted sm">沒有使用 LoRA</div></div>
-      <div class="trig-chips" id="trigChips" hidden><span class="sub">觸發詞（點一下加入／移除提示詞；亮的＝已經在提示詞裡）</span><div class="chips" id="trigList"></div></div>
+      <div class="trig-chips" id="trigChips" hidden><span class="sub">觸發詞（點一下加入／移除提示詞；亮的＝已經在提示詞裡；一整組的可以單顆點，也可以按「整組」）</span><div class="chips" id="trigList"></div></div>
     </section>
   </div>
 
@@ -971,7 +971,7 @@
           <details class="fold" id="h3Adv">
             <summary>進階</summary>
             <div class="grid2">
-              <div><span class="sub">模型</span><select id="h3Model"></select></div>
+              <div><span class="sub">模型</span><select id="h3Model"></select><div class="muted sm" id="h3ModelNote"></div></div>
               <div><span class="sub">低顯存（切塊算）</span><select id="h3Chunks"><option value="">自動（w4a8、GGUF 才切）</option><option value="8">開：切 8 塊（8～12GB 顯卡）</option><option value="1">關</option></select></div>
               <div><span class="sub">步數</span><input type="number" id="h3Steps" min="1" max="60" value="8"></div>
               <div><span class="sub">取樣器</span><input type="text" id="h3Sampler" value="res_multistep" spellcheck="false"></div>
@@ -1203,6 +1203,30 @@
 <!-- ======================= 生圖助手 ======================= -->
 <!-- 左邊：跟助手的對話（綠＝助手、琥珀＝它按下的動作）；右邊：每一輪的圖像幻燈片排開、腦袋與輪數旋鈕、雲端、LoRA 認識度。
      後端在 src-tauri\src\server\api_agent.rs、api_cloud.rs；js 在 js/agent.js -->
+<main id="page-train" class="page">
+  <section class="panel lib screws tr">
+    <div class="toolbar">
+      <button class="akey sm" id="trNew" type="button">新專案</button>
+      <button class="akey sm warn" id="trDel" type="button" data-ic="eject">移到待刪除</button>
+      <div class="piano row tr-steps" id="trSteps" role="tablist" aria-label="煉 LoRA 的六個步驟"></div>
+      <span class="grow"></span>
+      <span class="vfd g dir-status" id="trStatus" role="status" aria-live="polite">待機</span>
+    </div>
+    <div class="tr-cols">
+      <div class="tr-list lib-scroll" id="trList" aria-label="訓練專案"></div>
+      <div class="tr-main">
+        <div class="tr-body lib-scroll" id="trBody"></div>
+        <div class="toolbar tr-nav">
+          <button class="akey sm" id="trPrev" type="button">上一步</button>
+          <span class="grow"></span>
+          <span class="muted sm" id="trHint"></span>
+          <button class="akey" id="trNext" type="button">下一步</button>
+        </div>
+      </div>
+    </div>
+  </section>
+</main>
+
 <main id="page-agent" class="page">
   <section class="panel lib screws ag">
   <div class="toolbar">
@@ -1433,7 +1457,7 @@
         <li>出圖：聊天欄打 <code translate="no">/sd 1girl, smile</code>，或從魔杖選單按「Generate Image」。</li>
       </ol>
       <div class="row gap"><code id="tavernUrl" translate="no"></code><button class="akey" id="tavernCopy" type="button">複製網址</button><button class="akey" id="tavernTest" type="button">檢查接口</button></div>
-      <div class="muted sm">提示詞裡寫 <code translate="no">&lt;lora:名稱:強度&gt;</code> 會換成繪匣的 LoRA，找不到的會略過。畫好的圖也會存進繪匣的圖庫。目前只能文生圖，酒館的圖生圖、放大用不了。</div>
+      <div class="muted sm">提示詞裡寫 <code translate="no">&lt;lora:名稱:強度&gt;</code> 會換成繪匣的 LoRA：名稱寫檔名（不用副檔名、大小寫和底線空白都不用管）或 LoRA 庫裡取的標題都行，最穩的是寫在酒館的 Common prompt prefix（LLM 寫的提示詞會被酒館拿掉中文和符號）。找不到、跟模型家族不合的 LoRA 會略過，繪匣這邊會跳提醒。畫好的圖也會存進繪匣的圖庫。目前只能文生圖，酒館的圖生圖、放大用不了。</div>
     </section>
     <section class="box">
       <label class="check"><input type="checkbox" id="setBlur"> Civitai 預覽圖的成人內容先模糊（滑過才顯示）</label>

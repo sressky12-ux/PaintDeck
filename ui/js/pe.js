@@ -41,9 +41,19 @@ export function init(c) {
   zhCost = s.zhCost ?? null;
   F("peIdea").value = s.idea || "";
   // 還沒自己切過：照設定頁的「預設開啟」（2026-10-29 盤點：以前永遠照瀏覽器存的舊值，設定頁勾了沒反應）
-  const def = app.state?.settings || {};
-  F("peZhOn").checked = !!(s.zh ?? def.pe_zh);
-  F("peThinkOn").checked = !!(s.think ?? def.pe_think);
+  // 2026-11-10：這裡跑的時候伺服器的設定還沒讀到（main.js 先 init 才 refreshState），以前讀到的預設永遠是空的；
+  // 改成記住「自己切過沒」，沒切過的等 refreshTask（每次拿到狀態都會叫）再照設定對齊，也不把沒切過的值存進瀏覽器
+  // 一次性：舊版把「沒切過」也存成關（false），分不出是不是使用者自己關的。存著關的這一次當成沒切過、改照設定頁的預設
+  if (!store.get("peDefFix", false)) {
+    store.set("peDefFix", true);
+    if (s.zh === false) delete s.zh;
+    if (s.think === false) delete s.think;
+  }
+  own = { zh: s.zh != null, think: s.think != null };
+  F("peZhOn").checked = !!s.zh;
+  F("peThinkOn").checked = !!s.think;
+  F("peZhOn").addEventListener("change", () => { own.zh = true; });
+  F("peThinkOn").addEventListener("change", () => { own.think = true; });
   F("peAuto").checked = !!s.auto;
   F("peDiffOn").checked = s.diff ?? true;
   // 改寫預設：舊版只有「成人（體位）」勾選框，勾著的就換成選單的 adult
@@ -103,9 +113,10 @@ export function init(c) {
   refreshTask();
 }
 
+let own = { zh: false, think: false }; // 中文對照、深度思考：使用者自己切過沒（沒切過＝照設定頁的預設）
 function save() {
   store.set("pe", { list: V.list.slice(-30), i: V.i, applied, seed: peSeed, zhCost, idea: F("peIdea").value,
-    zh: F("peZhOn").checked, think: F("peThinkOn").checked, auto: F("peAuto").checked, open: F("peBox").open, diff: F("peDiffOn").checked,
+    ...(own.zh ? { zh: F("peZhOn").checked } : {}), ...(own.think ? { think: F("peThinkOn").checked } : {}), auto: F("peAuto").checked, open: F("peBox").open, diff: F("peDiffOn").checked,
     preset: F("pePreset").value, pose: F("pePose").value, poseCtl: F("pePoseCtl").checked });
 }
 
@@ -178,6 +189,11 @@ function syncGeneral(cur) {
 
 export function refreshTask() {
   if (!ctx) return;
+  const def = app.state?.settings;
+  if (def) {
+    if (!own.zh) F("peZhOn").checked = !!def.pe_zh;
+    if (!own.think) F("peThinkOn").checked = !!def.pe_think;
+  }
   const t = task(), qwen = ctx.family() === "qwen21";
   // 「自動」那一項直接寫出現在會用哪一份，選單上就看得出目前的預設
   F("pePreset").options[0].textContent = `自動（現在＝${PRESET_NAME[autoTask()]}）`;

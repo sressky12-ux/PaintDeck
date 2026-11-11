@@ -22,6 +22,7 @@ import { onAgentUi } from "./agentui.js";
 import * as play from "./play.js";
 import * as h3 from "./h3.js";
 import * as h3chain from "./h3chain.js";
+import * as train from "./train.js";
 import * as shotsheet from "./shotsheet.js";
 import * as framepick from "./framepick.js";
 import * as charsheet from "./charsheet.js";
@@ -42,6 +43,7 @@ function showPage(p) {
   if (p === "director") { director.show(); studio.show(); }
   if (p === "comic") { comic.show(); colorbook.show(); }
   if (p === "agent") agent.show();
+  if (p === "train") train.show();
 }
 $("#tabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-page]"); if (b && !b.disabled) showPage(b.dataset.page); });
 // 頁面裡「到 API 頁」這種跳頁按鈕：data-go＝頁名
@@ -89,12 +91,12 @@ function connect() {
     const m = JSON.parse(ev.data);
     diagnostics.onEvent(m);
     switch (m.type) {
-      case "hello": setOnline(m.online, m.remaining); if (connectedOnce) refreshState(); connectedOnce = true; break;
+      case "hello": setOnline(m.online, m.remaining); if (connectedOnce) { refreshState(); gen.reconcile(); } connectedOnce = true; break;
       case "comfy": setOnline(m.online); if (m.online) refreshState(); else toast("ComfyUI 連線中斷，正在重新連線…", "err"); break;
       case "queue": setOnline(true, m.remaining); if (!m.remaining) { $("#topProg > div").style.width = "0"; deck.idle(); } break;
       case "start": gen.onStart(m.job); queue.onStart(m.job); deck.onStart(m.job, gen.S.pending.has(m.job)); break;
       case "progress": gen.onProgress(m); queue.onProgress(m); deck.onProgress(m); $("#topProg > div").style.width = `${(100 * m.value) / m.max}%`; break;
-      case "image": if (gen.S.pending.has(m.job)) queue.onImage(m.job, m.image); play.onImage(m.job, m.image); gen.onImage(m.job, m.image); gallery.onNewImage(m.image); charsheet.onImage(m.job, m.image); h3.onImage(m.job, m.image); framepick.onImage(m.job, m.image); break;
+      case "image": if (gen.S.pending.has(m.job)) queue.onImage(m.job, m.image); play.onImage(m.job, m.image); gen.onImage(m.job, m.image); gallery.onNewImage(m.image); charsheet.onImage(m.job, m.image); h3.onImage(m.job, m.image); framepick.onImage(m.job, m.image); train.onImage(m.job, m.image); break;
       case "director": case "director_llm": director.onEvent(m); break;
       case "comic": comic.onEvent(m); break;
       case "colorbook": colorbook.onEvent(m); break;
@@ -103,6 +105,7 @@ function connect() {
       case "agent_cloud": agent.onEvent(m); h3.onEvent(m); h3chain.onEvent(m); break;
       case "h3": h3.onEvent(m); break;
       case "h3chain": h3chain.onEvent(m); break;
+      case "train": train.onEvent(m); break;
       case "finish": {
         const mine = gen.S.pending.has(m.job);
         play.onFinish(m);
@@ -114,6 +117,8 @@ function connect() {
       }
       case "download": hub.onDownload(m); break;
       case "lora_cover": loras.onCover(m); break;
+      // 酒館（A1111 相容接口）送來的圖：LoRA 找不到、跟模型不合這類提醒酒館不會顯示，在這裡講
+      case "sdapi": if (m.warnings?.length) toast("酒館生圖：" + m.warnings.join("；"), "err"); break;
       case "hubrun": hub.onRun(m); break;
       case "pe": if (app.state) app.state.pe = m; pe.onStatus(m); settings.onPe?.(m); deck.onPe(m); break;
     }
@@ -189,6 +194,7 @@ gallery.init();
 assets.init();
 loras.init();
 hub.init();
+train.init();
 feature.initFeatures();
 settings.init();
 llm.init();
@@ -208,7 +214,7 @@ connect();
 // 網址的 #gallery、#loras、#civitai、#settings、#director、#comic、#agent 直接打開那一頁；#jobs 打開任務面板、#help 打開說明（系統列選單也用這個）
 function fromHash() {
   const h = location.hash.slice(1);
-  if (["gen", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent", "api"].includes(h)) showPage(h);
+  if (["gen", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent", "train", "api"].includes(h)) showPage(h);
   else if (h === "jobs") queue.toggle();
   else if (h === "help") system.openHelp();
 }

@@ -256,13 +256,17 @@ pub fn comfy_extra(comfyui: &Path) -> Vec<YamlDir> {
     defaults
 }
 
+/// 是不是 ComfyUI 自己的 models\<分類>（含舊名 unet、clip）：這些本來就會讀，不算外部資料夾。
+/// 2026-11-10 以前這條規則抄了三份，comfy_extra_view 那份漏了舊名，設定頁會把內建資料夾列成「沿用的」
+fn own_dir(comfyui: &Path, kind: &str, p: &Path) -> bool {
+    same(p, &comfyui.join("models").join(kind))
+        || (kind == "diffusion_models" && same(p, &comfyui.join("models").join("unet")))
+        || (kind == "text_encoders" && same(p, &comfyui.join("models").join("clip")))
+}
+
 /// yaml 和開著的 ComfyUI 回報的、給某個分類的資料夾：存在、不是 ComfyUI 自己的 models\<分類>、不重複
 fn comfy_extra_roots(comfyui: &Path, kind: &str) -> Vec<PathBuf> {
-    let own = |p: &Path| {
-        same(p, &comfyui.join("models").join(kind))
-            || (kind == "diffusion_models" && same(p, &comfyui.join("models").join("unet")))
-            || (kind == "text_encoders" && same(p, &comfyui.join("models").join("clip")))
-    };
+    let own = |p: &Path| own_dir(comfyui, kind, p);
     let live: Vec<PathBuf> = LIVE.read().unwrap_or_else(|e| e.into_inner()).iter().filter(|(k, _)| k == kind).map(|(_, p)| p.clone()).collect();
     let mut out: Vec<PathBuf> = vec![];
     for p in comfy_extra(comfyui).into_iter().filter(|d| d.kind == kind).map(|d| d.path).chain(live) {
@@ -279,7 +283,7 @@ pub fn comfy_extra_view(comfyui: &Path) -> Value {
     let mut dirs: Vec<Value> = vec![];
     let mut seen: Vec<(String, PathBuf)> = vec![];
     for d in comfy_extra(comfyui) {
-        let own = same(&d.path, &comfyui.join("models").join(&d.kind));
+        let own = own_dir(comfyui, &d.kind, &d.path);
         if own || !d.path.is_dir() || seen.iter().any(|(k, p)| *k == d.kind && same(p, &d.path)) {
             continue;
         }
@@ -872,12 +876,7 @@ pub fn scan_roots(roots: &[PathBuf], want: &[Want]) -> (Vec<Found>, Vec<Library>
 /// suggest＝建議加進清單的資料夾（找到的清單模型所在的資料夾＋沒在用的模型庫），網頁預設全勾
 pub fn scan_view(comfyui: &Path, dirs: &[Dir]) -> Value {
     let s = scan_state();
-    let used = |kind: &str, path: &Path| {
-        same(path, &comfyui.join("models").join(kind))
-            || (kind == "diffusion_models" && same(path, &comfyui.join("models").join("unet")))
-            || (kind == "text_encoders" && same(path, &comfyui.join("models").join("clip")))
-            || dirs.iter().any(|d| d.kind == kind && same(&d.path, path))
-    };
+    let used = |kind: &str, path: &Path| own_dir(comfyui, kind, path) || dirs.iter().any(|d| d.kind == kind && same(&d.path, path));
     let mut suggest: Vec<Value> = vec![];
     let mut push = |kind: &str, path: &Path, why: Value| {
         if used(kind, path) || suggest.iter().any(|x| x["kind"] == kind && same(Path::new(x["path"].as_str().unwrap_or("")), path)) {
@@ -1069,7 +1068,9 @@ pub fn classify_file(path: &Path) -> (Option<&'static str>, &'static str, String
             // 語言模型的 GGUF 會寫 general.architecture＝qwen／llama…；生圖的 GGUF（city96）是 flux、wan…
             let head = read_head(path, 256 * 1024);
             let llm = ["qwen", "llama", "gemma", "mistral", "phi", "deepseek", "glm"].iter().any(|a| head.contains(a));
-            let img = ["flux", "wan", "hunyuan", "sd3", "ltxv", "cosmos", "hidream", "lumina", "chroma"].iter().any(|a| head.contains(a));
+            // 影片模型（H3、Wan、LTX）再看張量名稱：architecture 沒寫在清單裡的（MiniMax H3 的量化版）以前會「看不出來」、下載中心報失敗
+            let img = ["flux", "wan", "hunyuan", "sd3", "ltxv", "cosmos", "hidream", "lumina", "chroma"].iter().any(|a| head.contains(a))
+                || crate::families::is_video_file(path);
             if name.contains("mmproj") || (llm && !img) {
                 (Some("LLM"), crate::families::OTHER, "GGUF 語言模型（AI 改寫用）".into())
             } else if img {

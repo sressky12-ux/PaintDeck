@@ -31,7 +31,7 @@ pub const SDPOSE_CKPT: &str = "sdpose_wholebody_fp16.safetensors";
 /// ComfyUI 0.38 原本沒有 MOSS：D 槽與安裝精靈都補了官方 commit e087d8f 的 9 個檔（resources\extras\comfy_moss）
 pub const MOSS_TE: &str = "qwen3.5_9b_w4a8_gptq.safetensors";
 /// MOSS 省記憶體的 4B 文字編碼器（beycanai/Qwen-LM，Apache-2.0）＋把 4B 特徵換到 9B 空間的投影轉接器（models\moss_encoder_adapters\），
-/// 由繪匣附帶的 ComfyUI 節點 AnimaMOSS4BCLIPLoader 載入（resources\extrasnima_moss_nodes）。設定 moss_te＝"4b" 才用
+/// 由繪匣附帶的 ComfyUI 節點 AnimaMOSS4BCLIPLoader 載入（resources\extras\anima_moss_nodes）。設定 moss_te＝"4b" 才用
 pub const MOSS_TE_4B: &str = "Qwen3.5-4B_int8_convrot.safetensors";
 pub const MOSS_4B_ADAPTER: &str = "moss_qwen35_4b_to_9b_1600_train.safetensors";
 pub const MOSS_VAE: &str = "flux2-vae.safetensors";

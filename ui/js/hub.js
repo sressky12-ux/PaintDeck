@@ -128,7 +128,8 @@ function note() {
   if (cur.source === "modelscope" && ["recommend", "stars"].includes($("#hubSort").value)) parts.push("魔塔的「推薦」「收藏最多」排序翻頁時會重複、跳過一些（網站本身也一樣），要一筆不漏看完請選「熱門」或「最新」。");
   if (cur.source === "modelscope" && cur.kind !== "workflow" && fam?.id === "anima") parts.push("魔塔沒有 Anima 這個底模，作者什麼都標：這裡列的是名字或說明有 anima 的，名字明寫別的底模的不算。兩邊都沒寫 anima 的，勾「也顯示生圖站用不了的」、底模選「不限底模」再用關鍵字找。");
   if (cur.source === "runninghub") parts.push("RunningHub 只有工作流（模型在它們的雲端機器上）：可以匯進生圖站，或直接送到 RunningHub 跑（照秒扣 RH 幣）。");
-  if (cur.kind !== "workflow" && fam && !fam.usable) parts.push(`${fam.label}生圖站內建的流程畫不了，下載後要配匯入的工作流才用得到。`);
+  if (cur.kind !== "workflow" && fam && !fam.usable) parts.push(`${fam.label}生圖站內建的流程畫不了，下載後要配匯入的工作流才用得到（影片的到「設定 → 影片模型」匯入）。`);
+  if (cur.kind !== "workflow" && fam?.id === "h3") parts.push("H3 的主模型、LoRA 下載後到 H3 影片台的進階設定選；生成頁「動起來」的影片模型也選得到主模型。");
   if (cur.source === "civitai" && !s?.has_key) parts.push("有些模型要登入才能下載：到設定頁填 Civitai API key。");
   if (cur.source === "runninghub" && !s?.has_key) parts.push("要先填 RunningHub 的 API Key（H3 影片台「在哪跑 → RunningHub」）才能匯入或跑。");
   $("#hubNote").textContent = parts.join("");
@@ -339,11 +340,19 @@ async function download(c, ver, f) {
   } catch (e) { toast(e.message, "err"); }
 }
 
+/** 下載好之後去哪裡用：H3 在影片台選；內建流程用不到的（別的影片模型、SD 1.5、Flux…）要匯入工作流，不然使用者以為裝了沒用 */
+function doneTip(c) {
+  const fam = c.ver?.family || c.it.family, usable = c.ver ? c.ver.usable : c.it.usable, lora = c.it.kind === "lora";
+  if (fam === "h3") return lora ? "：到 H3 影片台的進階設定加 LoRA" : "：到 H3 影片台的進階設定、或生成頁「動起來」的影片模型選它";
+  if (!usable) return "。內建流程用不到它：要匯入用它的工作流（生圖在「設定 → 模型與工作流」，影片在「設定 → 影片模型」）";
+  return lora ? "，LoRA 清單裡可以用了" : "";
+}
+
 function finish(c, ok, msg) {
   if (ok) {
     if (c.ver) c.ver.installed = true;
     c.done = true;
-    toast(`「${c.it.name}」下載好了${c.it.kind === "lora" ? "，LoRA 清單裡可以用了" : ""}`, "ok");
+    toast(`「${c.it.name}」下載好了${doneTip(c)}`, "ok");
     app.refreshState();
   } else toast(`下載失敗：${msg}`, "err");
   c.paint?.();

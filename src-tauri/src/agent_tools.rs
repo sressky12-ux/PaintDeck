@@ -124,6 +124,10 @@ static DANGER: LazyLock<Vec<(Regex, &'static str)>> = LazyLock::new(|| {
         (r"^/api/nodes(/test)?$", "改工作節點（多張顯卡、遠端 ComfyUI）的設定，或連一台遠端 ComfyUI 測試"),
         (r"^/api/(image|video)/workflows","新增或改動匯入的工作流"),
         (r"^/api/voices/tts_workflow$", "換掉或拿掉聲音庫的 TTS 工作流"),
+        // 2026-11-11 訓練台：MCP 那邊（anima-tools.js 的 DANGER）同一天一起加
+        (r"^/api/train/trainer/(install|remove)$", "安裝（下載約 8GB）或移除本機訓練器"),
+        (r"^/api/train/[^/]+/(start|quote)$", "開始煉 LoRA 或報價（雲端顯卡、C 站會花錢；C 站報價會先把訓練圖上傳；本機會把顯卡占滿）"),
+        (r"^/api/train/[^/]+/images/remove$", "從訓練專案移除訓練圖"),
     ]
     .into_iter()
     .map(|(r, why)| (Regex::new(r).expect("DANGER"), why))
@@ -474,6 +478,13 @@ mod tests {
         assert_eq!(lv("GET", "/api/hub/modelscope", json!({})), Level::Normal);
         assert_eq!(lv("GET", "/api/hub/search", json!({})), Level::Normal);
         assert_eq!(lv("POST", "/api/hub/rh_run", json!({"dry": true})), Level::Confirm);
+        // 訓練台：開始、報價（C 站報價會先上傳訓練圖）、裝或移除訓練器、移除訓練圖要確認；看清單、寫描述不用
+        for p in ["/api/train/t0123456789ab/start", "/api/train/t0123456789ab/quote", "/api/train/trainer/install", "/api/train/trainer/remove", "/api/train/t0123456789ab/images/remove"] {
+            assert_eq!(lv("POST", p, json!({})), Level::Confirm, "{p}");
+        }
+        assert_eq!(lv("GET", "/api/train", json!({})), Level::Normal);
+        assert_eq!(lv("POST", "/api/train/t0123456789ab/captions", json!({})), Level::Normal);
+        assert_eq!(lv("POST", "/api/train/t0123456789ab/images", json!({})), Level::Normal);
     }
 
     #[test]

@@ -21,7 +21,8 @@ pub fn kinds_of(source: &str) -> &'static [&'static str] {
     }
 }
 
-/// 站內的家族，和它在各來源的叫法。usable＝生圖站內建流程畫得了（其他家族只能靠匯入的工作流）
+/// 站內的家族，和它在各來源的叫法。usable＝生圖站內建流程用得到（其他家族只能靠匯入的工作流）。
+/// H3 是內建影片（2026-10-30 起），模型和 LoRA 在 H3 影片台選：2026-11-10 以前標成用不了，使用者下載後以為裝了沒用
 pub struct Family {
     pub id: &'static str,
     pub label: &'static str,
@@ -44,7 +45,7 @@ pub const FAMILIES: [Family; 9] = [
     Family { id: "flux", label: "Flux", civitai: &["Flux.1 D", "Flux.1 S", "Flux.1 Krea", "Flux.2 D"], modelscope: Some(&["FLUX1_DEV", "FLUX1_KONTEXT", "FLUX2_DEV", "FLUX2_KLEIN_4B", "FLUX2_KLEIN_9B", "FLUX2_KLEIN_BASE_4B", "FLUX2_KLEIN_BASE_9B"]), usable: false },
     Family { id: "krea2", label: "Krea 2", civitai: &["Krea 2", "Krea 2 Turbo"], modelscope: Some(&["KREA_2_TURBO"]), usable: true },
     Family { id: "ltx", label: "LTX-2.3（影片）", civitai: &["LTXV 2.3", "LTXV2", "LTXV"], modelscope: Some(&["LTX_VIDEO_2_3"]), usable: false },
-    Family { id: "h3", label: "MiniMax H3（影片）", civitai: &["MiniMax H3"], modelscope: Some(&["MINIMAX_H3"]), usable: false },
+    Family { id: "h3", label: "MiniMax H3（影片）", civitai: &["MiniMax H3"], modelscope: Some(&["MINIMAX_H3"]), usable: true },
 ];
 
 pub fn family(id: &str) -> Option<&'static Family> {
@@ -528,8 +529,9 @@ mod tests {
         assert_eq!(lora_subdir(Some("anima"), ""), "");
         assert!(lora_subdir(None, "Wan Video").starts_with("other"));
         assert_eq!(meta_base(Some("moss")), Some("MOSS Image"));
-        // 下載下來的 LoRA 資訊寫的 base_model 要讓 families 認得
-        for f in FAMILIES.iter().filter(|f| f.usable) {
+        // 下載下來的 LoRA 資訊寫的 base_model 要讓 families 認得（H3 是影片，不進生圖的 LoRA 選單，H3 影片台看檔頭認）
+        assert!(family("h3").is_some_and(|f| f.usable) && !family("ltx").is_some_and(|f| f.usable));
+        for f in FAMILIES.iter().filter(|f| f.usable && f.id != "h3") {
             assert_eq!(families::from_base_model(f.civitai[0]), Some(f.id), "{}", f.id);
         }
     }

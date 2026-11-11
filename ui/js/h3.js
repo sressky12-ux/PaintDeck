@@ -1049,10 +1049,20 @@ function paintModels() {
   sel.replaceChildren(el("option", { value: "" }, def),
     ...names.filter((n) => n !== d.model).map((n) => el("option", { value: n }, n === d.official_ref2va ? "官方 H3 ref2va（會自動加 8 步 Turbo LoRA）" : n)));
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";
+  sel.onchange = paintModelNote;
+  paintModelNote();
   const sl = where === "local" ? info.local?.selflift : info.cloud_selflift;
   F("h3SelfLift").disabled = !sl;
   F("h3SelfLiftNote").textContent = sl ? "" : where === "cloud" ? "（雲端開好才知道有沒有裝）" : "（這台電腦的 ComfyUI 沒裝 SelfLiftH3Sampler 節點）";
   paintLoras();
+}
+
+/** 選了自己裝的 H3 模型、檔名又看不出有烤 Turbo：預設 8 步跑出來會糊，先講（官方 ref2va 各種精度後端會自動補 Turbo LoRA） */
+function paintModelNote() {
+  const n = (F("h3Model").value || "").split(/[\\/]/).pop().toLowerCase();
+  const official = n.startsWith("minimax_h3_ref2va") && !/turbo|dmd/.test(n);
+  F("h3ModelNote").textContent = !n || official || /turbo|dmd|8step|4step|lightning|distill/.test(n) ? ""
+    : "這顆的檔名看不出有烤 Turbo：照預設 8 步跑可能是糊的。把步數調到 30 以上，或在下面加一顆 H3 的 Turbo LoRA。";
 }
 
 function allLoras() {
@@ -1060,7 +1070,9 @@ function allLoras() {
 }
 
 function loraPool() {
-  return allLoras().filter((n) => /h3|minimax/i.test(n));
+  // 本機：後端看檔頭認過的（檔名沒寫 h3 的也在）；雲端讀不到檔頭，只能看檔名
+  if (where === "local" && info?.local?.h3_loras) return info.local.h3_loras;
+  return allLoras().filter((n) => /h3|minimax|10eros/i.test(n));
 }
 
 /** LoRA 組合包（照 YZ金鱼「文武雙全」工作流的組合與強度）：[檔名關鍵字, 強度, 找不到時顯示的名字] */

@@ -9,6 +9,7 @@ import * as tagger from "./tagger.js";
 import * as refs from "./refs.js";
 import * as pe from "./pe.js";
 import * as promptx from "./promptx.js";
+import * as promptsec from "./promptsec.js";
 import * as library from "./library.js";
 import { pickFromGallery, openLightboxRecord } from "./gallery.js";
 import * as deck from "./deck.js";
@@ -133,7 +134,8 @@ export function init() {
   attachAutocomplete(F("prompt"), F("acPrompt"));
   attachAutocomplete(F("negative"), F("acNeg"));
   promptx.init({ prompt: F("prompt"), negative: F("negative"), family: () => fam(), save: () => save() });
-  F("prompt").addEventListener("input", debounce(renderTrig, 150));
+  watchPromptValue(F("prompt"), debounce(renderTrig, 150));
+  promptsec.init({ prompt: F("prompt"), wrap: F("prompt").parentElement, mount: F("promptSecs"), toggle: F("promptSecBtn"), batch: F("batchLines"), save: () => save() });
 
   // 滑桿數值顯示
   const outs = [["denoise", "denoiseOut"], ["ipGrow", "ipGrowOut"], ["ipBlur", "ipBlurOut"], ["ipPad", "ipPadOut"], ["upDenoise", "upDenoiseOut"],
@@ -1022,40 +1024,119 @@ function fillSnippets() {
 export function triggerWords() {
   const meta = Object.fromEntries((app.state?.models?.loras || []).map((x) => [x.name, x]));
   const words = [];
-  for (const l of S.loras) if (l.enabled && !mismatch(l)) for (const t of meta[l.name]?.triggers || []) if (!words.includes(t)) words.push(t);
+  const seen = new Set();
+  for (const l of S.loras) if (l.enabled && !mismatch(l)) for (const t of meta[l.name]?.triggers || []) {
+    // C 站的觸發詞常常一整串帶逗號（「a, b, c,」）或尾巴多一個逗號：整理成「a, b, c」，空的不要、重複的不要
+    const w = splitTags(t).join(", ");
+    const k = splitTags(w).map(normTag).join(",");
+    if (w && !seen.has(k)) { seen.add(k); words.push(w); }
+  }
   return words;
 }
 
-// 觸發詞做成小標籤，點一下加入或移除
+// ---- 觸發詞標籤（2026-11-08 重寫）
+// 以前的毛病：觸發詞整串帶逗號（C 站常見「a, b, c,」）或尾巴多一個逗號時，整串拿去跟提示詞的單一 tag 比，永遠對不上
+// → 標籤不亮、按一次加一次、長串按了像沒反應；而且「亮不亮」是畫標籤當下記住的，提示詞被程式改掉（套用圖庫參數、AI 改寫、
+// 提示詞庫…）後標籤不會更新，按下去方向就反了。現在：
+//   1. 提示詞和觸發詞都先拆成單一 tag（半形／全形逗號、換行都算分隔），比對時忽略大小寫、底線／空白、跳脫括號、(tag:1.2) 權重、((多層括號))
+//   2. 按下去的當下重新比對，不用舊狀態
+//   3. 提示詞的 value 被任何程式改掉也會重畫標籤（watchPromptValue）
+//   4. 一整組的觸發詞拆成單顆標籤，可以單顆點，也可以按「整組」一次加／移除；只有一部分在提示詞裡時「整組」顯示外框
+const TAG_SEP = /[,，\n]/;
+function splitTags(s) {
+  return String(s ?? "").split(TAG_SEP).map((x) => x.trim()).filter(Boolean);
+}
+
+function normTag(s) {
+  let t = String(s ?? "").trim();
+  for (let guard = 0; guard < 8; guard++) {
+    const m = t.match(/^\((.*)\)$/s) || t.match(/^\[(.*)\]$/s);
+    if (!m) break;
+    t = m[1].replace(/:\s*-?\d*\.?\d+\s*$/, "").trim();
+  }
+  return t.replace(/\\/g, "").replace(/_/g, " ").replace(/\s+/g, " ").trim().toLowerCase();
+}
+
+const promptTagSet = () => new Set(splitTags(F("prompt").value).map(normTag));
+
+// 把提示詞裡跟 targets（normTag 過的）一樣的 tag 拿掉，連同它後面的分隔符號；其他文字、換行原樣保留
+function removeTags(text, targets) {
+  const tok = String(text).split(/([,，\n])/);
+  const kept = [];
+  let dropped = false;
+  for (let i = 0; i < tok.length; i += 2) {
+    let t = tok[i];
+    const sep = tok[i + 1] ?? "";
+    if (t.trim() && targets.has(normTag(t))) { dropped = true; continue; }
+    // 拿掉的是一行的第一顆：下一顆補上來當行首，前面的空白不要留
+    if (dropped && (!kept.length || kept[kept.length - 1].endsWith("\n"))) t = t.replace(/^[ \t]+/, "");
+    dropped = false;
+    kept.push(t + sep);
+  }
+  return kept.join("").replace(/^[\s,，]+/, "").replace(/[\s,，]+$/, "").replace(/([,，])(\s*[,，])+/g, "$1");
+}
+
+function trigChip(w, have) {
+  const on = have.has(normTag(w));
+  return el("button", { class: "chip" + (on ? " on" : ""), type: "button", "aria-pressed": on ? "true" : "false",
+    title: on ? "點一下從提示詞移除" : "點一下加到提示詞", onclick: () => toggleTrigger(w) }, w);
+}
+
 function renderTrig() {
   const words = triggerWords();
   F("trigChips").hidden = !words.length;
   const box = F("trigList");
   box.innerHTML = "";
-  const have = new Set(F("prompt").value.split(",").map((s) => s.trim().toLowerCase()));
+  const have = promptTagSet();
   for (const w of words) {
-    const on = have.has(w.trim().toLowerCase());
-    box.append(el("button", { class: "chip" + (on ? " on" : ""), type: "button", title: on ? "點一下從提示詞移除" : "點一下加到提示詞", onclick: () => toggleTrigger(w, on) }, w));
+    const parts = splitTags(w);
+    if (parts.length < 2) { box.append(trigChip(w, have)); continue; }
+    const n = parts.filter((p) => have.has(normTag(p))).length;
+    const all = n === parts.length;
+    box.append(el("span", { class: "trig-group", role: "group" },
+      el("button", { class: "chip trig-all" + (all ? " on" : n ? " part" : ""), type: "button", "aria-pressed": all ? "true" : n ? "mixed" : "false",
+        title: all ? "整組從提示詞移除" : n ? "缺的補上，整組都加進提示詞" : "整組加到提示詞", onclick: () => toggleTrigger(w) },
+        "整組", el("small", {}, `${n}/${parts.length}`)),
+      ...parts.map((p) => trigChip(p, have))));
   }
 }
 
-function toggleTrigger(w, on) {
+// 按下去的當下重新比對：全部都在＝整組移除，否則把缺的補上
+function toggleTrigger(w) {
   const t = F("prompt");
-  if (on) t.value = t.value.split(",").filter((s) => s.trim().toLowerCase() !== w.trim().toLowerCase()).join(",").replace(/^\s*,\s*/, "").replace(/,\s*,/g, ",");
+  const parts = new Set(splitTags(w).map(normTag));
+  if (!parts.size) return;
+  const have = promptTagSet();
+  if ([...parts].every((p) => have.has(p))) t.value = removeTags(t.value, parts);
   else insertTriggers([w]);
   save();
   renderTrig();
 }
 
+// 提示詞被程式改掉（不會觸發 input 事件）也要重畫觸發詞標籤；保留別人先包過的 value（跟 deck.js 的 watchValue 同招）
+function watchPromptValue(ta, cb) {
+  const desc = Object.getOwnPropertyDescriptor(ta, "value") || Object.getOwnPropertyDescriptor(Object.getPrototypeOf(ta), "value");
+  Object.defineProperty(ta, "value", {
+    configurable: true,
+    get() { return desc.get.call(this); },
+    set(v) { desc.set.call(this, v); cb(); },
+  });
+  ta.addEventListener("input", cb);
+}
+
 // 觸發詞插在開頭的品質／評級詞後面（masterpiece, best quality, safe, jgdxstyle, …）：放越前面 LoRA 越穩；沒有品質詞就放最前面
-const QUALITY = /^(masterpiece|best quality|amazing quality|high quality|very aesthetic|aesthetic|absurdres|highres|newest|recent|score_\d+(_up)?|year \d{4}|safe|sensitive|nsfw|explicit)$/i;
+const QUALITY = /^(masterpiece|best quality|amazing quality|high quality|very aesthetic|aesthetic|absurdres|highres|newest|recent|score[_ ]\d+([_ ]up)?|year \d{4}|safe|sensitive|nsfw|explicit)$/i;
 export function insertAfterQuality(cur, words) {
   const parts = cur.trim().replace(/,\s*$/, "").split(",");
-  const have = new Set(parts.map((s) => s.trim().toLowerCase()));
-  const add = words.map((w) => w.trim()).filter((w) => w && !have.has(w.toLowerCase()));
+  const have = new Set(splitTags(cur).map(normTag));
+  const add = [];
+  for (const w of words.flatMap(splitTags)) {
+    const k = normTag(w);
+    if (!have.has(k)) { have.add(k); add.push(w); }
+  }
   if (!add.length) return cur;
   let i = 0;
-  while (i < parts.length && QUALITY.test(parts[i].trim())) i++;
+  while (i < parts.length && QUALITY.test(normTag(parts[i]))) i++;
   const rest = parts.slice(i).join(",").trim();
   return [...parts.slice(0, i).map((s) => s.trim()), ...add, ...(rest ? [rest] : [])].join(", ");
 }
@@ -1085,7 +1166,7 @@ function applyTags(text, replace) {
 export function collectParams() {
   const p = {
     mode: S.mode, model: F("model").value, turbo_lora: (!isTurboModel() && F("turboLora").value) || false,
-    prompt: F("prompt").value.trim(), negative: F("negative").value.trim(),
+    prompt: promptsec.forModel(F("prompt").value).trim(), negative: F("negative").value.trim(),
     steps: +F("steps").value, cfg: +F("cfg").value, sampler: F("sampler").value, scheduler: F("scheduler").value,
     seed: F("seed").value.trim() === "" ? null : +F("seed").value,
     width: +F("width").value, height: +F("height").value,
@@ -1201,6 +1282,13 @@ function restore() {
 }
 
 // 從圖庫或圖片讀到的參數套回表單
+// 舊圖、API 送的 turbo_lora: true（＝「用預設的加速 LoRA」）→ 這台電腦上實際有的那一顆：官方的優先，沒有就清單第一顆，都沒有就空白。
+// 2026-11-10 以前寫死 v0.2 的檔名，這台沒有那顆檔時選單默默落回「不使用」
+function defTurbo() {
+  const list = app.state?.models?.turbo_loras || [];
+  return (list.find((t) => /anima-turbo-lora/i.test(t.name)) || list[0])?.name || "";
+}
+
 export function applyParams(p, withMode = true) {
   if (!p) return toast("這張圖沒有可用的生成參數", "err");
   // 選單沒有這個值（別台電腦、別的軟體的取樣器）就維持目前的，不要變成空白
@@ -1216,7 +1304,7 @@ export function applyParams(p, withMode = true) {
   if (p.model && [...F("model").options].some((o) => o.value === p.model)) F("model").value = p.model;
   // 工作流組做的圖：「工作流參數」面板改過的值也帶回來
   if (p.wf_overrides && (p.model || "").startsWith("wf:")) wfpanel.setOverrides(p.model.slice(3), p.mode || "txt2img", p.wf_overrides);
-  F("turboLora").value = p.turbo_lora === true ? "anima-turbo-lora-v0.2.safetensors" : (p.turbo_lora || "");
+  F("turboLora").value = p.turbo_lora === true ? defTurbo() : (p.turbo_lora || "");
   S.family = fam();
   S.loras = (p.loras || []).map((l) => ({ ...l, enabled: true }));
   if (p.hires) { F("hiresOn").checked = !!p.hires.enabled; set("hiresScale", p.hires.scale); set("hiresDenoise", p.hires.denoise); }
@@ -1276,7 +1364,7 @@ function paramsToForm(p) {
   put("prompt", p.prompt); put("negative", p.negative); put("steps", p.steps); put("cfg", p.cfg);
   put("sampler", p.sampler); put("scheduler", p.scheduler); put("model", p.model);
   if (p.width && p.height && p.mode !== "upscale") { f.width = p.width; f.height = p.height; }
-  f.turboLora = p.turbo_lora === true ? "anima-turbo-lora-v0.2.safetensors" : (p.turbo_lora || "");
+  f.turboLora = p.turbo_lora === true ? defTurbo() : (p.turbo_lora || "");
   if (p.hires) { f.hiresOn = !!p.hires.enabled; put("hiresScale", p.hires.scale); put("hiresDenoise", p.hires.denoise); }
   if (p.mode === "img2img" && p.denoise != null) f.denoise = p.denoise;
   if (p.strip) {
@@ -1336,7 +1424,9 @@ async function generate() {
     if (!p.sheet.req) return toast("請先寫「修改要求」，或從常用要求挑一個", "err");
     if (/[图圖]\s*2/.test(p.sheet.req) && !p.sheet.ref) return toast("要求裡提到圖2，請先放服裝參考圖", "err");
   }
-  if ((S.mode === "strip" || S.mode === "sheet") && !(app.state?.models?.unet_family || {})["qwen_image_2.1_turbo_int8_convrot.safetensors"] && fam() !== "qwen21")
+  // 模型清單的名稱可能帶子資料夾（qwen/xxx.safetensors）：比檔名
+  const hasQwenTurbo = Object.keys(app.state?.models?.unet_family || {}).some((k) => k.split(/[\\/]/).pop() === "qwen_image_2.1_turbo_int8_convrot.safetensors");
+  if ((S.mode === "strip" || S.mode === "sheet") && !hasQwenTurbo && fam() !== "qwen21")
     return toast(modeName[S.mode] + "要用 Qwen 2.1 官方 Turbo（qwen_image_2.1_turbo_int8_convrot），模型清單裡找不到", "err");
   const count = S.mode === "upscale" ? 1 : +F("count").value;
   // 批次：每一行各送一次（AI 改寫的紀錄只對整框有意義，拿掉）
@@ -1401,6 +1491,27 @@ export function onImage(job, rec) {
   if (S.results.length > 200) S.results.pop();
   show(rec);
   renderStrip();
+}
+
+/** ws 斷線重連後跟後端的任務清單對帳：斷線那段時間跑完的任務，finish／image 事件收不到，
+ *  「等待中」的格子和「生成中」標記會永遠卡著（2026-11-10 以前只能按「全停」，那會真的清掉佇列） */
+export async function reconcile() {
+  if (!S.pending.size) return;
+  let jobs;
+  try { jobs = (await api("/api/jobs?limit=300")).jobs; } catch { return; }
+  const by = new Map(jobs.map((j) => [j.id, j]));
+  let gone = 0;
+  for (const id of [...S.pending.keys()]) {
+    const j = by.get(id);
+    if (j && (j.status === "queued" || j.status === "running")) continue;
+    S.pending.delete(id);
+    gone++;
+    if (id === S.running) S.running = null;
+  }
+  if (!gone) return;
+  if (!S.running) F("liveBadge").hidden = true;
+  renderStrip();
+  toast("連線中斷的那段時間有任務結束了：畫好的圖在圖庫", "ok");
 }
 
 export function onFinish(m) {
@@ -1513,13 +1624,20 @@ export async function imageAction(act, rec, btn, quiet = false) {
 export const H3_NAME = "MiniMax H3（內建）";
 /** 現在用的影片模型：{id, name, builtin, info, error}（info＝自訂工作流看懂的摘要，見 video_wf.rs） */
 export async function videoEngine() {
+  return (await videoEngines()).cur;
+}
+/** 全部的影片模型：{cur＝設定裡選的, builtin＝內建 H3, flows＝匯入的影片工作流（每筆跟 cur 同格式）} */
+async function videoEngines() {
   const r = await api("/api/video/workflows");
-  if (r.engine === r.builtin.id) return { id: r.builtin.id, name: H3_NAME, builtin: true, info: null, error: "" };
-  const w = r.workflows.find((x) => x.id === r.engine);
-  return { id: r.engine, name: w?.name || r.engine, builtin: false, info: w?.info || null, pins: w?.pins || [], media_slots: w?.media_slots || w?.info?.media_slots || [], error: w ? w.error || "" : "找不到這個工作流" };
+  const builtin = { id: r.builtin.id, name: H3_NAME, builtin: true, info: null, error: "" };
+  const flow = (w) => ({ id: w.id, name: w.name || w.id, builtin: false, info: w.info || null, pins: w.pins || [], media_slots: w.media_slots || w.info?.media_slots || [], error: w.error || "" });
+  const flows = r.workflows.map(flow);
+  const cur = r.engine === r.builtin.id ? builtin : flows.find((x) => x.id === r.engine) || { ...flow({ id: r.engine }), error: "找不到這個工作流" };
+  return { cur, builtin, flows };
 }
 
-let vidRec = null, vidEng = null, vidH3 = [];
+// vidSet＝設定裡選的影片模型；vidEng＝這次要用的（下拉可以臨時換成別的匯入工作流或內建 H3，不動設定）
+let vidRec = null, vidEng = null, vidSet = null, vidAll = null, vidH3 = [];
 let vidMedia = null, vidMediaEpoch = 0;
 function paintVidMedia() {
   const epoch = ++vidMediaEpoch;
@@ -1538,14 +1656,27 @@ const vidH3Model = () => (F("vidModel").value.startsWith("h3:") ? F("vidModel").
 /** 這次走 H3（內建、或下拉指定了 H3 模型） */
 const vidIsH3 = () => !!vidEng?.builtin || !!vidH3Model();
 
-// 影片模型下拉：設定裡的（H3 自動挑或自訂工作流）＋本機裝了的 H3 模型（GGUF 量化版排前面）
+// 影片模型下拉：設定裡的（H3 自動挑或自訂工作流）＋其他匯入的影片工作流＋本機裝了的 H3 模型（GGUF 量化版排前面）。
+// 2026-11-10：以前只列設定裡那一個和 H3，匯入了別的影片工作流（Wan、LTX…）在這裡看不到，要先去設定頁換才用得到
 function fillVidModel() {
   const sel = F("vidModel"), keep = store.get("vidModel", "");
   const h3 = [...vidH3].sort((a, b) => b.toLowerCase().endsWith(".gguf") - a.toLowerCase().endsWith(".gguf"));
-  sel.replaceChildren(el("option", { value: "" }, vidEng ? vidEng.name : H3_NAME),
+  const others = (vidAll?.flows || []).filter((w) => w.id !== vidSet?.id);
+  sel.replaceChildren(el("option", { value: "" }, vidSet ? vidSet.name : H3_NAME),
+    ...(vidSet && !vidSet.builtin ? [el("option", { value: "eng:h3" }, H3_NAME)] : []),
+    ...others.map((w) => el("option", { value: "wf:" + w.id }, `工作流：${w.name}`)),
     ...h3.map((m) => el("option", { value: "h3:" + m }, m.toLowerCase().endsWith(".gguf") ? `MiniMax H3 本機量化版（${m}）` : `MiniMax H3 本機（${m}）`)));
   sel.value = [...sel.options].some((o) => o.value === keep) ? keep : "";
+  pickVidEng();
   paintVidModel();
+}
+
+/** 照下拉決定這次用哪個影片模型（wf:＝別的匯入工作流、eng:h3＝內建 H3、其他＝設定裡的） */
+function pickVidEng() {
+  const v = F("vidModel").value;
+  vidEng = v === "eng:h3" ? vidAll?.builtin || vidSet
+    : v.startsWith("wf:") ? vidAll?.flows.find((w) => w.id === v.slice(3)) || vidSet
+      : vidSet;
 }
 
 // 自訂工作流釘到「動起來」的欄位（設定 → 影片模型 → 對應與參數…）：每次可以調，記在這個瀏覽器（每個工作流一份）
@@ -1590,8 +1721,8 @@ function paintVidModel() {
   paintPins();
   paintVidMedia();
   F("vidWhereBox").hidden = !vidIsH3();
-  // 雲端用雲端機器上的模型，本機的模型清單用不到
-  F("vidModelBox").hidden = !vidH3.length || vidCloud();
+  // 只有一個選項就不用顯示；選了雲端也照樣留著（不然換不回匯入的工作流），只是本機的 H3 模型檔雲端用不到（送出時不帶）
+  F("vidModelBox").hidden = F("vidModel").options.length < 2;
   if (vidCloud()) {
     F("vidResBox").hidden = F("vidSecsBox").hidden = false;
     F("vidEngine").textContent = "MiniMax H3 雲端：要先在「導演 → H3 影片」開好雲端（勾 H3 影片包），做好的影片會進圖庫";
@@ -1613,9 +1744,9 @@ async function openVideo(rec) {
   F("vidSrc").src = `/img/${rec.id}`;
   openModal("#vidModal");
   F("vidPrompt").focus();
-  vidEng = null;
+  vidEng = vidSet = vidAll = null;
   F("vidEngine").textContent = "";
-  try { vidEng = await videoEngine(); } catch (e) { F("vidEngine").textContent = "讀不到影片模型的設定：" + e.message; return; }
+  try { vidAll = await videoEngines(); vidEng = vidSet = vidAll.cur; } catch (e) { F("vidEngine").textContent = "讀不到影片模型的設定：" + e.message; return; }
   paintVidEngine();
   // 本機有 H3 模型就列出來可以指定（讀不到就只有設定裡的）
   try { vidH3 = ((await api("/api/h3/info")).local?.models) || []; } catch { vidH3 = []; }
@@ -1637,7 +1768,7 @@ function paintVidEngine() {
   F("vidResBox").hidden = custom;
   F("vidSecsBox").hidden = custom && !i?.seconds;
 }
-F("vidModel").onchange = () => { store.set("vidModel", F("vidModel").value); paintVidModel(); };
+F("vidModel").onchange = () => { store.set("vidModel", F("vidModel").value); pickVidEng(); paintVidModel(); };
 F("vidGo").onclick = async () => {
   const prompt = F("vidPrompt").value.trim();
   if (!prompt) return toast("請寫動作和聲音的描述", "err");
@@ -1646,10 +1777,11 @@ F("vidGo").onclick = async () => {
   try {
     const media = vidMedia?.read() || {};
     const r = await api("/api/to_input", { json: { id: vidRec.id } });
-    const h3 = vidIsH3(), m = vidH3Model(), ov = pinOverrides();
+    // 雲端跑的是雲端機器上的模型：本機選的 H3 模型檔不帶過去（雲端沒有那個檔會報「不在清單裡」）
+    const h3 = vidIsH3(), m = vidCloud() ? "" : vidH3Model(), ov = pinOverrides();
     const params = {
       mode: "video", init_image: r.name, prompt, seed: -1, video_seconds: +F("vidSecs").value, video_res: F("vidRes").value,
-      idea: vidRec.idea || "", model: "", ...(h3 ? { video_engine: "h3" } : {}), ...(m ? { h3_model: m } : {}), ...(ov ? { wf_overrides: ov } : {}),
+      idea: vidRec.idea || "", model: "", ...(h3 ? { video_engine: "h3" } : vidEng ? { video_engine: vidEng.id } : {}), ...(m ? { h3_model: m } : {}), ...(ov ? { wf_overrides: ov } : {}),
       ...(Object.keys(media).length ? { media_slots: media } : {}) };
     if (vidCloud()) {
       await api("/api/h3/generate", { json: { gen: params, where: "cloud", count: 1 } });

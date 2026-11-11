@@ -53,7 +53,10 @@ function agentDesc(l) {
   return el("div", { class: "agent-desc", title: (a.src === "user" ? "你寫的" : a.src === "probe" ? "助手試畫比較後寫的" : "助手讀線索寫的") + "（給助手挑 LoRA 用）\n" + a.desc },
     el("span", { class: "ag-kind" + (a.sure === false ? " unsure" : "") }, "助手：" + (KIND_ZH[a.kind] || a.kind || "其他") + (a.sure === false ? "？" : "")), a.desc_zh || a.desc);
 }
-const previewUrl = (l) => l.preview ? `/lora_preview/${encodeURIComponent(l.preview)}` : l.local_preview ? `/api/loras/local-preview?name=${encodeURIComponent(l.name)}` : "";
+// 預覽圖的順序：自己下載／抓過存的 → 模型旁邊的同名圖 → 程式附的封面縮圖（cover_file，2026-11-08：不用連網）
+const previewUrl = (l) => l.preview ? `/lora_preview/${encodeURIComponent(l.preview)}`
+  : l.local_preview ? `/api/loras/local-preview?name=${encodeURIComponent(l.name)}`
+  : l.cover_file ? `/api/loras/bundled-cover/${encodeURIComponent(l.cover_file)}` : "";
 // 模糊成人預覽圖：LoRA 標成人的，或封面那張圖 C 站的尺度等級大於 1（同下載中心的 cover_nsfw）
 const blurOf = (l) => !!app.state?.settings?.blur_nsfw && (!!l.nsfw || (l.preview_nsfw ?? l.cover_nsfw ?? 1) > 1);
 
@@ -74,11 +77,19 @@ function fillPh(box, l) {
 }
 // 沒預覽圖、抓得到封面的（/api/state 的 cover）：後端在背景抓，抓完廣播 lora_cover（main.js 轉給 onCover）
 const coverAsked = new Set();
+const COVER_WAIT = 120000;
 function askCovers(items) {
   const names = items.filter((l) => l.cover && !l.preview && !coverAsked.has(l.name)).map((l) => l.name);
   if (!names.length) return;
   for (const n of names) coverAsked.add(n);
   api("/api/loras/covers", { json: { names } }).catch(() => { for (const n of names) coverAsked.delete(n); });
+  // 連不上（例如大陸連 C 站）又一直沒消息：兩分鐘後改寫「沒有預覽圖」，不要永遠停在「正在抓封面…」
+  setTimeout(() => {
+    for (const n of names) {
+      const l = list.find((x) => x.name === n);
+      if (l && !l.preview && !l.coverFailed) onCover({ name: n, failed: true });
+    }
+  }, COVER_WAIT);
 }
 export function onCover(m) {
   for (const l of [list.find((x) => x.name === m.name), app.state?.models?.loras?.find((x) => x.name === m.name)]) {

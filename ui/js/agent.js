@@ -574,7 +574,8 @@ export function fillGpus(sel, st) {
   const more = gpus.filter((g) => !g.preset);
   sel.replaceChildren(el("optgroup", { label: "推薦" }, ...gpus.filter((g) => g.preset).map(opt)),
     ...(more.length ? [el("optgroup", { label: "其他卡（RunPod 自動抓的，還沒實測）" }, ...more.map(opt))] : []));
-  sel.value = gpus.some((g) => g.key === cur) ? cur : st.gpu_key;
+  // 上次選的卡這次不在 RunPod 目錄裡（缺貨、改名）：退回清單第一張，不要留一個空白選單（確認視窗會沒價格、按下去才報錯）
+  sel.value = [cur, st.gpu_key].find((k) => gpus.some((g) => g.key === k)) ?? gpus[0]?.key ?? "";
   sel.dataset.sig = sig;
 }
 

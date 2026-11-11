@@ -504,11 +504,10 @@ pub fn undo(
     let sp = bx.join("settings.json");
     if parts.iter().any(|p| p == "settings") && sp.exists() {
         let mut old = file_settings(&sp).unwrap_or_default();
-        let cur = file_settings(settings_path).unwrap_or_default();
-        old.insert(
-            settings::KEY.into(),
-            cur.get(settings::KEY).cloned().unwrap_or(json!("")),
-        );
+        // 現在的金鑰要用 settings::load 讀（Windows 的設定檔只存加密過的 civitai_key_dpapi，直接讀檔拿不到 civitai_key）：
+        // 2026-11-10 以前這裡直接讀檔，救回設定後 Civitai API key 就不見了
+        let cur = settings::load(settings_path);
+        old.insert(settings::KEY.into(), json!(settings::civitai_key(&cur)));
         settings::save(settings_path, &old)?;
     }
     m["restored"] = json!(now());

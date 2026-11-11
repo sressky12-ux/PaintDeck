@@ -350,12 +350,50 @@ pub async fn folder(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     ok(json!({"ok": true, "moved": n}))
 }
 
-/// 設定檔匯入（api_gen::settings_import）：每筆檢查過才收；回傳收了幾筆
-pub fn import(db: &Db, items: Option<&Value>) -> Result<usize, ApiError> {
-    let mut n = 0;
+/// 資產 data 裡的檔案引用（圖片、聲音、RefMod）只留 keep 說可以的；回傳有沒有拿掉東西
+fn retain_files(data: &mut Value, keep: &dyn Fn(&str) -> bool) -> bool {
+    let mut cut = false;
+    if let Some(a) = data.get_mut("images").and_then(Value::as_array_mut) {
+        let n = a.len();
+        a.retain(|im| im["file"].as_str().is_some_and(keep));
+        cut |= a.len() != n;
+    }
+    for k in ["audio", "refmod"] {
+        if data[k]["file"].as_str().is_some_and(|f| !keep(f)) {
+            if let Some(o) = data.as_object_mut() {
+                o.remove(k);
+                cut = true;
+            }
+        }
+    }
+    cut
+}
+
+fn file_refs(data: &Value) -> Vec<String> {
+    let mut v: Vec<String> = data["images"].as_array().into_iter().flatten().filter_map(|im| im["file"].as_str().map(str::to_owned)).collect();
+    v.extend(["audio", "refmod"].iter().filter_map(|k| data[*k]["file"].as_str().map(str::to_owned)));
+    v
+}
+
+/// 設定檔匯入（api_gen::settings_import）：每筆檢查過才收；回傳（收了幾筆，幾筆資產的檔案沒跟來）。
+/// 設定檔只帶資產的文字和縮圖，圖片、聲音檔留在原本那台電腦的 data\assets（檔名 <id>_<n>）：
+/// 換一台電腦匯入時檔案不在、或同名的檔其實是這台別筆資產的 → 把引用拿掉（不然點開全是破圖，刪掉還會連累別筆的檔）。
+/// 同一台電腦匯出再匯回、檔案還在的照舊接回去
+pub fn import(db: &Db, items: Option<&Value>, assets: &std::path::Path) -> Result<(usize, usize), ApiError> {
+    let (mut n, mut lost) = (0, 0);
+    let col = |r: &Row, k: &str| r.get(k).and_then(Value::as_str).unwrap_or("").to_string();
+    let same = |r: &Row, it: &LibItem| col(r, "kind") == it.kind && col(r, "folder") == it.folder && col(r, "name") == it.name;
+    let rows = db.lib_export()?;
     // 新增的會排到最前面：倒著匯入，順序才會跟匯出時一樣
     for v in items.and_then(Value::as_array).into_iter().flatten().rev() {
-        let Ok(it) = item_from(v, None) else { continue };
+        let Ok(mut it) = item_from(v, None) else { continue };
+        if MEDIA_KINDS.contains(&it.kind.as_str()) && it.kind != "shot" {
+            let taken: Vec<String> = rows.iter().filter(|r| !same(r, &it)).flat_map(|r| file_refs(r.get("data").unwrap_or(&Value::Null))).collect();
+            let keep = |f: &str| assets.join(f).is_file() && !taken.iter().any(|t| t == f);
+            if retain_files(&mut it.data, &keep) {
+                lost += 1;
+            }
+        }
         let thumb = v
             .get("thumb")
             .and_then(Value::as_str)
@@ -364,7 +402,7 @@ pub fn import(db: &Db, items: Option<&Value>) -> Result<usize, ApiError> {
         db.lib_import(&it, thumb)?;
         n += 1;
     }
-    Ok(n)
+    Ok((n, lost))
 }
 
 /// 舊格式的預設組（設定檔沒有 prompt_lib 時）也收進提示詞庫

@@ -71,8 +71,11 @@ pub async fn upload_media(
 fn media_header_matches(bytes: &[u8], ext: &str) -> bool {
     let riff = |tag: &[u8]| bytes.starts_with(b"RIFF") && bytes.get(8..12) == Some(tag);
     let mp4 = || bytes.get(4..8) == Some(b"ftyp");
+    // 舊式 QuickTime（相機、剪輯軟體匯出的 .mov）開頭沒有 ftyp，直接是 moov／mdat／wide／free／skip
+    let old_mov = || bytes.get(4..8).is_some_and(|t| [b"moov", b"mdat", b"wide", b"free", b"skip"].iter().any(|k| t == *k));
     match ext {
-        "mp4" | "m4v" | "mov" | "m4a" => mp4(),
+        "mov" => mp4() || old_mov(),
+        "mp4" | "m4v" | "m4a" => mp4(),
         "webm" | "mkv" => bytes.starts_with(&[0x1a, 0x45, 0xdf, 0xa3]),
         "avi" => riff(b"AVI "),
         "wav" => riff(b"WAVE"),
@@ -125,10 +128,7 @@ pub async fn add(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     // 存不了的時候把轉換的提醒一起講（缺自訂節點被略過，常常就是找不到存影片節點的原因）
     let w2 = warnings.clone();
     let wf = blocking(move || video_wf::save(&dir, &name, &graph)).await.map_err(|e| {
-        bad(if w2.is_empty() { e } else { format!("{e}
-轉換時的提醒：
-・{}", w2.iter().take(8).cloned().collect::<Vec<_>>().join("
-・")) })
+        bad(if w2.is_empty() { e } else { format!("{e}\n轉換時的提醒：\n・{}", w2.iter().take(8).cloned().collect::<Vec<_>>().join("\n・")) })
     })?;
     ok(json!({"ok": true, "workflow": wf, "warnings": warnings}))
 }
@@ -175,5 +175,9 @@ mod media_tests {
         assert!(!media_header_matches(b"RIFF\0\0\0\0WAVE", "avi"));
         assert!(!media_header_matches(b"some arbitrary text", "mp4"));
         assert!(!media_header_matches(&[], "mp3"));
+        // 舊式 QuickTime 開頭沒有 ftyp；mp4 不放寬
+        assert!(media_header_matches(b"\0\0\0\x08wide\0\0\0\0mdat", "mov"));
+        assert!(media_header_matches(b"\0\0\0\x14ftypqt  ", "mov"));
+        assert!(!media_header_matches(b"\0\0\0\x08wide\0\0\0\0mdat", "mp4"));
     }
 }

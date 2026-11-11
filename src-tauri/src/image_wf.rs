@@ -923,8 +923,8 @@ fn write_masks(input_dir: &Path, init: &str, mask: &str, want_image: bool, want_
     if !red.iter().any(|r| *r > 127) {
         return Err(GraphError("遮罩是空的，請先在圖上塗出要重繪的區域".into()));
     }
-    let len = init_path.metadata().map(|x| x.len()).unwrap_or(0);
-    let hash = fnv(&[&red, &w.to_le_bytes(), &h.to_le_bytes(), &len.to_le_bytes()]);
+    // 輸入圖的像素也算進雜湊：2026-11-10 以前只算檔案長度，同名、同大小、換了內容的圖會沿用舊的暫存檔（拿舊圖去重繪）
+    let hash = fnv(&[&red, &w.to_le_bytes(), &h.to_le_bytes(), base.as_raw()]);
     let stem: String = Path::new(init)
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())

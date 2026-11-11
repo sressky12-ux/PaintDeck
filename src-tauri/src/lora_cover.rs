@@ -71,6 +71,26 @@ impl Covers {
     pub fn nsfw(&self, name: &str) -> i64 {
         self.entry(name).and_then(|e| e["civitai"]["nsfw"].as_i64()).unwrap_or(1)
     }
+
+    /// 程式附的縮圖（2026-11-08，使用者：「看能不能直接把圖片先直接匯入進去。就不用讓他們抓了」）：
+    /// (檔名, 那張圖的尺度等級)。檔案要真的在 res\share\lora_covers\ 裡才算（被刪了就照舊去網路抓）
+    pub fn bundled(&self, res: &Path, name: &str) -> Option<(String, i64)> {
+        let e = self.entry(name)?;
+        let file = e["file"].as_str().filter(|f| bundled_name_ok(f))?;
+        bundled_path(res, file)?;
+        Some((file.to_string(), e["file_nsfw"].as_i64().unwrap_or(1)))
+    }
+}
+
+/// 內建縮圖的檔名只會是「16 個小寫十六進位＋.webp」（tools\lora_covers.py 用網址的 SHA256 取名）：擋掉 ..、斜線
+fn bundled_name_ok(f: &str) -> bool {
+    f.strip_suffix(".webp").is_some_and(|h| h.len() == 16 && h.chars().all(|c| c.is_ascii_digit() || ('a'..='f').contains(&c)))
+}
+
+/// 內建縮圖的路徑（檔名不對或檔案不在＝None）
+pub fn bundled_path(res: &Path, file: &str) -> Option<PathBuf> {
+    let p = res.join("share").join("lora_covers").join(file);
+    (bundled_name_ok(file) && p.is_file()).then_some(p)
 }
 
 /// 讀 res\share\lora_covers.json（讀過就留著；換了 res 資料夾才重讀）。檔案不見或壞掉＝空清單
@@ -201,5 +221,29 @@ mod tests {
         let c = load(&res);
         assert!(c.entry("hinaAnimaBase_R_Tweaker_v4.safetensors").is_some(), "lora_covers.json 讀不到或缺了截圖裡的例子");
         assert!(!c.sources("Meion_anima_style_lokr_2-000034.safetensors", None).is_empty());
+        // 截圖裡那幾張都有程式附的縮圖，檔案真的在
+        for n in ["hinaAnimaBase_R_Tweaker_v4.safetensors", "Meion_anima_style_lokr_2-000034.safetensors", "anima-base-1-masterpiece-v51.safetensors",
+                  "mixed_styles_anima-base1_v6.safetensors", "Anima_colorfix_v1_by_Volnovik.safetensors", "anima_context_detailer_base10.safetensors"] {
+            let (f, _) = c.bundled(&res, n).unwrap_or_else(|| panic!("{n} 沒有內建縮圖"));
+            assert!(is_image(&std::fs::read(bundled_path(&res, &f).unwrap()).unwrap()), "{f}");
+        }
+    }
+
+    #[test]
+    fn bundled_needs_safe_name_and_real_file() {
+        let dir = std::env::temp_dir().join(format!("anima_lora_cover_res_{}", std::process::id()));
+        let share = dir.join("share").join("lora_covers");
+        std::fs::create_dir_all(&share).unwrap();
+        std::fs::write(share.join("0123456789abcdef.webp"), b"RIFF\0\0\0\0WEBPVP8 ").unwrap();
+        let c = Covers::parse(&json!({"covers": {
+            "a.safetensors": {"file": "0123456789abcdef.webp", "file_nsfw": 4},
+            "gone.safetensors": {"file": "fedcba9876543210.webp"},
+            "evil.safetensors": {"file": "..\\..\\x.webp"}
+        }}));
+        assert_eq!(c.bundled(&dir, "sub\\a.safetensors"), Some(("0123456789abcdef.webp".into(), 4)));
+        assert_eq!(c.bundled(&dir, "gone.safetensors"), None);
+        assert_eq!(c.bundled(&dir, "evil.safetensors"), None);
+        assert!(bundled_path(&dir, "../0123456789abcdef.webp").is_none());
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 }

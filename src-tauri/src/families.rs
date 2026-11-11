@@ -75,12 +75,15 @@ struct Info {
     sub: Option<&'static str>,
     /// LTX 影片模型／LoRA（family 是 other）
     ltx: bool,
+    /// MiniMax H3 影片模型／LoRA（family 是 other）
+    h3: bool,
 }
 
 const NO_INFO: Info = Info {
     family: OTHER,
     sub: None,
     ltx: false,
+    h3: false,
 };
 
 static CACHE: Mutex<Option<HashMap<(PathBuf, SystemTime), Info>>> = Mutex::new(None);
@@ -533,6 +536,11 @@ impl Probe {
         self.ltx || (self.is_video() && self.attn12 && !self.wan)
     }
 
+    /// 影片模型裡的 MiniMax H3：blocks.N.attn.qkv_proj、video_patch_proj／audio_patch_proj（Anima、Wan、LTX 都沒有這些名稱）
+    fn is_h3(&self) -> bool {
+        self.h3 && !self.anima_strong && !self.ltx && !self.wan
+    }
+
     /// Flux／SD3（DiT）
     fn dit_family(&self) -> Option<&'static str> {
         if self.hunyuan || self.flux2 {
@@ -701,6 +709,7 @@ fn info_of(path: &Path) -> Info {
             None
         },
         ltx: family == OTHER && !h.meta.ic_lora && is_ltx_keys(&h.keys),
+        h3: family == OTHER && is_h3_keys(&h.keys),
     }
 }
 
@@ -733,9 +742,20 @@ pub fn is_video_keys(keys: &[String]) -> bool {
     Probe::new(keys).is_video()
 }
 
+/// 這個檔（.safetensors、.sft、.gguf）是不是影片模型：讀檔頭的權重名稱。model_dirs 分類 GGUF 時用
+/// （GGUF 的 general.architecture 各家轉檔工具寫法不一，H3 的不在已知清單裡）
+pub fn is_video_file(path: &Path) -> bool {
+    read_header(path).is_ok_and(|h| is_video_keys(&h.keys))
+}
+
 /// 這些權重名稱是不是 LTX（影片 LoRA 下拉只列這種）
 pub fn is_ltx_keys(keys: &[String]) -> bool {
     Probe::new(keys).is_ltx()
+}
+
+/// 這些權重名稱是不是 MiniMax H3（H3 影片台的模型、LoRA 選單靠它認，不靠檔名）
+pub fn is_h3_keys(keys: &[String]) -> bool {
+    Probe::new(keys).is_h3()
 }
 
 /// 檔案屬於哪個家族：anima／qwen21／moss／sdxl／sd15／flux／sd3／other。
@@ -803,6 +823,12 @@ pub fn lora_family(roots: &[PathBuf], name: &str, meta: Option<&serde_json::Valu
 /// 這個名稱的檔案是不是 LTX 影片模型／LoRA（看檔頭、有快取）
 pub fn is_ltx_of(roots: &[PathBuf], name: &str) -> bool {
     resolve(roots, name).is_some_and(|p| cached(&p).ltx)
+}
+
+/// 這個名稱的檔案是不是 MiniMax H3 影片模型／LoRA（看檔頭、有快取；.safetensors 和 .gguf 都認）。
+/// 2026-11-10：H3 影片台以前只列檔名有 h3／10eros／minimax 的，下載中心抓回來、檔名沒寫這些字的 H3 模型和 LoRA 永遠選不到
+pub fn is_h3_of(roots: &[PathBuf], name: &str) -> bool {
+    resolve(roots, name).is_some_and(|p| cached(&p).h3)
 }
 
 /// 同 [`family_of`]，回子標籤
@@ -1649,6 +1675,12 @@ mod tests {
         let ic = Tmp::new("ic.safetensors", &safetensors(&["diffusion_model.transformer_blocks.0.attn1.to_k.lora_A.weight"],
             Some(json!({"model_version": "2.3.0", "reference_downscale_factor": "2"}))));
         assert!(!is_ltx_of(&root(&ic), "ic.safetensors"));
+        // H3：檔名沒寫 h3 也認得（LoRA、整顆模型）；LTX、找不到的檔不算
+        assert!(is_h3_of(&root(&h3), "h3.safetensors"));
+        let plain = Tmp::new("CinemaMix_v2.safetensors", &safetensors(&["blocks.0.attn.qkv_proj.weight", "video_patch_proj.weight", "audio_patch_proj.weight"], None));
+        assert!(is_h3_of(&root(&plain), "CinemaMix_v2.safetensors"));
+        assert!(!is_h3_of(&root(&ltx), "ltx_move.safetensors"));
+        assert!(!is_h3_of(&root(&h3), "missing.safetensors"));
     }
 
     #[test]
@@ -1939,7 +1971,7 @@ mod tests {
         ]);
         assert_eq!(legacy_classify(&ltx), QWEN21, "以前會被誤認成 Qwen");
         assert_eq!(classify(&ltx), OTHER);
-        // LTX-2.3（10Eros）：只有 transformer_blocks.N.attn1＋audio 的名稱（真實檔頭 D:\AI\ComfyUI_models\checkpointsEros_v1.5_DMD_INT8_checkpoint.safetensors）
+        // LTX-2.3（10Eros）：只有 transformer_blocks.N.attn1＋audio 的名稱（真實檔頭 D:\AI\ComfyUI_models\checkpoints\10Eros_v1.5_DMD_INT8_checkpoint.safetensors）
         assert_eq!(
             classify(&s(&[
                 "model.diffusion_model.transformer_blocks.0.attn1.to_k.weight_scale",
@@ -1978,6 +2010,12 @@ mod tests {
         // H3 LoRA（minimax_h3_fl2v_turbo_8step_v1.0_comfyui_bf16）
         assert_eq!(classify(&s(&["diffusion_model.blocks.0.attn.qkv_proj.lora_A.weight", "diffusion_model.blocks.0.attn.out_proj.lora_B.weight"])), OTHER);
         assert!(!is_ltx_keys(&s(&["blocks.0.attn.qkv_proj.weight", "video_patch_proj.weight"])));
+        // H3 認得出來；Wan、LTX、Anima 不算
+        assert!(is_h3_keys(&s(&["blocks.0.attn.qkv_proj.weight", "video_patch_proj.weight"])));
+        assert!(is_h3_keys(&s(&["diffusion_model.blocks.0.attn.qkv_proj.lora_A.weight"])));
+        assert!(!is_h3_keys(&s(&["diffusion_model.blocks.0.self_attn.q.lora_A.weight", "diffusion_model.blocks.0.ffn.0.lora_B.weight"])));
+        assert!(!is_h3_keys(&s(&["diffusion_model.transformer_blocks.4.attn1.to_q.lora_A.weight"])));
+        assert!(!is_h3_keys(&s(&["blocks.0.self_attn.q_proj.weight", "blocks.0.mlp.layer1.weight"])));
     }
 
     /// 影片模型的排除條件不能誤傷：Anima、Qwen、SDXL／SD1.5 的 UNet（也有 attn1／attn2）、SD3.5（transformer_blocks.N.attn2）照舊
@@ -2011,7 +2049,7 @@ mod tests {
     fn real_video_header() {
         let Some(f) = std::env::var_os("ANIMA_TEST_VIDEO_FILE") else { return };
         let h = read_header(Path::new(&f)).expect("讀不到檔頭");
-        println!("{} 個權重，家族＝{}，影片＝{}", h.keys.len(), classify_with(&h.keys, Some(&h.meta)), is_video_keys(&h.keys));
+        println!("{} 個權重，家族＝{}，影片＝{}，H3＝{}，LTX＝{}", h.keys.len(), classify_with(&h.keys, Some(&h.meta)), is_video_keys(&h.keys), is_h3_keys(&h.keys), is_ltx_keys(&h.keys));
         assert_eq!(classify_with(&h.keys, Some(&h.meta)), OTHER);
     }
 }

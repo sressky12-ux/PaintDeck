@@ -1,6 +1,11 @@
 r"""產生 resources\share\lora_covers.json：程式附帶說明（lora設定.json）的 LoRA 各自的封面圖來源（2026-11-07）。
 
-  python -I -X utf8 tools/lora_covers.py
+  python -I -X utf8 tools/lora_covers.py              全部重查（約 8 分鐘）＋下載縮圖
+  python -I -X utf8 tools/lora_covers.py --images     只照現有的 lora_covers.json 補下載縮圖（沒有的才抓）
+
+內建縮圖（2026-11-08，使用者：「看能不能直接把圖片先直接匯入進去。就不用讓他們抓了」；網友的電腦連不上 C 站，卡在「正在抓封面…」）：
+每筆照 civitai → modelscope → hf 的順序抓到第一張，縮成寬 COVER_W 的 WebP 存進 resources\share\lora_covers\<網址雜湊>.webp，
+清單那筆記 "file"。後端看到 "file" 就直接用程式附的圖，完全不連網；縮圖不見了才照舊去抓。
 
 為什麼要有：lora設定.json 裡的 "preview" 只是檔名，圖本身在使用者自己的 <資料>\previews\（用 Civitai 下載時才會存）。
 網盤包、安裝精靈下載的 LoRA 沒有預覽圖，LoRA 庫整片黑（網友：「这些预载的可以显示预览图吗，全黑有点不好找」）。
@@ -30,6 +35,11 @@ CIVITAI = "https://civitai.com/api/v1"
 MS_API = "https://modelscope.cn/api/v1"
 MS_COLLECTION = "gordonz/Excellent-Loras-for-MossImage"
 MS_COLLECTION_COVER = f"https://www.modelscope.cn/models/{MS_COLLECTION}/resolve/master/banner.jpg"
+IMG_DIR = SHARE / "lora_covers"
+COVER_W = 360  # 卡片最寬約 260px，留一點給高 DPI 螢幕
+COVER_Q = 72
+NOTE = ("LoRA 庫卡片的封面，由 tools/lora_covers.py 產生（別手改，改 MANUAL 再重跑）。file＝程式附的縮圖（resources/share/lora_covers/），"
+        "有就直接用、不連網；沒有才照 civitai → modelscope → hf 的順序抓圖，存進 <資料>/previews/。")
 
 # 自動找不到、要手動指定的（2026-11-07 查過）
 MANUAL = {
@@ -183,7 +193,68 @@ def one(key, meta, sha):
     return key, out
 
 
+def fetch_bytes(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (PaintDeck-lora-covers)"})
+    with urllib.request.urlopen(req, timeout=60) as r:
+        return r.read()
+
+
+def thumb(data):
+    """縮成寬 COVER_W 的 WebP（比較小的圖不放大）；動圖只取第一格"""
+    import io
+    from PIL import Image
+    im = Image.open(io.BytesIO(data))
+    im.seek(0)
+    im = im.convert("RGB")
+    if im.width > COVER_W:
+        im = im.resize((COVER_W, max(1, round(im.height * COVER_W / im.width))), Image.LANCZOS)
+    out = io.BytesIO()
+    im.save(out, "WEBP", quality=COVER_Q, method=6)
+    return out.getvalue()
+
+
+def images():
+    """照 lora_covers.json 把每筆的封面縮圖存進 resources\\share\\lora_covers\\，清單記 "file"；用不到的舊縮圖刪掉"""
+    import hashlib
+    doc = json.loads(OUT.read_text(encoding="utf-8"))
+    doc["_說明"] = NOTE
+    IMG_DIR.mkdir(exist_ok=True)
+    got, failed = 0, []
+    for key, e in doc["covers"].items():
+        e.pop("file", None)
+        for src in ("civitai", "modelscope", "hf"):
+            url = (e.get(src) or {}).get("img")
+            if not url:
+                continue
+            name = hashlib.sha256(url.encode()).hexdigest()[:16] + ".webp"
+            path = IMG_DIR / name
+            if not path.exists():
+                try:
+                    path.write_bytes(thumb(fetch_bytes(url)))
+                except Exception as ex:  # 這個來源抓不到：換下一個
+                    print(f"  {key}：{src} 抓不到（{ex}）")
+                    continue
+            e["file"] = name
+            # 尺度等級跟著實際用的那張：不是 C 站的圖就沒有等級（當 1，同下載中心）
+            e["file_nsfw"] = (e.get("civitai") or {}).get("nsfw", 1) if src == "civitai" else 1
+            got += 1
+            break
+        else:
+            failed.append(key)
+    used = {e["file"] for e in doc["covers"].values() if "file" in e}
+    for p in IMG_DIR.glob("*.webp"):
+        if p.name not in used:
+            p.unlink()
+    OUT.write_text(json.dumps(doc, ensure_ascii=False, indent=1) + "\n", encoding="utf-8")
+    size = sum(p.stat().st_size for p in IMG_DIR.glob("*.webp"))
+    print(f"內建縮圖：{got} 筆有圖（{len(used)} 個檔，共 {size / 1e6:.1f} MB），抓不到 {len(failed)}")
+    for k in failed:
+        print("  沒有縮圖：", k)
+
+
 def main():
+    if "--images" in __import__("sys").argv:
+        return images()
     meta = json.loads((SHARE / "lora設定.json").read_text(encoding="utf-8"))["lora_meta"]
     sha = load_sha()
     with cf.ThreadPoolExecutor(4) as ex:
@@ -191,7 +262,7 @@ def main():
     covers = {k: v for k, v in res if any(s in v for s in ("civitai", "modelscope", "hf"))}
     missing = [k for k, v in res if k not in covers]
     doc = {
-        "_說明": "LoRA 庫卡片的封面來源，由 tools/lora_covers.py 產生（別手改，改 MANUAL 再重跑）。後端照 civitai → modelscope → hf 的順序抓圖，存進 <資料>/previews/。",
+        "_說明": NOTE,
         "generated": time.strftime("%Y-%m-%d"),
         "covers": covers,
     }
@@ -203,6 +274,7 @@ def main():
     for k, v in covers.items():
         if "civitai" not in v:
             print("  沒有 C 站：", k, "→", ", ".join(s for s in ("modelscope", "hf") if s in v))
+    images()
 
 
 if __name__ == "__main__":

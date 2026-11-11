@@ -31,6 +31,13 @@ pub const UPSCALER: &str = "minimax_h3_latent_upscaler_3d_conv_v1_fp16.safetenso
 /// 官方 ref2va（社群的換角色、特效、換畫風、動態桌布 LoRA 都是在它上面練的），沒有 Turbo：自動加 DMD 8 步 Turbo LoRA
 pub const OFFICIAL_REF2VA: &str = "minimax_h3_ref2va_pruned_int8_convrot.safetensors";
 pub const TURBO_REF2VA: &str = "minimax_h3_dmd_ref2va_8step_turbo_pruned.safetensors";
+
+/// 官方 ref2va 主模型（沒烤 Turbo）：不管哪種精度（pruned int8、bf16、w4a8、GGUF…）檔名都是 minimax_h3_ref2va 開頭。
+/// 2026-11-10 以前只認 OFFICIAL_REF2VA 那一個檔名，下載中心抓別的精度回來用 8 步跑不會補 Turbo LoRA、出來是糊的
+pub fn official_ref2va(model_name: &str) -> bool {
+    let n = basename(model_name).to_lowercase();
+    n.starts_with("minimax_h3_ref2va") && !n.contains("turbo") && !n.contains("dmd")
+}
 pub const FPS: i64 = 24;
 /// 舊玩法＋素材板（board：任何素材組合，見 design\H3素材板_設計.md）
 pub const MODES: &[&str] = &["t2v", "i2v", "fl2v", "ref2v", "keys", "continue", "swap", "vfx", "style", "live", "control", "board"];
@@ -476,7 +483,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
     if selflift && steps < 4 {
         return err("SelfLift 兩段取樣至少要 4 步（前一半低解析度、後一半原解析度）");
     }
-    if basename(model_name) == OFFICIAL_REF2VA && steps <= 10 && !truthy(p.get("no_turbo")) && !has(&loras, TURBO_REF2VA) {
+    if official_ref2va(model_name) && steps <= 10 && !truthy(p.get("no_turbo")) && !has(&loras, TURBO_REF2VA) {
         loras.insert(0, (TURBO_REF2VA.to_string(), 1.0));
     }
     for (name, st) in &loras {
@@ -1085,6 +1092,9 @@ mod tests {
         let p = json!({"h3_mode": "live", "prompt": "x", "refs": {"images": ["a.png"]}});
         let (n, _) = build(&p, &dir(), 0).unwrap();
         assert!(!by_class(&n, "LoraLoaderModelOnly").iter().any(|l| l["inputs"]["lora_name"] == TURBO_REF2VA));
+        // 官方 ref2va 的其他精度（下載中心抓得到的 bf16、子資料夾裡的）一樣補 Turbo；烤好 Turbo 的、10Eros 不補
+        assert!(official_ref2va("minimax_h3_ref2va_bf16.safetensors") && official_ref2va("h3\\Minimax_H3_Ref2VA_pruned_w4a8.safetensors") && official_ref2va(OFFICIAL_REF2VA));
+        assert!(!official_ref2va(TURBO_REF2VA) && !official_ref2va(MODEL) && !official_ref2va("minimax_h3_ref2va_turbo_int8.safetensors"));
         assert!(build(&json!({"h3_mode": "live", "prompt": "x"}), &dir(), 0).is_err());
     }
 

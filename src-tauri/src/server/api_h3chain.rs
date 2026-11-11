@@ -214,7 +214,11 @@ pub async fn run(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         hc::reset_from(&mut c, from as usize);
     }
     for (i, s) in c["segments"].as_array().into_iter().flatten().enumerate() {
-        if s["status"] != "done" && tx(&s["text"]).trim().is_empty() {
+        // 拍好的段不會再送圖：它的素材就算清掉了也不擋後面的段開拍
+        if s["status"] == "done" {
+            continue;
+        }
+        if tx(&s["text"]).trim().is_empty() {
             return Err(bad(format!("第 {} 段還沒寫畫面", i + 1)));
         }
         for f in hc::inputs_of(&c, i) {

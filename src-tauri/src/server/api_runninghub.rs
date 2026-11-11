@@ -241,6 +241,8 @@ pub async fn run_files_in(
     let jid = format!("rh-{task}");
     if let Some((params, info)) = job {
         app.db.add_job(&jid, params, info).map_err(|e| e.to_string())?;
+        // RunningHub 收下就算開始跑了（它自己的排隊也在算時間）：2026-11-10 以前全程顯示「排隊中」
+        let _ = app.db.set_job(&jid, "running", None);
     }
     let fail = |e: &str| {
         if job.is_some() {
@@ -280,17 +282,19 @@ pub async fn run_files_in(
     let mut got = vec![];
     for o in &outs {
         let (sub, base) = rh::local_name(&nodes, o);
-        let bytes = http()
-            .get(&o.url)
-            .timeout(Duration::from_secs(900))
-            .send()
-            .await
-            .and_then(|r| r.error_for_status())
-            .map_err(|e| format!("下載 RunningHub 的成品失敗：{e}"))?
-            .bytes()
-            .await
-            .map_err(|e| format!("下載 RunningHub 的成品失敗：{e}"))?;
-        got.push((sub, base, bytes.to_vec()));
+        let res = async {
+            http().get(&o.url).timeout(Duration::from_secs(900)).send().await.and_then(|r| r.error_for_status())?.bytes().await
+        }
+        .await;
+        match res {
+            Ok(bytes) => got.push((sub, base, bytes.to_vec())),
+            Err(e) => {
+                // 下載失敗也要把工作記成失敗：2026-11-10 以前這裡直接跳出，工作永遠停在「排隊中」
+                let msg = format!("下載 RunningHub 的成品失敗：{e}（任務編號 {task}，成品還在 RunningHub 網站的任務頁）");
+                fail(&msg);
+                return Err(msg);
+            }
+        }
     }
     Ok((jid, got))
 }
@@ -320,7 +324,13 @@ pub async fn run_graph_in(
     let (job, got) = run_files_in(app, nodes, Some((params, info)), token, on_status, wid).await?;
     let mut ids = vec![];
     for (sub, base, bytes) in &got {
-        ids.extend(super::api_cloud::keep_output(app, sub, base, bytes, params, info, &job)?);
+        match super::api_cloud::keep_output(app, sub, base, bytes, params, info, &job) {
+            Ok(v) => ids.extend(v),
+            Err(e) => {
+                let _ = app.db.set_job(&job, "error", Some(&e));
+                return Err(e);
+            }
+        }
     }
     let _ = app.db.set_job(&job, "done", None);
     Ok((job, ids))

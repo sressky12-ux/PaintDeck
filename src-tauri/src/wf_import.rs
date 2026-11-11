@@ -326,6 +326,15 @@ fn parse_links(v: Option<&Value>) -> HashMap<i64, (String, usize)> {
         .collect()
 }
 
+/// 跳過（Bypass）的節點：第 slot 個輸出改接它的第幾個輸入。同型別的才接，優先同序號，再來是第一個同型別的
+fn bypass_input(n: &Value, slot: usize) -> Option<usize> {
+    let out_ty = n["outputs"].get(slot).and_then(|o| o["type"].as_str()).unwrap_or("*");
+    let inputs = n["inputs"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+    // 帶 widget 的是欄位轉成的連線孔，不是資料的入口
+    let fits = |i: &Value| i.get("widget").is_none() && same_type(i["type"].as_str().unwrap_or("*"), out_ty);
+    inputs.iter().enumerate().find(|&(k, i)| k == slot && fits(i)).or_else(|| inputs.iter().enumerate().find(|&(_, i)| fits(i))).map(|(k, _)| k)
+}
+
 fn mode(n: &Value) -> i64 {
     n["mode"].as_i64().unwrap_or(0)
 }
@@ -408,12 +417,8 @@ impl<'a> Ui<'a> {
     fn bypass(&self, n: &Value, slot: usize, depth: usize) -> Src {
         let name = short(label(n));
         let out_ty = n["outputs"].get(slot).and_then(|o| o["type"].as_str()).unwrap_or("*");
-        let inputs = n["inputs"].as_array().map(Vec::as_slice).unwrap_or(&[]);
-        // 帶 widget 的是欄位轉成的連線孔，不是資料的入口
-        let fits = |i: &Value| i.get("widget").is_none() && same_type(i["type"].as_str().unwrap_or("*"), out_ty);
-        let pick = inputs.iter().enumerate().find(|&(k, i)| k == slot && fits(i)).or_else(|| inputs.iter().enumerate().find(|&(_, i)| fits(i)));
-        match pick {
-            Some((k, _)) => self
+        match bypass_input(n, slot) {
+            Some(k) => self
                 .upstream(n, k, depth)
                 .unwrap_or_else(|| Src::Gone(format!("接到被跳過（Bypass）的節點「{name}」，但它對應的輸入沒有接線"))),
             None => Src::Gone(format!("接到被跳過（Bypass）的節點「{name}」，但它沒有跟輸出同型別（{out_ty}）的輸入可以接")),
@@ -435,14 +440,25 @@ impl<'a> Ui<'a> {
         }
     }
 
-    /// 這個節點的輸出有沒有（直接或繞幾個節點之後）通到終點節點。被停用的節點當作斷開
+    /// 這個節點的輸出有沒有（直接或繞幾個節點之後）通到終點節點。被停用的節點當作斷開；
+    /// 被跳過（Bypass）的節點只有「會直通到某個有接線的輸出」的那幾個輸入算通（跟 bypass 同一條規則），
+    /// 其餘輸入（例如被跳過的 FaceDetailer 的偵測器輸入）實際上已經沒人用：
+    /// 2026-11-10 以前一律算通，只接到這種輸入的沒裝節點會害整個工作流匯不進來
     fn reaches_output(&self, start: &str) -> bool {
         let mut fwd: HashMap<&str, Vec<&str>> = HashMap::new();
         for (id, n) in &self.nodes {
             if mode(n) == 2 {
                 continue;
             }
-            for inp in n["inputs"].as_array().into_iter().flatten() {
+            let through: Option<Vec<usize>> = (mode(n) == 4).then(|| {
+                let outs = n["outputs"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+                let linked = |o: &Value| o["links"].as_array().is_some_and(|l| !l.is_empty());
+                outs.iter().enumerate().filter(|&(_, o)| linked(o)).filter_map(|(s, _)| bypass_input(n, s)).collect()
+            });
+            for (k, inp) in n["inputs"].as_array().into_iter().flatten().enumerate() {
+                if through.as_ref().is_some_and(|t| !t.contains(&k)) {
+                    continue;
+                }
                 if let Some((origin, _)) = link_id(&inp["link"]).and_then(|l| self.links.get(&l)) {
                     fwd.entry(origin.as_str()).or_default().push(id.as_str());
                 }
@@ -1353,6 +1369,38 @@ mod tests {
         let mut wf = lora_chain(0);
         wf["nodes"].as_array_mut().unwrap().push(node(32, "FaceDetailer", 2, json!([]), json!([]), json!([])));
         assert!(convert(&wf).is_ok());
+    }
+
+    /// VAEDecode → 被跳過的 FaceDetailer → SaveImage，沒裝的偵測器只接到 FaceDetailer 的偵測器輸入
+    fn bypassed_detailer(detector_into: &str) -> Value {
+        let mut wf = lora_chain(0);
+        {
+            let nodes = wf["nodes"].as_array_mut().unwrap();
+            nodes.push(node(30, "FaceDetailer", 4,
+                            json!([{"name": "image", "type": "IMAGE", "link": 10}, {"name": "bbox_detector", "type": detector_into, "link": 33}]),
+                            json!([{"name": "IMAGE", "type": "IMAGE", "links": [32]}]), json!([])));
+            nodes.push(node(33, "UltralyticsDetectorProvider", 0, json!([]), json!([{"name": "OUT", "type": detector_into, "links": [33]}]), json!([])));
+            nodes[9]["inputs"][0]["link"] = json!(32);
+        }
+        let links = wf["links"].as_array_mut().unwrap();
+        links[9] = json!([10, 9, 0, 30, 0, "IMAGE"]);
+        links.push(json!([32, 30, 0, 10, 0, "IMAGE"]));
+        links.push(json!([33, 33, 0, 30, 1, detector_into]));
+        wf
+    }
+
+    #[test]
+    fn missing_node_behind_bypassed_input_is_dropped() {
+        // 被跳過的節點只把圖直通出去，偵測器輸入沒人用：缺的偵測器不擋匯入
+        let r = convert(&bypassed_detailer("BBOX_DETECTOR")).unwrap();
+        assert!(r.warnings.iter().any(|w| w.contains("沒有接到存圖或預覽") && w.contains("UltralyticsDetectorProvi")), "{:?}", r.warnings);
+        assert_eq!(r.graph.as_object().map(Map::len), Some(10));
+        // 缺的節點接在會直通的那個輸入上（圖從它來）：照舊擋
+        let mut wf = bypassed_detailer("BBOX_DETECTOR");
+        wf["nodes"].as_array_mut().unwrap().push(node(34, "MissingImageMaker", 0, json!([]), json!([{"name": "IMAGE", "type": "IMAGE", "links": [10]}]), json!([])));
+        wf["links"][9] = json!([10, 34, 0, 30, 0, "IMAGE"]);
+        let e = convert(&wf).unwrap_err();
+        assert!(e.contains("MissingImageMaker") && !e.contains("UltralyticsDetectorProvider"), "{e}");
     }
 
     #[test]

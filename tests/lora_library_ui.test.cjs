@@ -27,10 +27,11 @@ function harness() {
   const app = { page: 'loras', state: { models: { family_names: { anima: 'Anima（動漫）' } } } };
   const source = fs.readFileSync(path.join(__dirname, '../ui/js/loras.js'), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
-  const context = vm.createContext({ $, el, app, document, api: async (url, opts) => { calls.push([url, opts]); }, toast() {}, openModal() {}, closeModal() {}, debounce: f => f });
+  const timers = [];
+  const context = vm.createContext({ $, el, app, document, setTimeout: (f) => timers.push(f), api: async (url, opts) => { calls.push([url, opts]); }, toast() {}, openModal() {}, closeModal() {}, debounce: f => f });
   function $(id) { return controls.get(id); }
   vm.runInContext(source + '\nglobalThis.subject = { onState, renderPage, categoryOf, previewUrl, onCover };', context, { filename: 'loras.js' });
-  return { ...context.subject, app, calls, get: id => controls.get('#' + id) };
+  return { ...context.subject, app, calls, timers, get: id => controls.get('#' + id) };
 }
 
 test('五千個 LoRA 只先建立 60 張卡片，分類與搜尋仍掃完整清單', () => {
@@ -108,4 +109,23 @@ test('沒預覽圖的卡片先寫名字、請後端抓封面，抓到後換成�
   // 抓不到：之後就寫「沒有預覽圖」
   h.onCover({ name: 'c.safetensors', failed: true });
   assert.equal(loras[2].coverFailed, true);
+});
+
+// 2026-11-08：程式附封面縮圖（cover_file）直接用，不送去抓；連不上一直沒消息的，兩分鐘後改寫「沒有預覽圖」
+test('程式附的封面縮圖直接顯示，抓不到的不會永遠停在「正在抓封面…」', () => {
+  const h = harness();
+  const loras = [
+    { name: 'built.safetensors', family: 'anima', cover_file: '0123456789abcdef.webp', cover_nsfw: 1 },
+    { name: 'net.safetensors', family: 'anima', cover: true },
+  ];
+  h.app.state.models.loras = loras;
+  h.onState({ models: { loras } });
+  const phOf = (name) => h.get('loraGrid').children.map((c) => c.kids[0]).find((b) => b.attrs['data-lora'] === name);
+  assert.equal(phOf('built.safetensors').kids[0].attrs.src, '/api/loras/bundled-cover/0123456789abcdef.webp');
+  assert.deepEqual(h.calls.map(([, o]) => o.json.names), [['net.safetensors']]);
+  assert.equal(h.previewUrl({ name: 'x', preview: 'x.jpg', cover_file: '0123456789abcdef.webp' }), '/lora_preview/x.jpg');
+  assert.equal(phOf('net.safetensors').kids[1].kids[0], '正在抓封面…');
+  for (const f of h.timers) f();
+  assert.equal(loras[1].coverFailed, true);
+  assert.equal(phOf('net.safetensors').kids[1].kids[0], '沒有預覽圖');
 });

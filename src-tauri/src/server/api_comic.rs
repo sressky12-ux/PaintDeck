@@ -377,9 +377,12 @@ async fn write_script(app: &Shared, id: &str, story: &str, all: bool, brain: &st
                         return new;
                     }
                     let mut v = new;
+                    // 對話框位置跟著台詞走：使用者自己寫了台詞才留他選的位置。
+                    // 空白格的 bubble 預設就是 "top"（不是空字串），以前照「有寫過就留著」會把 AI 排的位置全部蓋回 top
+                    let own_line = !tx(&old["line"]).trim().is_empty();
                     for k in ["line", "sfx", "bubble"] {
                         let ov = tx(&old[k]).trim().to_string();
-                        if !ov.is_empty() {
+                        if !ov.is_empty() && (k != "bubble" || own_line) {
                             v[k] = json!(ov);
                         }
                     }

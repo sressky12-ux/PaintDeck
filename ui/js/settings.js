@@ -163,6 +163,7 @@ export function init() {
       if (r.pe_prompts) parts.push(`AI 改寫提示詞 ${r.pe_prompts} 個`);
       let msg = "已匯入：設定、" + parts.join("、");
       if (r.backup_dir) msg += `\n同名但內容不同的舊檔搬到資料資料夾的 ${r.backup_dir}`;
+      if (r.asset_files_missing) msg += `\n有 ${r.asset_files_missing} 筆資產的圖片或聲音檔不在這台電腦（設定檔只帶文字和縮圖），要用請重新加檔`;
       const w = r.warnings || [];
       if (w.length) msg += "\n這幾項沒匯入：\n・" + w.slice(0, 6).join("\n・") + (w.length > 6 ? `\n…還有 ${w.length - 6} 項` : "");
       toast(msg, w.length ? "err" : "ok");
@@ -308,6 +309,7 @@ async function doReset() {
   const parts = [...document.querySelectorAll("#resetParts input:checked")].map((x) => x.value);
   const browser = $("#resetBrowser").checked;
   if (!parts.length && !browser) return toast("先勾選要清掉哪些部分", "err");
+  if (parts.length && !resetInfo) return toast("恢復原廠的清單還沒讀到：等一下再按，或重開設定頁", "err");
   // 換了介面語言，畫面要人打的是翻過的字（Factory Reset／恢复原厂），兩種都收；送給伺服器的一律是「恢復原廠」
   const typed = $("#resetConfirm").value.trim().toLowerCase();
   if (typed !== "恢復原廠" && typed !== i18n.tr("恢復原廠").toLowerCase()) { $("#resetConfirm").focus(); return toast("請在框裡輸入「恢復原廠」四個字", "err"); }

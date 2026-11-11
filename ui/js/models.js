@@ -97,9 +97,10 @@ async function addDir() {
   try {
     const r = await api("/api/models/dirs/add", { json: { path, kind: $("#mdKind").value } });
     $("#mdPath").value = "";
-    if (!r.added.length) return toast("沒有新加入的資料夾：生圖站本來就會讀這裡，或已經在清單裡了", "err");
+    const warns = r.warnings || [];
+    if (!r.added.length) return toast(warns.length ? "沒有加入：" + warns.join("；") : "沒有新加入的資料夾：生圖站本來就會讀這裡，或已經在清單裡了", "err");
     await loadDirs();
-    toast(`已加入 ${r.added.length} 個資料夾：` + r.added.map((a) => `${a.label}（${a.path}）`).join("、"), "ok");
+    toast(`已加入 ${r.added.length} 個資料夾：` + r.added.map((a) => `${a.label}（${a.path}）`).join("、") + (warns.length ? "\n另外：" + warns.join("；") : ""), warns.length ? "err" : "ok");
     needRestart("外部資料夾改了");
     app.refreshState();
   } catch (e) { toast("加入失敗：" + e.message, "err"); }
@@ -172,9 +173,10 @@ function showScan(s) {
     const dirs = checks.map((c) => c.querySelector("input")).filter((c) => c.checked).map((c) => ({ kind: c._item.kind, path: c._item.path }));
     if (!dirs.length) return toast("沒有勾選任何資料夾", "err");
     try {
-      await api("/api/models/scan/apply", { json: { dirs } });
+      const r = await api("/api/models/scan/apply", { json: { dirs } });
       await loadDirs();
-      box.replaceChildren(el("div", {}, `已加入 ${dirs.length} 個資料夾。`));
+      const warns = r.warnings || [];
+      box.replaceChildren(el("div", {}, warns.length ? `已套用，但有 ${warns.length} 項要注意：` : `已加入 ${dirs.length} 個資料夾。`), ...warns.map((w) => el("div", { class: "muted sm" }, "・" + w)));
       needRestart("外部資料夾改了");
       app.refreshState();
     } catch (e) { toast("套用失敗：" + e.message, "err"); }

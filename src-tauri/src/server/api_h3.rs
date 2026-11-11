@@ -321,11 +321,24 @@ async fn local_nodes(app: &Shared) -> bool {
     app.comfy.options("MiniMaxH3ReferenceToVideo", "ref_image_size").await.map(|v| !v.is_empty()).unwrap_or(false)
 }
 
+/// 清單裡哪些是 H3 的：檔名寫了 h3／10eros／minimax，或檔頭看得出是 H3（下載中心抓回來的常常檔名沒寫，2026-11-10）
+fn keep_h3(names: Vec<String>, roots: &[PathBuf]) -> Vec<String> {
+    names.into_iter().filter(|n| h3ish(n) || crate::families::is_h3_of(roots, n)).collect()
+}
+
 /// 本機的 H3 模型：一般檔＋GGUF 量化版（裝了 ComfyUI-GGUF 才有 UnetLoaderGGUF）
 async fn local_models(app: &Shared) -> Vec<String> {
     let mut v = app.comfy.options("UNETLoader", "unet_name").await.unwrap_or_default();
     v.extend(app.comfy.options("UnetLoaderGGUF", "unet_name").await.unwrap_or_default());
-    v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).filter(|n| h3ish(n)).collect()
+    let names: Vec<String> = v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).collect();
+    let roots = app.paths.unet_roots();
+    blocking(move || keep_h3(names, &roots)).await
+}
+
+/// 本機 LoRA 裡 H3 的（H3 影片台的 LoRA 選單只列這些）
+async fn local_h3_loras(app: &Shared, all: &[String]) -> Vec<String> {
+    let (names, roots) = (all.to_vec(), app.paths.lora_roots());
+    blocking(move || keep_h3(names, &roots)).await
 }
 
 /// 本機 ComfyUI 載得到的檔（主模型含 GGUF、文字編碼器、VAE）
@@ -488,15 +501,16 @@ pub async fn info(State(app): State<Shared>) -> ApiResult {
     };
     let online = app.comfy.live().online;
     let names = |v: Vec<Value>| v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).collect::<Vec<_>>();
-    let (local_nodes, local_models, local_loras, local_selflift) = if online {
+    let (local_nodes, local_models, local_loras, local_h3_loras, local_selflift) = if online {
         let nodes = local_nodes(&app).await;
         let models = local_models(&app).await;
         let loras = names(app.comfy.options("LoraLoaderModelOnly", "lora_name").await.unwrap_or_default());
+        let h3_loras = local_h3_loras(&app, &loras).await;
         // 「SelfLift 兩段取樣」要裝 SelfLiftH3Sampler 自訂節點
         let selflift = app.comfy.options("SelfLiftH3Sampler", "upscaler_model").await.map(|v| !v.is_empty()).unwrap_or(false);
-        (nodes, models, loras, selflift)
+        (nodes, models, loras, h3_loras, selflift)
     } else {
-        (false, vec![], vec![], false)
+        (false, vec![], vec![], vec![], false)
     };
     let local_chunk = online && local_chunk_node(&app).await;
     let local_pick = pick_local_model(&local_models);
@@ -509,7 +523,7 @@ pub async fn info(State(app): State<Shared>) -> ApiResult {
         "cloud_models": cloud_models,
         "cloud_loras": cloud_loras,
         "cloud_selflift": cloud_selflift,
-        "local": {"online": online, "nodes": local_nodes, "models": local_models, "loras": local_loras, "selflift": local_selflift,
+        "local": {"online": online, "nodes": local_nodes, "models": local_models, "loras": local_loras, "h3_loras": local_h3_loras, "selflift": local_selflift,
                   "chunk": local_chunk, "pick": local_pick},
         "defaults": {"model": h3::MODEL, "official_ref2va": h3::OFFICIAL_REF2VA, "steps": 8, "sampler": "res_multistep", "scheduler": "simple",
                      "seconds": 5, "quality": "std", "aspect": "16:9", "mode_loras": h3::MODE_LORAS.iter().map(|(m, f, t)| json!({"mode": m, "file": f, "trigger": t})).collect::<Vec<_>>()},

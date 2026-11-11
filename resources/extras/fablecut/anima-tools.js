@@ -104,6 +104,10 @@ const DANGER = [
   [/^\/api\/nodes(\/test)?$/, "改工作節點（多張顯卡、遠端 ComfyUI）的設定，或連一台遠端 ComfyUI 測試"],
   [/^\/api\/(image|video)\/workflows/, "新增或改動匯入的工作流"],
   [/^\/api\/voices\/tts_workflow$/, "換掉或拿掉聲音庫的 TTS 工作流"],
+  // 2026-11-11 訓練台：助手那邊（agent_tools.rs 的 DANGER）同一天一起加
+  [/^\/api\/train\/trainer\/(install|remove)$/, "安裝（下載約 8GB）或移除本機訓練器"],
+  [/^\/api\/train\/[^/]+\/(start|quote)$/, "開始煉 LoRA 或報價（雲端顯卡、C 站會花錢；C 站報價會先把訓練圖上傳；本機會把顯卡占滿）"],
+  [/^\/api\/train\/[^/]+\/images\/remove$/, "從訓練專案移除訓練圖"],
 ];
 
 function danger(method, p, body) {

@@ -334,6 +334,12 @@ input[type=range]:focus-visible { outline-offset: 0; }
 .pzh-toggle { background: none; border: 0; padding: 0; cursor: pointer; font: 12px/1 var(--f-ui); letter-spacing: 0; color: var(--ph-dim); }
 .pzh-toggle:hover { color: var(--ph-green); }
 .pzh-toggle.on { color: var(--ph-amber); }
+/* 提示詞分段（promptsec.js）：小框模式，一區一格，左邊是區名 */
+.psec { display: flex; flex-direction: column; gap: 6px; }
+.psec-row { display: grid; grid-template-columns: 3.2em 1fr; gap: 8px; align-items: start; }
+.psec-key { font: 12px/1.2 var(--f-ui); color: var(--ph-amber); padding-top: 7px; text-align: right; white-space: nowrap; }
+.psec-row.other .psec-key { color: var(--ph-dim); }
+.psec-row textarea { width: 100%; min-height: 3.2em; resize: vertical; field-sizing: content; }
 .pzh { margin-top: 6px; padding-top: 6px; border-top: 1px dashed rgba(141,255,176,.25); max-height: 260px; overflow-y: auto; font: 12px/1.4 var(--f-ui); }
 .pzh-head { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: center; justify-content: space-between; color: var(--ph-dim); margin-bottom: 6px; }
 .pzh-busy { display: inline-flex; gap: 8px; align-items: center; color: var(--ph-amber); }
@@ -414,6 +420,11 @@ details.pe textarea, details.pe input[type=text] { font: 13px/1.5 var(--f-ui); }
 .lora-note { grid-column: 1 / -1; margin: -2px 0 1px 30px; font-size: 11px; line-height: 1.45; color: var(--label-dim); cursor: pointer; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lora-note.open { white-space: normal; color: var(--label); }
 .trig-chips .chips { margin-top: 4px; }
+/* 一整組的觸發詞：自己佔一行，框起來；「整組」只有一部分在提示詞裡時畫橘色外框 */
+.trig-group { flex: 1 1 100%; display: flex; flex-wrap: wrap; align-items: center; gap: 6px; padding: 5px 6px; border: 1px dashed var(--key-side); border-radius: 4px; }
+.trig-group .trig-all { font-weight: 600; }
+.trig-group .trig-all small { margin-left: 5px; font: 10px/1 var(--f-data); opacity: .75; }
+.chip.part { box-shadow: 0 2px 0 var(--key-side), inset 0 0 0 2px var(--acc); }
 
 /* 旋鈕 */
 .knobs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 4px 0 2px; }
@@ -1752,3 +1763,62 @@ body.docking { cursor: grabbing; user-select: none; }
 #genNodeWrap[hidden] { display: none; }
 #genNodeWrap .sub { margin: 0; }
 #genNode { width: auto; min-width: 150px; }
+
+/* ---------------------------------------------------------------- 訓練頁（train.js）：六步精靈 */
+.tr { display: flex; flex-direction: column; gap: 10px; min-height: 0; }
+.tr-steps button .n { font: 15px/1 var(--f-vfd); color: var(--label-dim); }
+.tr-steps button.on .n { color: var(--warn); }
+.tr-steps button:disabled { opacity: .45; cursor: not-allowed; }
+.tr-cols { display: grid; grid-template-columns: 230px minmax(0, 1fr); gap: 12px; min-height: 0; flex: 1; }
+.tr-list { display: flex; flex-direction: column; gap: 6px; }
+.tr-proj { display: grid; grid-template-columns: auto 1fr; gap: 2px 8px; align-items: center; text-align: left; border: 0; border-radius: 6px; padding: 9px 10px; background: var(--key); color: var(--label); cursor: pointer; box-shadow: 0 3px 0 var(--key-side); }
+.tr-proj .muted { grid-column: 2; }
+.tr-proj b { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tr-proj.on { transform: translateY(2px); box-shadow: 0 1px 0 var(--key-side), inset 0 0 0 2px var(--warn); }
+.tr-proj .led { width: 9px; height: 9px; border-radius: 50%; background: var(--led-off); }
+.tr-proj .led.run { background: var(--warn); box-shadow: 0 0 7px var(--warn); animation: ai-pulse 1.6s ease-in-out infinite; }
+.tr-proj .led.ok { background: var(--ph-green); box-shadow: 0 0 6px var(--ph-green); }
+.tr-proj .led.bad { background: var(--ph-red); }
+.tr-main { display: flex; flex-direction: column; min-height: 0; gap: 8px; }
+.tr-body { display: flex; flex-direction: column; gap: 10px; flex: 1; padding-bottom: 16px; }
+.tr-nav { padding-top: 6px; border-top: 1px solid var(--groove); }
+.tr-keys { display: flex; gap: 8px; flex-wrap: wrap; }
+.tr-keys .akey.on { background: var(--warn); color: #201a10; transform: translateY(2px); }
+.tr-chip { font: 700 12px/1.5 var(--f-ui); background: var(--groove); color: var(--label); border-radius: 3px; padding: 2px 8px; }
+.tr-drop { border: 2px dashed var(--groove); border-radius: 8px; padding: 22px 12px; text-align: center; font-weight: 700; }
+.tr-drop.over { border-color: var(--warn); background: var(--case-2); }
+.tr-warn { background: #4a3a1d; color: var(--warn); border-radius: 5px; padding: 6px 10px; font-size: 13px; }
+.tr-why { font: 16px/1.4 var(--f-vfd); color: var(--ph-amber); background: var(--screen); border-radius: 5px; padding: 8px 12px; }
+.tr-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 8px; }
+.tr-img { position: relative; border-radius: 5px; overflow: hidden; background: var(--viewer); aspect-ratio: 1; }
+.tr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.tr-img.off img { opacity: .25; filter: grayscale(1); }
+.tr-flag { position: absolute; top: 4px; left: 4px; background: #4a3a1d; color: var(--warn); font: 700 11px/1.5 var(--f-ui); border-radius: 3px; padding: 0 6px; }
+.tr-img-bar { position: absolute; left: 0; right: 0; bottom: 0; display: flex; justify-content: space-between; padding: 3px; background: linear-gradient(transparent, rgba(0,0,0,.7)); }
+.tr-img-bar button { border: 0; border-radius: 3px; padding: 2px 8px; font: 700 11px/1.5 var(--f-ui); background: var(--key); color: var(--label); cursor: pointer; }
+.tr-vid { display: grid; place-items: center; width: 100%; height: 100%; min-height: 80px; color: #8d8574; font-size: 12px; }
+.tr-caps { display: flex; flex-direction: column; gap: 8px; }
+.tr-cap { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 10px; align-items: start; }
+.tr-cap img { width: 110px; height: 110px; object-fit: cover; border-radius: 4px; background: var(--viewer); }
+.tr-cap textarea { width: 100%; }
+.tr-fs { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 8px; }
+.tr-f { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--label-dim); }
+.tr-f.row { flex-direction: row; align-items: center; gap: 6px; }
+.tr-f input[type=number], .tr-f input[type=text], .tr-f input[type=password], .tr-f select { width: 100%; }
+.tr-targets { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 8px; }
+.tr-target { display: flex; flex-direction: column; gap: 4px; text-align: left; border: 0; border-radius: 6px; padding: 12px; background: var(--key); color: var(--label); cursor: pointer; box-shadow: 0 4px 0 var(--key-side); }
+.tr-target.on { transform: translateY(3px); box-shadow: 0 1px 0 var(--key-side), inset 0 0 0 2px var(--warn); }
+.tr-install { display: flex; flex-direction: column; gap: 6px; }
+.tr-log { margin: 0; max-height: 190px; overflow: auto; background: var(--screen); color: var(--ph-green); border-radius: 5px; padding: 8px 10px; font: 12px/1.45 ui-monospace, Consolas, monospace; white-space: pre-wrap; word-break: break-all; }
+.tr-bar { height: 12px; border-radius: 6px; background: var(--screen); overflow: hidden; }
+.tr-bar > div { height: 100%; background: var(--warn); transition: width .4s; }
+.tr-epochs { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 8px; }
+.tr-epoch { display: flex; flex-direction: column; gap: 5px; background: var(--case-2); border-radius: 6px; padding: 9px 10px; }
+.tr-epoch.on { box-shadow: inset 0 0 0 2px var(--ph-green); }
+.tr-epoch .muted { word-break: break-all; }
+.tr-samples { display: grid; grid-template-columns: repeat(2, 1fr); gap: 3px; }
+.tr-samples img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 3px; }
+.tr-cmp { display: grid; gap: 6px; align-items: center; }
+.tr-cell { aspect-ratio: 1; background: var(--viewer); border-radius: 4px; display: grid; place-items: center; color: #8d8574; overflow: hidden; }
+.tr-cell img { width: 100%; height: 100%; object-fit: cover; }
+@media (max-width: 760px) { .tr-cols { grid-template-columns: 1fr; } .tr-list { flex-direction: row; overflow-x: auto; } .tr-proj { min-width: 180px; } .tr-cap { grid-template-columns: 72px minmax(0, 1fr); } .tr-cap img { width: 72px; height: 72px; } }

@@ -269,7 +269,12 @@ function takesEl(s, i) {
   }
   return el("details",{class:"film-takes",open:!!s.pending_take},el("summary",{},"拍攝版本",el("span",{class:"muted sm"},` (${s.takes.length})`)),
     s.pending_take ? el("p",{class:"muted sm"},"新版本尚未採用，下一鏡會等待你的選擇。") : null,list,
-    !running() ? btn("重拍這鏡並審片",()=>{chain.review=true;run(i);},"akey sm") : null);
+    !running() ? btn("重拍這鏡並審片",()=>{
+      // 跟「從這段重拍」一樣要先講：會再花一次錢，後面拍好的段也要重新接（2026-11-10 以前這顆按了就直接開拍）
+      const after = chain.segments.slice(i+1).filter(x=>x.status==="done").length;
+      if (!confirm(`重拍第 ${i + 1} 段並審片？${after ? `後面拍好的 ${after} 段要重新接續（舊版本都會保留）。` : ""}會再花一次${chain.where === "runninghub" ? " RunningHub 的幣" : "雲端的錢"}。`)) return;
+      chain.review=true;run(i);
+    },"akey sm") : null);
 }
 
 function lineEl(s, ln, j, lock) {

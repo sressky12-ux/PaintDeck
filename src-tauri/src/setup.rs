@@ -646,7 +646,15 @@ pub fn auto_fix_rocm10(comfy_dir: &Path) -> Option<Result<String, String>> {
             said.push(format!("精靈選的 A 卡架構（{}）跟偵測到的顯示卡對不上，改成{}", prefs.amd_gfx, if g.is_empty() { "自動偵測".to_string() } else { g.clone() }));
         }
     }
-    let build = gpu::torch_build(&l.python).unwrap_or_default();
+    // PyTorch 整個不見（換到一半被打斷、自己 pip uninstall）：rocm10_needed 和精靈都說「要補」，這裡以前拿到空字串就靜靜跳過，
+    // ComfyUI 每次都開不起來又沒人講原因。整包重裝約 1.1GB，交給「安裝與修復」，這裡只把話講清楚
+    let Some(build) = gpu::torch_build(&l.python) else {
+        if missing.is_empty() {
+            return (!said.is_empty()).then(|| Ok(said.join("；")));
+        }
+        said.push("這份 ComfyUI 的 PyTorch 不見了（可能上次安裝到一半被打斷）：請到「設定 → 安裝與修復…」按安裝，會把它裝回來".into());
+        return Some(Err(said.join("；")));
+    };
     // 免安裝版原本的 ROCm 7.2 本身就有的架構（RX 7000／9000…）不用補；老手自己換的別種 ROCm 版不碰（跟 rocm10_needed 一樣）
     let missing: Vec<String> = match &build {
         b if b.starts_with("rocm10") || *b == format!("rocm{}", gpu::GFX103_ROCM) => missing,

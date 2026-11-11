@@ -7,6 +7,8 @@
 //!   GET  /sdapi/v1/sd-models               Anima／Qwen 2.1／MOSS 的模型（其他家族內建流程畫不了，不列）
 //!   GET  /sdapi/v1/samplers｜schedulers    ComfyUI 的名稱，第一個是 Automatic（＝照模型預設）
 //!   GET  /sdapi/v1/upscalers               None＋ComfyUI 的放大模型（高解析修復用）
+//!   GET  /sdapi/v1/loras                   ComfyUI 的 LoRA（A1111 格式，酒館的生圖外掛拿來給人挑）；POST refresh-loras 是空的
+//!   LoRA 沒用上（找不到、跟模型家族不合）會廣播 {type:"sdapi", warnings} 讓繪匣跳提醒：酒館不顯示 info
 //!   GET  /sdapi/v1/progress                目前 ComfyUI 的進度
 //!   POST /sdapi/v1/interrupt               停掉從這裡送出、還沒畫完的任務（網頁送的不動）
 //!   POST /sdapi/v1/txt2img                 → {"images": [base64 PNG], "parameters": 原請求, "info": JSON 字串}
@@ -120,6 +122,13 @@ fn sampler_of(want: &str, list: &[String]) -> Option<String> {
     list.iter().find(|n| n.to_lowercase() == guess).cloned()
 }
 
+/// 舊式的取樣器名稱把排程接在尾巴（「DPM++ 2M Karras」）：回那個排程（karras、exponential、sgm_uniform）。
+/// 2026-11-10 以前 sampler_of 只把尾巴切掉丟了，沒另外送 scheduler 的舊客戶端排程會掉回模型預設（讀圖片參數那邊 imgmeta 有拆）
+fn embedded_scheduler(sampler: &str) -> Option<&'static str> {
+    let w = sampler.trim().to_lowercase();
+    SCHEDULER_SUFFIXES.iter().find(|s| w.ends_with(**s)).map(|s| s.trim())
+}
+
 /// 排程名稱 → ComfyUI 的；Automatic、空白、認不得都回 None。A1111 的 Uniform＝ComfyUI 的 normal
 fn scheduler_of(want: &str, list: &[String]) -> Option<String> {
     let w = want.trim().to_lowercase().replace([' ', '-'], "_");
@@ -130,36 +139,89 @@ fn scheduler_of(want: &str, list: &[String]) -> Option<String> {
     list.iter().find(|n| n.to_lowercase() == w).cloned()
 }
 
+/// <lora:名稱:強度>，A1111 的 LyCORIS 寫法 <lyco:…> 也收；第三段（text encoder 強度）繪匣用不到，略過
 fn lora_re() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| Regex::new(r"(?i)<lora:([^:>]+)(?::([^:>]*))?(?::[^>]*)?>").expect("LoRA 標籤的正規式"))
+    RE.get_or_init(|| Regex::new(r"(?i)<\s*(?:lora|lyco)\s*:([^:>]+)(?::([^:>]*))?(?::[^>]*)?>").expect("LoRA 標籤的正規式"))
 }
 
-/// 提示詞裡的 <lora:名稱:強度>：拿出來對 ComfyUI 的 LoRA 清單（檔名、不含資料夾、不含副檔名都認）。
-/// 回傳（拿掉標籤的提示詞、[{name, strength}]、找不到的名稱）
-fn extract_loras(prompt: &str, list: &[String]) -> (String, Vec<Value>, Vec<String>) {
-    let (mut loras, mut unknown) = (vec![], vec![]);
+/// 比對用的鍵：只留字母數字（中日韓文也算）、轉小寫。
+/// 酒館叫 LLM 寫提示詞時會把 \ + @ & 中文以外的符號、還有不是英數的字元換成空白（SillyTavern processReply），
+/// 所以「anima\foo+bar」到繪匣會變成「anima foo bar」：比鍵才對得上
+fn loose(s: &str) -> String {
+    s.chars().filter(|c| c.is_alphanumeric()).flat_map(char::to_lowercase).collect()
+}
+
+/// ComfyUI 的 LoRA 名稱 → 可以拿來比對的寫法：完整路徑、去副檔名的路徑、檔名、去副檔名的檔名（全部小寫、/ 換成 \）
+fn lora_forms(name: &str) -> [String; 4] {
+    let full = name.to_lowercase().replace('/', "\\");
+    let no_ext = full.rsplit_once('.').filter(|(_, ext)| !ext.contains('\\')).map_or(full.clone(), |(s, _)| s.to_string());
+    let base = full.rsplit('\\').next().unwrap_or(&full).to_string();
+    let stem = base.rsplit_once('.').map_or(base.clone(), |(s, _)| s.to_string());
+    [full, no_ext, base, stem]
+}
+
+/// 名稱 → ComfyUI 的 LoRA 檔名。先比完整寫法（檔名、去副檔名、含資料夾），再比繪匣 LoRA 庫取的標題，
+/// 都沒有才比鬆的鍵（大小寫、空白、底線、符號都不管）；鬆的對到好幾顆就挑第一顆並回提醒
+fn find_lora(want: &str, list: &[String], titles: &[(String, String)]) -> (Option<String>, Option<String>) {
+    let w = want.trim().to_lowercase().replace('/', "\\");
+    if w.is_empty() {
+        return (None, None);
+    }
+    if let Some(n) = list.iter().find(|n| lora_forms(n).contains(&w)) {
+        return (Some(n.clone()), None);
+    }
+    if let Some((n, _)) = titles.iter().find(|(n, t)| t.trim().to_lowercase() == w && list.contains(n)) {
+        return (Some(n.clone()), None);
+    }
+    let k = loose(&w);
+    if k.is_empty() {
+        return (None, None);
+    }
+    let title_of = |n: &str| titles.iter().find(|(x, _)| x == n).map(|(_, t)| loose(t)).unwrap_or_default();
+    let hits: Vec<&String> = list
+        .iter()
+        .filter(|n| lora_forms(n)[1..].iter().any(|f| loose(f) == k) || title_of(n) == k)
+        .collect();
+    match hits.as_slice() {
+        [] => (None, None),
+        [one] => (Some((*one).clone()), None),
+        [first, ..] => (
+            Some((*first).clone()),
+            Some(format!("LoRA「{}」對到 {} 顆，用了 {first}", want.trim(), hits.len())),
+        ),
+    }
+}
+
+/// 提示詞裡的 <lora:名稱:強度>：拿出來對 ComfyUI 的 LoRA 清單（find_lora）。
+/// 回傳（拿掉標籤的提示詞、[{name, strength}]、找不到的名稱、提醒）
+fn extract_loras(prompt: &str, list: &[String], titles: &[(String, String)]) -> (String, Vec<Value>, Vec<String>, Vec<String>) {
+    let (mut loras, mut unknown, mut notes) = (Vec::<Value>::new(), vec![], vec![]);
     for c in lora_re().captures_iter(prompt) {
-        let want = c[1].trim().to_lowercase().replace('/', "\\");
-        let strength = c.get(2).and_then(|m| m.as_str().trim().parse::<f64>().ok()).unwrap_or(1.0);
-        let hit = list.iter().find(|n| {
-            let n = n.to_lowercase();
-            let base = n.rsplit('\\').next().unwrap_or(&n).to_string();
-            let stem = base.rsplit_once('.').map_or(base.as_str(), |(s, _)| s).to_string();
-            n == want || base == want || stem == want
-        });
-        match hit {
-            Some(n) => loras.push(json!({"name": n, "strength": strength, "enabled": true})),
-            None => unknown.push(c[1].trim().to_string()),
+        let strength = c
+            .get(2)
+            .and_then(|m| m.as_str().trim().replace(',', ".").parse::<f64>().ok())
+            .filter(|x| x.is_finite())
+            .unwrap_or(1.0);
+        match find_lora(&c[1], list, titles) {
+            (Some(n), note) => {
+                notes.extend(note);
+                // 同一顆寫兩次：後面的強度蓋掉前面的，不要掛兩次
+                match loras.iter_mut().find(|l| l["name"] == json!(n)) {
+                    Some(l) => l["strength"] = json!(strength),
+                    None => loras.push(json!({"name": n, "strength": strength, "enabled": true})),
+                }
+            }
+            (None, _) => unknown.push(c[1].trim().to_string()),
         }
     }
     if loras.is_empty() && unknown.is_empty() {
-        return (prompt.to_string(), loras, unknown);
+        return (prompt.to_string(), loras, unknown, notes);
     }
     // 標籤拿掉後留下的「, ,」收乾淨
     let stripped = lora_re().replace_all(prompt, "");
     let cleaned: Vec<&str> = stripped.split(',').map(str::trim).filter(|s| !s.is_empty()).collect();
-    (cleaned.join(", "), loras, unknown)
+    (cleaned.join(", "), loras, unknown, notes)
 }
 
 /// ComfyUI 的清單（txt2img 換名稱用）
@@ -168,6 +230,8 @@ struct Lists {
     samplers: Vec<String>,
     schedulers: Vec<String>,
     loras: Vec<String>,
+    /// 繪匣 LoRA 庫裡取的標題 [(檔名, 標題)]：酒館寫標題也認
+    lora_titles: Vec<(String, String)>,
     upscalers: Vec<String>,
 }
 
@@ -178,10 +242,11 @@ fn to_params(req: &Value, model: &str, fam: &str, anima_neg: &str, lists: &Lists
     let num = |k: &str| req.get(k).and_then(Value::as_f64).filter(|x| x.is_finite() && *x > 0.0);
     let int = |k: &str, lo: i64, hi: i64, def: i64| num(k).map_or(def, |x| (x.round() as i64).clamp(lo, hi));
     let mut notes = vec![];
-    let (prompt, loras, unknown) = extract_loras(&tx(&req["prompt"]), &lists.loras);
+    let (prompt, loras, unknown, lora_notes) = extract_loras(&tx(&req["prompt"]), &lists.loras, &lists.lora_titles);
     if !unknown.is_empty() {
         notes.push(format!("找不到這些 LoRA，略過：{}", unknown.join("、")));
     }
+    notes.extend(lora_notes);
     let neg = tx(&req["negative_prompt"]);
     let negative = if neg.trim().is_empty() { d["negative"].clone() } else { json!(neg) };
     let sampler_want = tx(&req["sampler_name"]);
@@ -189,7 +254,9 @@ fn to_params(req: &Value, model: &str, fam: &str, anima_neg: &str, lists: &Lists
     if sampler.is_none() && !sampler_want.trim().is_empty() && !sampler_want.eq_ignore_ascii_case(AUTO) {
         notes.push(format!("ComfyUI 沒有取樣器「{sampler_want}」，改用模型預設"));
     }
-    let scheduler = scheduler_of(&tx(&req["scheduler"]), &lists.schedulers);
+    // 請求自己送了 scheduler 就照它；沒送才看取樣器名稱尾巴帶的
+    let scheduler = scheduler_of(&tx(&req["scheduler"]), &lists.schedulers)
+        .or_else(|| embedded_scheduler(&sampler_want).and_then(|s| scheduler_of(s, &lists.schedulers)));
     let seed = req.get("seed").and_then(Value::as_i64).filter(|s| *s >= 0).map_or(json!(-1), |s| json!(s));
     let mut p = Map::new();
     p.insert("mode".into(), json!("txt2img"));
@@ -303,6 +370,41 @@ pub async fn upscalers(State(app): State<Shared>) -> ApiResult {
     ok(Value::Array(std::iter::once(none).chain(ups).collect()))
 }
 
+/// ComfyUI 看得到的 LoRA 檔名
+async fn lora_names(app: &Shared) -> Vec<String> {
+    names(app.comfy.options("LoraLoaderModelOnly", "lora_name").await.unwrap_or_default())
+}
+
+/// 繪匣 LoRA 庫裡有取標題的 [(檔名, 標題)]
+fn lora_titles(app: &Shared) -> Vec<(String, String)> {
+    app.db
+        .lora_meta()
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|(n, m)| m.get("title").and_then(Value::as_str).map(str::trim).filter(|t| !t.is_empty()).map(|t| (n.clone(), t.to_string())))
+        .collect()
+}
+
+/// A1111 的 LoRA 清單：一筆 {name: 去副檔名的檔名, alias: 繪匣 LoRA 庫的標題（沒有就同 name）, path: ComfyUI 的檔名, metadata: {}}。
+/// 酒館的生圖外掛、提示詞助手這類會先抓這份清單讓人挑，挑完照 <lora:name:強度> 寫進提示詞
+fn lora_entries(list: &[String], titles: &[(String, String)]) -> Vec<Value> {
+    list.iter()
+        .map(|n| {
+            let base = n.rsplit(['\\', '/']).next().unwrap_or(n);
+            let stem = base.rsplit_once('.').map_or(base, |(s, _)| s);
+            let alias = titles.iter().find(|(x, _)| x == n).map_or(stem, |(_, t)| t.as_str());
+            json!({"name": stem, "alias": alias, "path": n, "metadata": {}})
+        })
+        .collect()
+}
+
+pub async fn loras(State(app): State<Shared>) -> ApiResult {
+    if !app.comfy.live().online {
+        return Err(bad("ComfyUI 沒有連線。解法：重新開啟「繪匣 PaintDeck」。"));
+    }
+    ok(Value::Array(lora_entries(&lora_names(&app).await, &lora_titles(&app))))
+}
+
 /// 潛空間放大、VAE 清單：繪匣照模型家族自己接，不給選
 pub async fn empty_list() -> ApiResult {
     ok(json!([]))
@@ -345,7 +447,8 @@ pub async fn txt2img(State(app): State<Shared>, Body(req): Body) -> ApiResult {
     let lists = Lists {
         samplers: names(c.options("KSampler", "sampler_name").await.unwrap_or_default()),
         schedulers: names(c.options("KSampler", "scheduler").await.unwrap_or_default()),
-        loras: names(c.options("LoraLoaderModelOnly", "lora_name").await.unwrap_or_default()),
+        loras: lora_names(&app).await,
+        lora_titles: lora_titles(&app),
         upscalers: names(c.options("UpscaleModelLoader", "model_name").await.unwrap_or_default()),
     };
     let anima_neg = tx(settings::load(&app.paths.settings).get("negative").unwrap_or(&Value::Null));
@@ -353,6 +456,15 @@ pub async fn txt2img(State(app): State<Shared>, Body(req): Body) -> ApiResult {
     api_gen::resolve_seed(&mut p)?;
     let jobs = api_gen::submit_jobs(&app, p.clone(), count).await?;
     let pids: Vec<String> = jobs.iter().filter_map(|j| j["job"].as_str().map(str::to_string)).collect();
+    if let Some(s) = jobs.first().and_then(|j| j["skipped_loras"].as_array()) {
+        let s: Vec<String> = s.iter().map(tx).collect();
+        notes.push(format!("跟模型「{model}」的家族不合，略過的 LoRA：{}", s.join("、")));
+    }
+    // 酒館不會顯示 info 裡的提醒：LoRA 沒用上這種事要在繪匣跳出來講，不然使用者只會覺得「LoRA 沒傳過來」
+    if !notes.is_empty() {
+        eprintln!("酒館接口（/sdapi/v1/txt2img）：{}", notes.join("；"));
+        app.hub.send(json!({"type": "sdapi", "warnings": notes}));
+    }
     {
         // SillyTavern 斷線時這個請求會被丟掉、來不及收尾：順便清掉已經結束的舊任務
         let old = lock(&ACTIVE).clone();
@@ -377,10 +489,6 @@ pub async fn txt2img(State(app): State<Shared>, Body(req): Body) -> ApiResult {
     if images.is_empty() {
         return Err(internal("任務跑完了，但找不到生成的圖"));
     }
-    if let Some(s) = jobs.first().and_then(|j| j["skipped_loras"].as_array()) {
-        let s: Vec<String> = s.iter().map(tx).collect();
-        notes.push(format!("跟模型家族不合，略過的 LoRA：{}", s.join("、")));
-    }
     let seeds: Vec<Value> = jobs.iter().map(|j| j["seed"].clone()).collect();
     let info = json!({
         "prompt": p["prompt"], "negative_prompt": p["negative"], "seed": seeds.first().cloned().unwrap_or(Value::Null), "all_seeds": seeds,
@@ -404,7 +512,72 @@ mod tests {
             samplers: s(&["euler", "euler_ancestral", "dpmpp_2m", "dpmpp_2m_sde_gpu", "er_sde", "uni_pc"]),
             schedulers: s(&["normal", "karras", "simple", "sgm_uniform", "beta"]),
             loras: s(&["anima\\jgdxstyle_v2.safetensors", "qwen\\Pruna-8step.safetensors"]),
+            lora_titles: vec![],
             upscalers: s(&["4x-AnimeSharp.safetensors"]),
+        }
+    }
+
+    fn lora_names_real() -> Vec<String> {
+        s(&[
+            "2000s Game Aesthetic 00008_anima.safetensors",
+            "anima\\Anima_colorfix_v1_by_Volnovik.safetensors",
+            "anima\\x+y@style.safetensors",
+            "anima\\中文畫風.safetensors",
+            "a\\dup_style.safetensors",
+            "b\\dup-style.safetensors",
+        ])
+    }
+
+    #[test]
+    fn lora_names_survive_tavern_prompt_processing() {
+        let l = lora_names_real();
+        let t = vec![("anima\\中文畫風.safetensors".to_string(), "Ink Wash 水墨".to_string())];
+        let find = |w: &str| find_lora(w, &l, &t).0;
+        // 檔名、去副檔名、含資料夾（/ 或 \）、去副檔名的完整路徑都認
+        assert_eq!(find("2000s Game Aesthetic 00008_anima").as_deref(), Some("2000s Game Aesthetic 00008_anima.safetensors"));
+        assert_eq!(find("anima/Anima_colorfix_v1_by_Volnovik").as_deref(), Some("anima\\Anima_colorfix_v1_by_Volnovik.safetensors"));
+        assert_eq!(find("ANIMA_COLORFIX_V1_BY_VOLNOVIK.safetensors").as_deref(), Some("anima\\Anima_colorfix_v1_by_Volnovik.safetensors"));
+        // 酒館 LLM 寫的提示詞：\ + @ 換成空白、底線變空白、大小寫亂掉
+        assert_eq!(find("anima x y style").as_deref(), Some("anima\\x+y@style.safetensors"));
+        assert_eq!(find("x y style").as_deref(), Some("anima\\x+y@style.safetensors"));
+        assert_eq!(find("anima colorfix v1 by volnovik").as_deref(), Some("anima\\Anima_colorfix_v1_by_Volnovik.safetensors"));
+        // 中文檔名、繪匣 LoRA 庫的標題
+        assert_eq!(find("中文畫風").as_deref(), Some("anima\\中文畫風.safetensors"));
+        assert_eq!(find("ink wash 水墨").as_deref(), Some("anima\\中文畫風.safetensors"));
+        // 鬆的比對對到兩顆：挑第一顆、回提醒；完全沒字母數字的不亂猜
+        let (hit, note) = find_lora("dup style", &l, &t);
+        assert_eq!(hit.as_deref(), Some("a\\dup_style.safetensors"));
+        assert!(note.is_some());
+        assert_eq!(find("  "), None);
+        assert_eq!(find("+++"), None);
+        assert_eq!(find("nope"), None);
+    }
+
+    #[test]
+    fn lyco_tags_spaces_and_duplicates() {
+        let l = lora_names_real();
+        let (p, loras, unknown, _) =
+            extract_loras("1girl, < lora : 2000s Game Aesthetic 00008_anima:0,6>, <lyco:x y style:0.5:1>, <lora:x y style:0.8>", &l, &[]);
+        assert_eq!(p, "1girl");
+        assert!(unknown.is_empty());
+        assert_eq!(loras.len(), 2, "同一顆寫兩次只掛一次：{loras:?}");
+        assert_eq!(loras[0]["strength"], json!(0.6));
+        assert_eq!(loras[1], json!({"name": "anima\\x+y@style.safetensors", "strength": 0.8, "enabled": true}));
+    }
+
+    #[test]
+    fn a1111_lora_list() {
+        let l = lora_names_real();
+        let t = vec![("anima\\中文畫風.safetensors".to_string(), "Ink Wash".to_string())];
+        let e = lora_entries(&l, &t);
+        assert_eq!(e.len(), l.len());
+        assert_eq!(e[1], json!({"name": "Anima_colorfix_v1_by_Volnovik", "alias": "Anima_colorfix_v1_by_Volnovik",
+                                "path": "anima\\Anima_colorfix_v1_by_Volnovik.safetensors", "metadata": {}}));
+        assert_eq!(e[3]["alias"], json!("Ink Wash"));
+        // 清單給的 name 寫回提示詞一定對得到同一顆
+        // （dup_style／dup-style 鬆的鍵一樣，但完整寫法先比，各自對到自己）
+        for (x, n) in e.iter().zip(&l) {
+            assert_eq!(find_lora(x["name"].as_str().unwrap(), &l, &t).0.as_deref(), Some(n.as_str()));
         }
     }
 
@@ -423,6 +596,17 @@ mod tests {
     }
 
     #[test]
+    fn sampler_name_tail_gives_scheduler() {
+        let l = comfy_lists().schedulers;
+        let via = |s: &str| embedded_scheduler(s).and_then(|x| scheduler_of(x, &l));
+        assert_eq!(via("DPM++ 2M Karras").as_deref(), Some("karras"));
+        assert_eq!(embedded_scheduler("DPM++ 2M SDE Exponential"), Some("exponential"));
+        assert_eq!(via("Euler a SGM Uniform").as_deref(), Some("sgm_uniform"));
+        assert_eq!(via("Euler a"), None);
+        assert_eq!(via(""), None);
+    }
+
+    #[test]
     fn schedulers_map_a1111_names() {
         let l = comfy_lists().schedulers;
         assert_eq!(scheduler_of("Karras", &l).as_deref(), Some("karras"));
@@ -435,15 +619,15 @@ mod tests {
     #[test]
     fn lora_tags_become_loras() {
         let l = comfy_lists().loras;
-        let (p, loras, unknown) = extract_loras("1girl, <lora:JGDXstyle_v2:0.7>, smile, <lora:nope:1>", &l);
+        let (p, loras, unknown, _) = extract_loras("1girl, <lora:JGDXstyle_v2:0.7>, smile, <lora:nope:1>", &l, &[]);
         assert_eq!(p, "1girl, smile");
         assert_eq!(loras, vec![json!({"name": "anima\\jgdxstyle_v2.safetensors", "strength": 0.7, "enabled": true})]);
         assert_eq!(unknown, vec!["nope".to_string()]);
         // 沒給強度＝1；完整路徑也認
-        let (_, loras, _) = extract_loras("<lora:qwen/Pruna-8step.safetensors>", &l);
+        let (_, loras, _, _) = extract_loras("<lora:qwen/Pruna-8step.safetensors>", &l, &[]);
         assert_eq!(loras[0]["strength"], json!(1.0));
         // 沒有標籤：提示詞原封不動（換行、逗號都不動）
-        let (p, loras, _) = extract_loras("a cat,\nsitting", &l);
+        let (p, loras, _, _) = extract_loras("a cat,\nsitting", &l, &[]);
         assert_eq!((p.as_str(), loras.len()), ("a cat,\nsitting", 0));
     }
 

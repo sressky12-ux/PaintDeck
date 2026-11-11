@@ -23,13 +23,13 @@ use std::sync::OnceLock;
 
 const RULES: &str = include_str!("../../resources/tag_rules.json");
 
-const NOISE: &[&str] = &[
+pub(crate) const NOISE: &[&str] = &[
     "signature", "artist name", "watermark", "web address", "dated", "twitter username", "patreon username",
     "pixiv username", "copyright notice", "artist logo", "company name", "character name", "sample watermark",
     "jpeg artifacts", "lowres", "highres", "absurdres", "commentary request",
     "english text", "japanese text", "chinese text", "korean text", "translated", "translation request", "copyright name",
 ];
-const REAL: &[&str] = &[
+pub(crate) const REAL: &[&str] = &[
     "realistic", "photorealistic", "photo (medium)", "3d", "nose", "lips", "asian", "traditional media",
     "painting (medium)", "oil painting (medium)", "watercolor (medium)", "acrylic paint (medium)", "photo background",
     "flat color", "outline", "thick outlines", "white outline", "black outline", "lineart", "cel shading",

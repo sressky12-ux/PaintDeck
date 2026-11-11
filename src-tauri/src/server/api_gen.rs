@@ -89,6 +89,10 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
                 m.remove("preview");
                 if super::api_misc::local_lora_preview(&lora_roots, n).is_some() {
                     m.insert("local_preview".into(), json!(true));
+                } else if let Some((file, nsfw)) = covers.bundled(&p.res, n) {
+                    // 程式附的縮圖：網頁直接用 /api/loras/bundled-cover/<file>，不用連網抓
+                    m.insert("cover_file".into(), json!(file));
+                    m.insert("cover_nsfw".into(), json!(nsfw));
                 } else if !covers.sources(n, meta.get(n)).is_empty() {
                     // 抓得到封面（lora_covers.json 或下載過的 versionId）：網頁打開 LoRA 庫時送 /api/loras/covers 去抓
                     m.insert("cover".into(), json!(true));
@@ -122,7 +126,12 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
             list.push(json!({"kind": d.kind, "label": crate::model_dirs::kind_label(&d.kind), "path": d.path.to_string_lossy()}));
         }
         models.insert("dirs_pending".into(), json!({"list": list, "can_restart": app.restart_comfy.get().is_some()}));
-        models.insert("comfy_updated".into(), json!({"list": crate::setup::updated(), "can_restart": app.restart_comfy.get().is_some()}));
+    }
+    // 開站換了 ComfyUI 的元件（節點、流程檔）、ComfyUI 還沒重開：跟外部資料夾無關，要自己判斷
+    // （2026-11-10 以前寫在上面那個 if 裡，沒加外部資料夾的人永遠看不到「請重開 ComfyUI」）
+    let updated = crate::setup::updated();
+    if !updated.is_empty() {
+        models.insert("comfy_updated".into(), json!({"list": updated, "can_restart": app.restart_comfy.get().is_some()}));
     }
     // SDXL 的子標籤（Pony／Illustrious／NoobAI…，看檔頭 metadata，看不出來就不列）：網頁拿來換說明文字（Pony 要寫 score tag）
     let unet_sub: Map<String, Value> = unets
@@ -261,11 +270,12 @@ pub async fn settings_import(State(app): State<Shared>, Body(body): Body) -> Api
             n_l += 1;
         }
     }
-    let n_lib = {
+    let (n_lib, lost) = {
         let _g = app.assets_lock.lock().await;
-        super::api_lib::import(&app.db, body.get("prompt_lib"))?
+        super::api_lib::import(&app.db, body.get("prompt_lib"), &super::api_assets::assets_dir(&app.paths))?
     };
-    let mut out = json!({"ok": true, "presets": n_p, "prompt_lib": n_lib, "lora_meta": n_l});
+    // asset_files_missing＝幾筆資產的圖片／聲音檔沒跟來（設定檔不帶資產檔），只收了文字和縮圖
+    let mut out = json!({"ok": true, "presets": n_p, "prompt_lib": n_lib, "lora_meta": n_l, "asset_files_missing": lost});
     if let (Some(o), Value::Object(r)) = (out.as_object_mut(), report.to_json()) {
         o.extend(r);
     }

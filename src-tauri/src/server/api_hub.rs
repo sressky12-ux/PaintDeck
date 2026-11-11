@@ -150,7 +150,7 @@ fn installed(app: &Shared) -> HashSet<String> {
     let models = app.paths.comfy_root.join("models");
     let mut roots: Vec<PathBuf> = ["loras", "diffusion_models", "unet", "checkpoints", "vae", "text_encoders", "clip"].iter().map(|k| models.join(k)).collect();
     roots.extend(super::api_wf::model_roots(&app.paths));
-    for k in ["loras", "vae"] {
+    for k in ["loras", "vae", "text_encoders"] {
         roots.extend(crate::model_dirs::roots(k));
     }
     let mut out = HashSet::new();
@@ -342,7 +342,7 @@ pub async fn download(State(app): State<Shared>, Body(b): Body) -> ApiResult {
             let version = b["version"].as_i64();
             if kind == "lora" {
                 // 照舊走 civitai.rs：會存觸發詞、預覽圖、LoRA 資訊
-                let key = app.civitai.start_download(model_id, version, if base.is_empty() { "*" } else { &base });
+                let key = app.civitai.start_download_file(model_id, version, if base.is_empty() { "*" } else { &base }, Some(name));
                 return ok(json!({"ok": true, "via": "civitai", "key": key}));
             }
             let url = tx(&f["url"]);

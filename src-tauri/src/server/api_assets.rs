@@ -197,6 +197,11 @@ pub fn detach_file(app: &Shared, id: i64, file: &str) -> Result<Value, ApiError>
             o.remove("audio");
         }
     }
+    if data["refmod"]["file"].as_str() == Some(file.as_str()) {
+        if let Some(o) = data.as_object_mut() {
+            o.remove("refmod");
+        }
+    }
     if let Some(a) = data["images"].as_array_mut() {
         a.retain(|im| im["file"].as_str() != Some(file.as_str()));
     }

@@ -451,7 +451,8 @@ export function init() {
     await fillForm();
     changed();
   };
-  for (const id of ["cmTrigger", "cmCast", "cmLight", "cmMood"]) F(id).addEventListener("input", readForm);
+  // cmScript（劇情）也要聽：2026-11-10 以前漏了，只打劇情不動別的欄位就不會存，重開作品劇情是空的
+  for (const id of ["cmTrigger", "cmCast", "cmLight", "cmMood", "cmScript"]) F(id).addEventListener("input", readForm);
   F("cmCount").addEventListener("change", readForm);
   F("cmImgUse").onclick = () => {
     const b = gen.baseParams();
@@ -474,11 +475,13 @@ export function init() {
     const vis = (P.panels || []).slice(0, Math.max(n(), 1));
     if (fillOnly && !vis.some((c) => !c.what?.trim())) return toast("這一頁的格子都寫好了，沒有空白格可以填", "err");
     if (!fillOnly && vis.some((c) => c.what?.trim()) && !confirm("會蓋掉這一頁已經寫好的格子。繼續？")) return;
+    P.script = F("cmScript").value;
     await save();
     status("排分鏡中…", "amb");
     try {
       await api("/api/comic/script", { json: { id: P.id, story, mode: fillOnly ? "fill" : "all", brain: F("cmScriptBrain").value } });
       setRunning(true);
+      reload(); // 跟 run() 一樣：一開始就失敗時 error 事件可能比這個回應先到，照後端的狀態解除，不然會一直卡在執行中
     } catch (e) { status("待機"); toast(e.message, "err"); }
   };
   F("cmCopyPage").onclick = () => copyText(F("cmPrPage").value).then(() => toast("已複製整頁提示詞", "ok"));

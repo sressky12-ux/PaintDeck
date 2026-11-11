@@ -90,6 +90,13 @@ fn primary_file(v: &Value) -> Option<&Value> {
         .or(files.first())
 }
 
+/// 版本裡指定檔名的那個檔；沒指定或找不到＝主要檔
+fn pick_file<'a>(v: &'a Value, name: Option<&str>) -> Option<&'a Value> {
+    name.filter(|n| !n.is_empty())
+        .and_then(|n| v["files"].as_array()?.iter().find(|f| f["name"].as_str() == Some(n)))
+        .or_else(|| primary_file(v))
+}
+
 fn vinfo(v: &Value) -> Value {
     let empty = json!({});
     let f = primary_file(v).unwrap_or(&empty);
@@ -189,7 +196,7 @@ impl Civitai {
     }
 
     /// 每次用的時候才讀設定（使用者剛在設定頁填的金鑰馬上生效）
-    fn key(&self) -> String {
+    pub(crate) fn key(&self) -> String {
         crate::settings::civitai_key(&crate::settings::load(&self.settings_path))
     }
 
@@ -327,6 +334,18 @@ impl Civitai {
         version_id: Option<i64>,
         base: &str,
     ) -> String {
+        self.start_download_file(model_id, version_id, base, None)
+    }
+
+    /// 同 start_download，但指定要這個版本裡的哪個檔（下載中心的檔案選單；一個版本常有好幾個檔，例如 H3 LoRA 的 FL2VA／REF2VA）。
+    /// file＝None 或版本裡沒有這個檔名＝主要檔。2026-11-10 以前下載中心選了別的檔，抓回來的還是主要檔
+    pub fn start_download_file(
+        self: &Arc<Self>,
+        model_id: i64,
+        version_id: Option<i64>,
+        base: &str,
+        file: Option<String>,
+    ) -> String {
         let key = version_id.unwrap_or(model_id).to_string();
         {
             let mut all = self.downloads.lock().unwrap_or_else(|e| e.into_inner());
@@ -343,7 +362,7 @@ impl Civitai {
         }
         let (me, k, b) = (self.clone(), key.clone(), base.to_string());
         tokio::spawn(async move {
-            if let Err(e) = me.download(model_id, version_id, &k, &b).await {
+            if let Err(e) = me.download(model_id, version_id, &k, &b, file.as_deref()).await {
                 let st = me.update(&k, |s| {
                     s.insert("status".into(), json!("error"));
                     s.insert("error".into(), json!(e));
@@ -360,6 +379,7 @@ impl Civitai {
         version_id: Option<i64>,
         key: &str,
         base: &str,
+        file: Option<&str>,
     ) -> Result<(), String> {
         let m = self
             .get_json(&format!("{API}/models/{model_id}"), &[])
@@ -367,7 +387,7 @@ impl Civitai {
         let v = version_for(&m, base, version_id)
             .ok_or_else(|| format!("這個模型沒有 {base} 版本"))?
             .clone();
-        let f = primary_file(&v).ok_or("這個版本沒有檔案")?.clone();
+        let f = pick_file(&v, file).ok_or("這個版本沒有檔案")?.clone();
         let name = f["name"].as_str().ok_or("檔名不明")?.to_string();
         let name = crate::server::basename(&name); // 檔名來自網路：只留檔名
         let total = (f["sizeKB"].as_f64().unwrap_or(0.0) * 1024.0) as i64;
@@ -499,6 +519,19 @@ impl Civitai {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 下載中心選了版本裡的第二個檔：要抓那個檔，不是主要檔；沒指定、指定的不存在＝主要檔
+    #[test]
+    fn pick_file_by_name_or_primary() {
+        let v = json!({"files": [
+            {"name": "mystic_fl2va.safetensors", "primary": true},
+            {"name": "mystic_ref2va.safetensors"}]});
+        assert_eq!(pick_file(&v, Some("mystic_ref2va.safetensors")).unwrap()["name"], "mystic_ref2va.safetensors");
+        assert_eq!(pick_file(&v, None).unwrap()["name"], "mystic_fl2va.safetensors");
+        assert_eq!(pick_file(&v, Some("")).unwrap()["name"], "mystic_fl2va.safetensors");
+        assert_eq!(pick_file(&v, Some("nope.safetensors")).unwrap()["name"], "mystic_fl2va.safetensors");
+        assert!(pick_file(&json!({"files": []}), Some("x")).is_none());
+    }
 
     #[test]
     fn img_small_like_python() {

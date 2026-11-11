@@ -54,8 +54,12 @@ pub async fn dirs(State(app): State<Shared>) -> ApiResult {
               "comfy_models": models_root(&app).to_string_lossy(), "can_restart": app.restart_comfy.get().is_some()}))
 }
 
+/// 「讀清單 → 改 → 整批存回」要排隊：兩個請求同時進來時後存的會把先存的那批蓋掉
+static DIRS_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
 /// 存清單：回 (存好的清單, 警告)。清單裡有資料夾找不到不會讓整批失敗（見 model_dirs::save_checked）
 async fn save_merged(app: &Shared, add: Vec<Dir>) -> Result<(Vec<Dir>, Vec<String>), super::ApiError> {
+    let _g = DIRS_LOCK.lock().await;
     let mut all = model_dirs::current();
     all.extend(add);
     let (data, comfyui) = (app.paths.data.clone(), app.paths.comfy_root.clone());
@@ -81,6 +85,7 @@ pub async fn dirs_add(State(app): State<Shared>, Body(body): Body) -> ApiResult 
 
 pub async fn dirs_remove(State(app): State<Shared>, Body(body): Body) -> ApiResult {
     let (kind, path) = (body["kind"].as_str().unwrap_or(""), body["path"].as_str().unwrap_or(""));
+    let _g = DIRS_LOCK.lock().await;
     let all: Vec<Dir> = model_dirs::current().into_iter().filter(|d| !(d.kind == kind && d.path == Path::new(path))).collect();
     let (data, comfyui) = (app.paths.data.clone(), app.paths.comfy_root.clone());
     let (_, warnings) = blocking(move || model_dirs::save_checked(&data, &comfyui, all)).await.map_err(bad)?;

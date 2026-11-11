@@ -313,6 +313,12 @@ pub async fn lora_preview(State(app): State<Shared>, UrlPath(file): UrlPath<Stri
 }
 
 // ---------------------------------------------------------------- LoRA 封面（2026-11-07，純邏輯在 crate::lora_cover）
+/// GET /api/loras/bundled-cover/{file}：程式附的 LoRA 封面縮圖（resources\share\lora_covers\，檔名是網址雜湊，內容不會變）
+pub async fn lora_bundled_cover(State(app): State<Shared>, UrlPath(file): UrlPath<String>) -> ApiResult {
+    let path = crate::lora_cover::bundled_path(&app.paths.res, &file).ok_or_else(|| not_found("找不到這張封面"))?;
+    file_response(path, Some("max-age=604800")).await
+}
+
 /// 正在抓的名稱（同一個 LoRA 不重複抓）、抓不到的名稱和時間（30 分鐘內不再試，免得每次打開 LoRA 庫都去敲 C 站）
 static COVER_BUSY: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
 static COVER_FAILED: Mutex<Option<HashMap<String, std::time::Instant>>> = Mutex::new(None);
@@ -420,7 +426,7 @@ pub async fn lora_covers(State(app): State<Shared>, Body(body): Body) -> ApiResu
                 continue;
             }
             let m = meta.get(&n);
-            if m.and_then(|m| m["preview"].as_str()).is_some_and(|p| previews.join(basename(p)).is_file()) {
+            if m.and_then(|m| m["preview"].as_str()).is_some_and(|p| previews.join(basename(p)).is_file()) || covers.bundled(&app.paths.res, &n).is_some() {
                 continue;
             }
             let s = covers.sources(&n, m);

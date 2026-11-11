@@ -48,6 +48,7 @@ pub mod shot_spec;
 pub mod skills;
 pub mod studio;
 pub mod tagclean;
+pub mod train;
 pub mod tagger;
 pub mod tags;
 pub mod video_wf;

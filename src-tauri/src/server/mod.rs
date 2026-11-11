@@ -37,6 +37,9 @@ mod api_models;
 mod api_update;
 mod api_cache;
 mod api_diagnostics;
+mod api_train;
+mod train_ms;
+mod train_run;
 
 use crate::civitai::Civitai;
 use crate::comfy::Comfy;
@@ -487,6 +490,7 @@ pub fn router(app: Shared) -> Router {
         .route("/lora_preview/{file}", get(api_misc::lora_preview))
         .route("/api/loras/local-preview", get(api_misc::lora_local_preview))
         .route("/api/loras/covers", post(api_misc::lora_covers))
+        .route("/api/loras/bundled-cover/{file}", get(api_misc::lora_bundled_cover))
         .route("/api/features/strip", get(api_misc::feature_strip))
         .route("/api/features/strip/install", post(api_misc::feature_strip_install))
         .route("/api/civitai/bases", get(api_misc::civitai_bases))
@@ -601,6 +605,25 @@ pub fn router(app: Shared) -> Router {
         .route("/api/h3/generate", post(api_h3::generate))
         .route("/api/h3/stop", post(api_h3::stop))
         .route("/api/h3/write", post(api_h3::write))
+        .route("/api/train", get(api_train::list).post(api_train::create))
+        .route("/api/train/trainer", get(train_run::trainer))
+        .route("/api/train/trainer/install", post(train_run::trainer_install))
+        .route("/api/train/trainer/remove", post(train_run::trainer_remove))
+        .route("/api/train/{id}", get(api_train::get).post(api_train::set).delete(api_train::delete))
+        .route("/api/train/{id}/images", post(api_train::images_add).layer(DefaultBodyLimit::max(220 * 1024 * 1024)))
+        .route("/api/train/{id}/images/set", post(api_train::images_set))
+        .route("/api/train/{id}/images/remove", post(api_train::images_remove))
+        .route("/api/train/{id}/img/{file}", get(api_train::img))
+        .route("/api/train/{id}/caption", post(api_train::caption))
+        .route("/api/train/{id}/captions", post(api_train::captions_set))
+        .route("/api/train/{id}/traits", get(api_train::traits))
+        .route("/api/train/{id}/params", get(api_train::params))
+        .route("/api/train/{id}/quote", post(train_run::quote))
+        .route("/api/train/{id}/start", post(train_run::start))
+        .route("/api/train/{id}/stop", post(api_train::stop))
+        .route("/api/train/{id}/sample/{file}", get(train_run::sample))
+        .route("/api/train/{id}/compare", post(train_run::compare))
+        .route("/api/train/{id}/adopt", post(train_run::adopt))
         .route("/api/h3/chains", get(api_h3chain::list))
         .route("/api/h3/chain/save", post(api_h3chain::save))
         .route("/api/h3/chain/take/select", post(api_h3chain::select_take))
@@ -660,6 +683,8 @@ pub fn router(app: Shared) -> Router {
         .route("/sdapi/v1/samplers", get(api_sdapi::samplers))
         .route("/sdapi/v1/schedulers", get(api_sdapi::schedulers))
         .route("/sdapi/v1/upscalers", get(api_sdapi::upscalers))
+        .route("/sdapi/v1/loras", get(api_sdapi::loras))
+        .route("/sdapi/v1/refresh-loras", post(api_sdapi::refresh))
         .route("/sdapi/v1/latent-upscale-modes", get(api_sdapi::empty_list))
         .route("/sdapi/v1/sd-vae", get(api_sdapi::empty_list))
         .route("/sdapi/v1/sd-modules", get(api_sdapi::empty_list))

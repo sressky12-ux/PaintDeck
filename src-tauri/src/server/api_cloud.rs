@@ -186,7 +186,7 @@ struct Catalog {
 
 /// 開機前、讀不到實際價格時用的價格（預設那張卡）
 pub const PRICE_HINT: f64 = 0.59;
-const IMAGE: &str = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404";
+pub(super) const IMAGE: &str = "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404";
 const REST: &str = "https://rest.runpod.io/v1";
 const POD_NAME: &str = "anima-agent";
 const LLM_LOCAL: u16 = 18199;
@@ -768,6 +768,8 @@ impl Cloud {
     pub fn new(dir: &Path) -> Cloud {
         let pod = std::fs::read(dir.join("pod.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).and_then(|v| Pod::from_value(&v));
         let left = pod.as_ref().map(|p| p.kind.clone());
+        // 上次選的顯卡、閒置幾分鐘自動關（prefs.json）：2026-11-10 以前只在記憶體，重開繪匣就回預設（長片設 240 分鐘會默默變回 20）
+        let prefs = std::fs::read(dir.join("prefs.json")).ok().and_then(|b| serde_json::from_slice::<Value>(&b).ok()).unwrap_or(Value::Null);
         Cloud {
             dir: dir.to_path_buf(),
             st: Mutex::new(St {
@@ -779,9 +781,9 @@ impl Cloud {
                 },
                 pod,
                 last_used: now(),
-                idle_min: IDLE_MIN,
+                idle_min: prefs["idle_min"].as_i64().map_or(IDLE_MIN, |m| m.clamp(5, 240)),
                 loras: HashMap::new(),
-                gpu: GPUS[0].key.to_string(),
+                gpu: prefs["gpu"].as_str().filter(|g| !g.is_empty()).unwrap_or(GPUS[0].key).to_string(),
                 inputs: Default::default(),
             }),
             cfg: Mutex::new(load_cfg(dir)),
@@ -852,6 +854,16 @@ impl Cloud {
 
     fn st(&self) -> std::sync::MutexGuard<'_, St> {
         self.st.lock().unwrap_or_else(|e| e.into_inner())
+    }
+
+    /// 把選的顯卡、閒置分鐘寫進 prefs.json（寫不進去不擋事，下次開站回預設而已）
+    fn save_prefs(&self) {
+        let v = {
+            let s = self.st();
+            json!({"gpu": s.gpu, "idle_min": s.idle_min})
+        };
+        let _ = std::fs::create_dir_all(&self.dir);
+        let _ = crate::director::write_atomic(&self.dir.join("prefs.json"), &v);
     }
 
     fn cfg(&self) -> Map<String, Value> {
@@ -1197,6 +1209,11 @@ impl Cloud {
         let llm = !agent || get(format!("http://127.0.0.1:{LLM_LOCAL}/health")).await.is_ok_and(|r| r.status().is_success());
         let comfy = get(format!("http://127.0.0.1:{COMFY_LOCAL}/system_stats")).await.is_ok_and(|r| r.status().is_success());
         (llm, comfy)
+    }
+
+    /// 訓練台開「訓練機」用：同一把 RunPod 金鑰的 REST 請求
+    pub(super) async fn rp(&self, method: reqwest::Method, path: &str, body: Option<&Value>) -> Result<Value, String> {
+        self.api(method, path, body).await
     }
 
     async fn api(&self, method: reqwest::Method, path: &str, body: Option<&Value>) -> Result<Value, String> {
@@ -1798,7 +1815,8 @@ pub async fn test(State(app): State<Shared>) -> ApiResult {
 pub async fn start(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let cloud = &app.agent.cloud;
     let renting = cloud.st().pod.is_none() && cloud.provider() == "runpod";
-    let key = match b.get("gpu").and_then(Value::as_str) {
+    // 網頁選單選不到東西時會送空字串：當成沒送，用上次選的
+    let key = match b.get("gpu").and_then(Value::as_str).filter(|k| !k.is_empty()) {
         Some(k) => k.to_string(),
         None => cloud.st().gpu.clone(),
     };
@@ -1829,6 +1847,7 @@ pub async fn start(State(app): State<Shared>, Body(b): Body) -> ApiResult {
                 s.gpu = opt.key.clone();
             }
         }
+        cloud.save_prefs();
         let mut j = cloud.job.lock().unwrap_or_else(|e| e.into_inner());
         let t = CancellationToken::new();
         *j = Some(t.clone());
@@ -1882,6 +1901,7 @@ pub async fn stop(State(app): State<Shared>) -> ApiResult {
 pub async fn idle(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let m = b.get("minutes").and_then(crate::py::int).ok_or_else(|| bad("minutes 要是整數"))?.clamp(5, 240);
     app.agent.cloud.st().idle_min = m;
+    app.agent.cloud.save_prefs();
     app.agent.cloud.touch();
     ok(app.agent.cloud.status())
 }
@@ -1923,14 +1943,18 @@ async fn ensure_lora(app: &Shared, pod: &Pod, name: &str) -> Result<String, Stri
         .chars()
         .map(|c| if c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-') { c } else { '_' })
         .collect();
+    // 傳完把原本的狀態文字（「已開機幾分鐘、約多少錢」那句）放回去：2026-11-10 以前傳過一次 LoRA 就永遠變成「雲端好了」
+    let before = app.agent.cloud.st().msg.clone();
     app.agent.cloud.set(app, "ready", format!("上傳 LoRA {}…", super::basename(name)));
     let d = format!("{}/ComfyUI/models/loras", pod.dir);
-    app.agent
+    let sent = app
+        .agent
         .cloud
         .ssh(pod, &format!("cat > '{d}/{remote}.part' && mv '{d}/{remote}.part' '{d}/{remote}'"), Some(&local), Duration::from_secs(30 * 60))
-        .await?;
+        .await;
+    app.agent.cloud.set(app, "ready", if before.is_empty() { "雲端好了".to_string() } else { before });
+    sent?;
     app.agent.cloud.st().loras.insert(name.to_string(), remote.clone());
-    app.agent.cloud.set(app, "ready", "雲端好了");
     Ok(remote)
 }
 
@@ -2083,10 +2107,26 @@ pub async fn render(app: &Shared, mut q: Map<String, Value>, count: i64, token: 
     let mut ids = vec![];
     // 停止時連同這一輪還在排隊的一起刪（同一台可能還有 H3 的工作：不清整個佇列）
     let pids: Vec<String> = jobs.iter().map(|j| j.0.clone()).collect();
+    // 連續幾張等不到（不是使用者按停止）：2026-11-10 以前第一張等不到就整輪丟掉，已經畫好進圖庫的也不回報、後面的沒人收
+    let mut wait_fails = 0;
     for (k, (pid, params, info)) in jobs.into_iter().enumerate() {
         let result = wait_done(cloud, &ep, &pid, &pids[k + 1..], token, &|_| {}).await;
         if let Err(e)=&result {crate::diagnostics::failure(e);}
-        let entry=result?;
+        let entry = match result {
+            Ok(e) => e,
+            // 按了停止：wait_done 已經把後面排隊的刪掉，照舊整輪收工
+            Err(e) if token.is_cancelled() => return Err(e),
+            Err(e) => {
+                errors.push(e);
+                wait_fails += 1;
+                // 連兩張都等不到多半是整台掛了：不要每張再等 90 秒
+                if wait_fails >= 2 {
+                    break;
+                }
+                continue;
+            }
+        };
+        wait_fails = 0;
         app.diagnostics.job_event(&format!("cloud-{pid}"),"history_snapshot",&entry);
         app.diagnostics.job_event(&format!("cloud-{pid}"),if entry["status"]["status_str"]=="success" {"execution_success"} else {"execution_error"},&entry["status"]);
         if entry["status"]["status_str"] != "success" {
@@ -2459,6 +2499,8 @@ pub async fn run_graph(
     if let (Some(a), Some(b)) = (stamp("execution_start"), stamp("execution_success")) {
         let _ = app.db.run("UPDATE jobs SET started=? WHERE id=?", rusqlite::params![now() - (b - a).max(0.0) / 1000.0, job]);
     }
+    // 下載、存檔失敗也要把工作記成失敗：2026-11-10 以前直接跳出，工作永遠停在「排隊中」
+    let fetched = async {
     let mut ids = vec![];
     for out in entry["outputs"].as_object().into_iter().flat_map(|o| o.values()) {
         for im in ["images", "gifs"].into_iter().flat_map(|k| out[k].as_array().into_iter().flatten()) {
@@ -2480,6 +2522,16 @@ pub async fn run_graph(
             ids.extend(keep_output(app, &sub, &base, &bytes, params, info, &job)?);
         }
     }
+    Ok::<Vec<i64>, String>(ids)
+    }
+    .await;
+    let ids = match fetched {
+        Ok(v) => v,
+        Err(e) => {
+            let _ = app.db.set_job(&job, "error", Some(&e));
+            return Err(e);
+        }
+    };
     let _ = app.db.set_job(&job, "done", None);
     Ok((job, ids))
 }
