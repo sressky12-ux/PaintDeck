@@ -80,14 +80,14 @@ pub fn filter_tags(tags: &[String]) -> Vec<String> {
 }
 
 /// 讀圖模型填角色設定表的系統提示（欄位見 charspec::FIELDS）
-pub const SYSTEM_SPEC: &str = r#"You fill in a fixed spec sheet for ONE character (an adult) from reference images of that character. Return JSON only, no prose:
+pub const SYSTEM_SPEC: &str = r#"You fill in a fixed spec sheet for ONE character from reference images of that character. Return JSON only, no prose:
 {"fields": {"sex": F, "age": F, "hair_style": F, "hair_color": F, "face": F, "eyes": F, "skin": F, "body": F, "marks": F, "outfit": F}}
 where every F is {"zh": "<short Traditional Chinese phrase>", "en": "<short English phrase>", "tags": ["<Danbooru tag>", ...]}.
 
 Rules:
 - Only objective, visible, lasting features. Never pose, expression, background, lighting or camera.
 - Every phrase must stand alone in a prompt. en examples: "female", "looks in her mid 20s", "long straight hair reaching the waist", "orange hair", "oval face", "amber almond-shaped eyes", "fair skin", "slender build". zh examples: "女性", "外觀二十五歲上下", "及腰長直髮", "橘色頭髮", "鵝蛋臉", "琥珀色杏眼", "白皙膚色", "纖細體型".
-- age: the apparent adult age.
+- age: the apparent age.
 - marks: permanent features that identify this character (mole, scar, tattoo, freckles, heterochromia, an accessory always worn). Separate several with "; " in en and "；" in zh. Empty strings when there are none.
 - outfit: the clothes in the images (kept apart because it can change).
 - tags: real Danbooru tags, lowercase with spaces (e.g. "orange hair", "mole under eye"), 0 to 6 per field.

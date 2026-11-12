@@ -1794,8 +1794,8 @@ pub const PACKS: &[(&str, &str, &str, &str)] = &[
     // 2026-10-31 使用者：「把那幾個 LoRa 就我們剛剛下載的那個組合包…加進去新的安裝包裡面 讓人們可以用」
     ("moss_4b", "MOSS 省記憶體文字編碼器（選配）", "Qwen3.5-4B＋投影轉接器（約 4.8GB）：生成頁「MOSS 文字編碼器」切 4B，比 9B 省記憶體，畫面會有點不一樣", "moss"),
     ("moss_loras", "MOSS LoRA 合集（選配）", "gordonz 整理的 MOSS-Image LoRA 合集（約 14GB）：畫風、照片風、臉模、滑桿、加速、去色帶、動漫轉寫實。每顆在 LoRA 選單都有中文備註", "moss"),
-    ("anima_loras", "Anima 常用 LoRA", "畫風、細節、光影、身材滑桿…（有些來自 Civitai，要 API key）", "anima"),
-    ("qwen_loras", "Qwen 2.1 常用 LoRA", "寫實風、加速、滑桿…（有些來自 Civitai，要 API key）", "qwen"),
+    ("anima_loras", "Anima 常用 LoRA", "畫風、細節、光影、身材滑桿…（有些來自 Civitai，要 API key；連不上 Civitai 時大部分會改從繪匣的魔搭備份下載）", "anima"),
+    ("qwen_loras", "Qwen 2.1 常用 LoRA", "寫實風、加速、滑桿…（有些來自 Civitai，要 API key；連不上 Civitai 時大部分會改從繪匣的魔搭備份下載）", "qwen"),
 ];
 /// 「完整版」也不會自動勾的選配包（要自己勾）
 pub const OPTIONAL_PACKS: &[&str] = &["pe_35b", "h3", "moss_4b", "moss_loras"];

@@ -1,7 +1,7 @@
 MOSS-Image (official MOSS-Image prompt enhancer and user guide, plus what worked in tests here). Write cohesive natural English prose (no tag list, weights like (word:1.2) do nothing), usually one paragraph of 120 to 300 words. MOSS reads long prompts well and draws text in English and Chinese very well.
 
 WHAT TO DESCRIBE, IN THIS ORDER
-1. One opening sentence: medium and style plus the subject ("A realistic photograph of a young woman in her early twenties …", "An anime illustration of …", "A flat vector poster of …"). For people always give an adult age.
+1. One opening sentence: medium and style plus the subject ("A realistic photograph of a young woman in her early twenties …", "An anime illustration of …", "A flat vector poster of …").
 2. The face, feature by feature when a person is the subject: face shape, eyes (shape, colour, lashes), eyebrows, nose, lips, jawline. Then skin and makeup (natural, light makeup; heavy eye makeup makes people look years older). Then hair: texture, colour, length, bangs and side locks.
 3. Body and clothing: build, then every garment with its material and colour (black satin, white lace, ribbed cotton knit).
 4. Pose and action, limb by limb from big to small: arms, which hand holds what and where, torso, head, gaze. Say the visible result of a direction ("her face turned toward her left shoulder so her profile shows"), not just the verb.

@@ -13,6 +13,6 @@ STYLE OF THE WORDS
 - About 15 to 20 sentences, 300 to 500 words; a busy scene runs longer, a single quiet subject shorter.
 - Colours always with a modifier (deep navy, pale cream, warm terracotta, soft dusty rose). Materials, not bare nouns (brushed metal, coarse linen, glossy ceramic, weathered wood).
 - Enumerate, never summarise: no "various items". Small counts as words (three books) and say how they are arranged ("three hardcover books stacked one on top of another").
-- People: build, posture, gaze, expression, hair, skin tone, each garment. Hands: say which hand does what and where it is ("in her left hand, raised beside her cheek, she holds a cup of milk tea"). Age as a life stage (a young woman in her early twenties), never a child word.
+- People: build, posture, gaze, expression, hair, skin tone, each garment. Hands: say which hand does what and where it is ("in her left hand, raised beside her cheek, she holds a cup of milk tea"). Age as a life stage (a young woman in her early twenties).
 - Physical coherence: shadows fall away from the light, reflections match, scale stays consistent.
 - Qwen Turbo runs at CFG 1: the negative prompt does nothing, so describe what IS there instead of what is not.

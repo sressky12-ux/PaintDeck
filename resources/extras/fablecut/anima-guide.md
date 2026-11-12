@@ -310,6 +310,10 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 工作記在哪台：job 的 `params._node`（沒有＝main）。停止／取消／重試照這個打對台；「全停」打全部。非主節點的存檔前綴加標記（`AnimaWeb/txt2img_g1_…`、遠端 `_r…`），遠端的成品用 `/view` 抓回本機 output 再進圖庫，輸入圖會先傳上去。
 - 本機多卡只支援 N 卡；卡號照 nvidia-smi 順序（開多卡時設 `CUDA_DEVICE_ORDER=PCI_BUS_ID`），每張卡用自己的 ComfyUI 資料庫（`data\comfy_nodes\gpu<卡號>.db`），紀錄檔 `data\logs\comfyui_gpu<卡號>.log`。
 
+## 國內下載：繪匣的魔搭備份（2026-11-02）
+
+安裝精靈、`/api/models/fetch_listed` 這類下載安裝清單裡的檔時，每個檔有好幾個來源照順序試：原本的網址 → Hugging Face 鏡像 hf-mirror.com（只有 HF 的檔）→ 繪匣放在魔搭的備份（`sressky/PaintDeck-models`：模型，路徑跟安裝清單一樣；`sressky/PaintDeck-tools`：ComfyUI 免安裝包、llama.cpp、ffmpeg、Node.js）。備份成功過一次之後先用備份。對照表在 `resources\share\mirrors.json`（原始網址 → 魔搭網址），打包進程式。少數成人向 LoRA 沒有放備份。下載中心（搜尋 C 站／魔搭下載任意模型）不走這張表。
+
 ## 訓練台：煉 LoRA（2026-11-11）
 
 選單「訓練」。一個專案＝一包訓練圖＋描述＋參數，六步：專案 → 訓練圖 → 描述 → 參數 → 在哪煉 → 訓練與驗收。資料在 `<資料>\data\train\<代號>\`（`project.json`、`images\`、`captions\`、`out\`），代號是 `t`＋12 位十六進位。訓練圖一律複製進專案，原圖不動。

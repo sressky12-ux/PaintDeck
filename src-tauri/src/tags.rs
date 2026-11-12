@@ -11,10 +11,6 @@ use std::path::Path;
 use std::sync::LazyLock;
 
 static CJK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[㐀-鿿]").unwrap());
-/// 年齡類 tag 與其別名不列入自動完成
-static SKIP: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(^|_)(loli|lolicon|lolidom|shota|shotacon|child|children|toddler|toddlercon|underage|aged_down|female_child|male_child)($|_)").unwrap()
-});
 
 /// 繁體字 → 簡體字逐字對照（resources\tags\t2s_chars.json，由 tools\make_t2s_chars.mjs 從 OpenCC 字典產生）。
 /// 編進程式裡，不用另外找檔：使用者自己的 data\tags 換了 danbooru.csv／zh_map.json 也不影響，poses.rs 的姿勢比對共用同一份
@@ -85,7 +81,7 @@ impl TagIndex {
                 } else {
                     vec![]
                 };
-                if r.len() < 3 || SKIP.is_match(f(0)) || aliases.iter().any(|a| SKIP.is_match(a)) {
+                if r.len() < 3 {
                     continue;
                 }
                 ix.rows

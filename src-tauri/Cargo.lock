@@ -43,7 +43,7 @@ dependencies = [
 
 [[package]]
 name = "anima-app"
-version = "26.1111.1"
+version = "26.1112.1"
 dependencies = [
  "axum",
  "base64 0.22.1",

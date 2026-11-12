@@ -2460,8 +2460,8 @@ impl Service {
         ("caption_qwen", "看圖寫英文段落（MOSS 用）", "看一張圖寫 Qwen-Image 官方格式的英文長段落（反推用 MOSS 時）。要回 JSON：{\"rewritten_prompt\": ..., \"wh_ratio\": ...}。", &[]),
         ("adult_pose", "成人（體位）：對到姿勢時", "通用版模型只寫開頭句和人物／場景／光線，姿勢由程式插入。四個大括號佔位符會換成方向、畫風、性行為名稱、鏡頭，一定要留著；模型要回 JSON：{\"opening\": ..., \"details\": ...}。", &["{orientation}", "{style}", "{act}", "{camera}"]),
         ("adult", "成人（體位）：沒對到姿勢時", "整段交給通用版改寫，直接輸出提示詞文字。", &[]),
-        ("adult_pose_anima", "成人（體位）Anima：對到姿勢時", "Anima 用。品質、評級、人數、姿勢 tag 和姿勢原文由程式加，模型只寫外觀／場景 tag 和幾句細節。{act} 會換成姿勢名稱，要留著；模型要回 JSON：{\"tags\": ..., \"details\": ...}。小孩樣的 tag 一律會被程式拿掉。", &["{act}"]),
-        ("adult_anima", "成人（體位）Anima：沒對到姿勢時", "Anima 用。整段交給通用版寫成 tag＋英文句子，直接輸出提示詞文字。小孩樣的 tag 一律會被程式拿掉。", &[]),
+        ("adult_pose_anima", "成人（體位）Anima：對到姿勢時", "Anima 用。品質、評級、人數、姿勢 tag 和姿勢原文由程式加，模型只寫外觀／場景 tag 和幾句細節。{act} 會換成姿勢名稱，要留著；模型要回 JSON：{\"tags\": ..., \"details\": ...}。", &["{act}"]),
+        ("adult_anima", "成人（體位）Anima：沒對到姿勢時", "Anima 用。整段交給通用版寫成 tag＋英文句子，直接輸出提示詞文字。", &[]),
         ("adult_pick", "成人（體位）：讓 AI 挑姿勢", "程式會在後面自動接上姿勢目錄（一行一筆 id｜中文｜英文）；模型要回 JSON：{\"id\": \"姿勢編號或 none\"}。", &[]),
         ("agent", "生圖助手：工作說明", "助手的角色、每輪要回的三種 JSON（generate／finish／reply）和規則。{model_guide} 換成下面那份寫法、{sizes} 換成尺寸、{loras} 換成 LoRA 清單，一定要留著；JSON 格式改了程式會讀不出來。改完下一輪就生效。", &["{model_guide}", "{sizes}", "{loras}"]),
         ("agent_prompt", "生圖助手：只寫詞模式的工作說明", "助手切到「只寫詞」時用：不畫圖，只回提示詞卡。{target} 換成寫法的用途、{guide} 換成那份寫法、{sizes} 換成尺寸，一定要留著；模型要回 JSON：{\"action\":\"prompt\", …} 或 {\"action\":\"reply\", …}。", &["{target}", "{guide}", "{sizes}"]),
@@ -3551,7 +3551,8 @@ impl Service {
                         pose = Some(p);
                     }
                 }
-                if pose.is_none() && how.is_empty() && !poses.list.is_empty() && crate::poses::looks_sexual(idea) {
+                // 護欄已拆：不再用 looks_sexual 擋，成人改寫模式沒對到體位就直接讓助手挑
+                if pose.is_none() && how.is_empty() && !poses.list.is_empty() {
                     em.emit("status", json!({"phase": "pick", "msg": "從姿勢大彙整挑姿勢…"})).await?;
                     let msgs = json!([
                         {"role": "system", "content": format!("{sys_pick}{}", poses.catalog())},
@@ -3599,7 +3600,7 @@ impl Service {
                                     };
                                     // 沒有逗號＝tag 黏成一串分不開：第一次重寫，第二次就只用程式加的 tag
                                     let tags = if tags.contains(',') { tags } else if attempt == 0 { return None } else { String::new() };
-                                    return Some(p.assemble_anima(&tags, &de, idea));
+                                    return Some(p.assemble_anima(&tags, &de));
                                 }
                                 let op = o.get("opening").map(str_of).filter(|s| !s.trim().is_empty())?;
                                 Some(p.assemble(&op, &de))
@@ -3626,7 +3627,7 @@ impl Service {
                             .await?;
                         let text = THINK.replace_all(&raw, "");
                         let text = FENCE.replace_all(strip(&text), "");
-                        let text = if anima { crate::poses::safe_anima(text.trim(), idea) } else { crate::poses::adultify(text.trim()) };
+                        let text = if anima { crate::poses::safe_anima(text.trim()) } else { crate::poses::adultify(text.trim()) };
                         r.insert("pose".into(), json!({"id": null, "how": if how.is_empty() { "沒對到姿勢".to_string() } else { how }}));
                         let empty = text.is_empty();
                         (if empty { idea.to_string() } else { text }, String::new(), t, empty)

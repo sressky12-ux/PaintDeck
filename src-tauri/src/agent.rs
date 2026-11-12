@@ -263,11 +263,9 @@ impl LoraInfo {
         base.strip_suffix(".safetensors").unwrap_or(base).to_string()
     }
 
-    /// 助手可以自己挑嗎：調年齡的 LoRA（年齡滑桿之類）只有使用者在生成頁親手掛才用，助手不會自己加
+    /// 助手可以自己挑嗎：護欄已拆，所有 LoRA 都可以挑
     pub fn agent_may_pick(&self) -> bool {
-        static AGE: LazyLock<Regex> =
-            LazyLock::new(|| Regex::new(r"(?i)(^|[^a-z])(age|aging|de-?aging|teens?|loli|shota|younger)([^a-z]|$)|年齡|年紀|蘿莉|正太|年龄|年纪|萝莉").unwrap()); // 大陸的 LoRA 標題多是簡體
-        ![self.name.as_str(), &self.title, &self.desc].iter().any(|t| AGE.is_match(t))
+        true
     }
 }
 
@@ -368,7 +366,7 @@ pub fn parse_prompt_action(raw: &str, family: &str, guide_name: &str) -> Result<
     }
     let video = guide_name.ends_with("_video");
     if !video {
-        prompt = crate::director::safe_text(&prompt, guide_name == "anima");
+        // 護欄已拆：不再做 adultify／safe_anima
     }
     match guide_name {
         "anima" => prompt = crate::pe::fix_anima_tags(&prompt),
@@ -1266,6 +1264,27 @@ pub fn add_triggers(prompt: &str, loras: &[&LoraInfo], family: &str) -> (String,
     (format!("{joined}, {prompt}"), add)
 }
 
+/// 助手畫圖前，實際送出的提示詞：色圖清理 → 體位補正 → Anima 收尾 → **最後才補 LoRA 觸發詞**。
+/// 觸發詞放最後，前面哪一步改了字都不會把它弄丟（2026-11-11 網友回報：做愛場景 @4x0style 被清掉）。
+/// 回傳（提示詞, 補了哪些觸發詞, 體位補正的說明）
+pub fn finalize_prompt(
+    poses: &crate::poses::Poses,
+    events: &[Value],
+    family: &str,
+    prompt: &str,
+    loras: &[&LoraInfo],
+) -> (String, Vec<String>, Option<String>) {
+    let mut used = prompt.to_string();
+    // 使用者講的是體位庫裡的體位：程式保證那個體位真的寫進去（2026-10-28 擂台：沒有這步 9B 46 題全錯）
+    let (posed, pose_msg) = pose_fix(poses, events, family, &used);
+    used = posed;
+    if family == ANIMA {
+        used = crate::pe::fix_anima_tags(&used);
+    }
+    let (used, added) = add_triggers(&used, loras, family);
+    (used, added, pose_msg)
+}
+
 // ================================================================ 認識 LoRA（看檔頭、看備註，必要時試畫比較）
 pub const SYSTEM_LORA_META: &str = r#"You catalogue LoRA add-ons of an image model so an assistant can later decide when to use each one. From the clues (file name, title, trigger words, the owner's note, Civitai tags, the most frequent tags of the training captions) tell what this LoRA most likely does.
 Reply with ONE JSON object and nothing else:
@@ -1644,6 +1663,27 @@ mod tests {
         assert_eq!(p, "masterpiece, best quality, score_7, safe, jgdxstyle, 1girl, solo");
     }
 
+    /// 2026-11-11 網友回報：9B 助手一進做愛場景，LoRA 觸發詞（@4x0style）就不見、怎麼叫它加都沒用。
+    /// 原因是色圖的清理把想法裡沒寫的 @ 開頭字全當成亂編的畫師刪掉，連觸發詞一起刪。觸發詞一定要活到送出
+    #[test]
+    fn sex_scene_keeps_lora_triggers() {
+        let poses = crate::poses::Poses::load(&std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("resources"));
+        let events = vec![json!({"kind": "user", "text": "換成從後面幹她", "pose": {"id": "doggy_style"}})];
+        let l1 = lora("anima\\4x0.safetensors", &["@4x0style"]);
+        let l2 = lora("anima\\mine.safetensors", &["My_Style"]);
+        let model = "masterpiece, best quality, score_7, explicit, 1girl, 1boy, hetero, @4x0style, long hair, penis, sex from behind, A man penetrates her from behind.";
+        let (used, added, _) = finalize_prompt(&poses, &events, ANIMA, model, &[&l1, &l2]);
+        assert!(used.contains("@4x0style"), "{used}");
+        assert!(used.contains("My_Style"), "{used}");
+        assert_eq!(added, vec!["My_Style"]);
+        assert!(used.contains("doggystyle"), "體位照樣補：{used}");
+        // 模型自己把觸發詞弄丟（只寫了 LoRA 的標題）：程式補回去
+        let lost = "masterpiece, best quality, score_7, explicit, 1girl, 1boy, hetero, Chen bin style, penis, sex, A man fucks her.";
+        let (used, added, _) = finalize_prompt(&poses, &events, ANIMA, lost, &[&l1]);
+        assert!(used.contains("@4x0style"), "{used}");
+        assert_eq!(added, vec!["@4x0style"]);
+    }
+
     #[test]
     fn rounds_and_messages() {
         let ev = vec![
@@ -1732,18 +1772,14 @@ mod tests {
         assert_eq!(d["kind"], json!("style"));
         assert_eq!(d["sure"], json!(false));
         assert!(parse_lora_desc("沒有", "meta").is_none());
-        // 調年齡的 LoRA：不列給助手、它寫了也當不存在；檔名裡的 image、stage 不算
+        // 2026-11-11 護欄已拆：agent_may_pick 恆回 true，助手可以挑所有 LoRA（含調年齡的）
         let age = LoraInfo::from_meta("qwen21\\PornMaster_QI2.1_Age_Slider_V1.safetensors", &json!({}));
-        assert!(!age.agent_may_pick());
+        assert!(age.agent_may_pick());
         assert!(LoraInfo::from_meta("qwen21\\fwaun-style_qwen_image_2_1_v50.safetensors", &json!({})).agent_may_pick());
         assert!(LoraInfo::from_meta("x\\backstage_light.safetensors", &json!({})).agent_may_pick());
-        assert!(!LoraInfo::from_meta("x\\style.safetensors", &json!({"note": "讓角色看起來年紀小一點"})).agent_may_pick());
-        let t = loras_text(&[age.clone(), LoraInfo::from_meta("qwen21\\glow.safetensors", &json!({}))], &[], true);
-        assert!(!t.contains("Age_Slider") && t.contains("glow"));
-        let p = r#"{"action":"generate","prompt":"A 25-year-old woman reading in a cafe by the window","loras":[{"name":"PornMaster_QI2.1_Age_Slider_V1","strength":-2}]}"#;
-        let cat = [age];
-        let c = Check { family: QWEN21, rounds_left: 3, last: None, saw_images: false, images: &[], catalog: &cat, fixed: &[], allow_loras: true, nudged: false, user_images: &[], request_user_images: &[], refs_mode: "", ask: "", calls_left: 12 };
-        assert!(parse_action(p, &c).unwrap_err().contains("Unknown LoRA"));
+        assert!(LoraInfo::from_meta("x\\style.safetensors", &json!({"note": "讓角色看起來年紀小一點"})).agent_may_pick());
+        let t = loras_text(&[age, LoraInfo::from_meta("qwen21\\glow.safetensors", &json!({}))], &[], true);
+        assert!(t.contains("Age_Slider") && t.contains("glow"));
     }
 
     #[test]

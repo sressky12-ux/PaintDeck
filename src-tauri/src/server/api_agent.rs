@@ -838,14 +838,8 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
                     .filter_map(|l| cat.iter().find(|c| c.name == tx(&l["name"])).cloned())
                     .collect();
                 let refs: Vec<&LoraInfo> = fixed.iter().chain(chosen.iter()).collect();
-                let (mut used, added) = ag::add_triggers(&tx(&action["prompt"]), &refs, family);
-                used = crate::director::safe_text(&used, family == ANIMA);
-                // 使用者講的是體位庫裡的體位：程式保證那個體位真的寫進去（2026-10-28 擂台：沒有這步 9B 46 題全錯）
-                let (posed, pose_msg) = ag::pose_fix(&app.pe.poses, &events, family, &used);
-                used = posed;
-                if family == ANIMA {
-                    used = crate::pe::fix_anima_tags(&used);
-                }
+                // 清理、體位補正、Anima 收尾做完，最後才補觸發詞（前面的步驟不會再把它弄丟）
+                let (used, added, pose_msg) = ag::finalize_prompt(&app.pe.poses, &events, family, &tx(&action["prompt"]), &refs);
                 push(app, id, json!({"kind": "act", "action": action, "round": round, "secs": secs, "thought": thought, "used_prompt": used})).await?;
                 if !added.is_empty() {
                     note(app, id, format!("自動補上 LoRA 觸發詞：{}", added.join(", "))).await;

@@ -19,6 +19,7 @@
 //! 設定存在 config.json 旁邊的 net.json：{"proxy": "auto"|"off"|"manual", "proxy_url": "…", "hf": "auto"|"hf"|"mirror"}
 use reqwest::Url;
 use serde_json::{json, Value};
+use std::collections::HashMap;
 use std::net::{IpAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -433,7 +434,7 @@ pub fn hf_mirror_active() -> bool {
 /// 同一個檔可以從哪幾個網址下載（照順序試）。只換主機，路徑一樣，下載完照樣核對大小
 pub fn candidates(url: &str) -> Vec<String> {
     let Ok(u) = Url::parse(url) else { return vec![url.to_string()] };
-    match u.host_str() {
+    let list = match u.host_str() {
         Some(HF) => {
             let mut m = u.clone();
             let _ = m.set_host(Some(HF_MIRROR));
@@ -449,13 +450,55 @@ pub fn candidates(url: &str) -> Vec<String> {
             vec![url.to_string(), format!("{NODE_MIRROR}{}", &u.path()["/dist".len()..])]
         }
         _ => vec![url.to_string()],
+    };
+    with_backup(list, backup_in(mirrors(), url), MS_BACKUP_ON.load(Ordering::Relaxed))
+}
+
+/// 繪匣自己放在魔搭的備份（2026-11-02 使用者：「全部該用的模型 工作流啥的 能搬到我的魔塔帳號就般過去」）：
+/// 原始網址 → 魔搭網址，打包進程式（resources\share\mirrors.json，由 小克工作區\測試區\ms_mirror\make_mirrors.py 產生）。
+/// 大陸沒梯子時 GitHub、Civitai 常常連不上：原本的來源都不行才用它；成功過一次之後先用它
+pub fn mirrors() -> &'static HashMap<String, String> {
+    static M: LazyLock<HashMap<String, String>> =
+        LazyLock::new(|| serde_json::from_str(include_str!("../../resources/share/mirrors.json")).unwrap_or_default());
+    &M
+}
+
+/// 魔搭備份成功過一次（原本的來源連不上）：之後的下載先用備份
+static MS_BACKUP_ON: AtomicBool = AtomicBool::new(false);
+
+/// 網址在備份表裡的魔搭網址。Civitai 的網址會被加上 token 參數（金鑰），查表時拿掉
+fn backup_in<'a>(table: &'a HashMap<String, String>, url: &str) -> Option<&'a str> {
+    if let Some(m) = table.get(url) {
+        return Some(m);
     }
+    let mut u = Url::parse(url).ok()?;
+    let pairs: Vec<(String, String)> = u.query_pairs().filter(|(k, _)| k != "token").map(|(k, v)| (k.into_owned(), v.into_owned())).collect();
+    u.set_query(None);
+    if !pairs.is_empty() {
+        u.query_pairs_mut().extend_pairs(pairs);
+    }
+    table.get(u.as_str()).map(String::as_str)
+}
+
+/// 候選來源加上魔搭備份：平常排最後，prefer＝排第一
+fn with_backup(mut list: Vec<String>, backup: Option<&str>, prefer: bool) -> Vec<String> {
+    if let Some(b) = backup.filter(|b| !list.iter().any(|x| x == b)) {
+        if prefer {
+            list.insert(0, b.to_string());
+        } else {
+            list.push(b.to_string());
+        }
+    }
+    list
 }
 
 /// 下載成功時記下用的是哪個來源：Hugging Face 改用鏡像成功，之後就先用鏡像
 pub fn used(url: &str) {
     if Url::parse(url).ok().and_then(|u| u.host_str().map(|h| h == HF_MIRROR)).unwrap_or(false) && !HF_MIRROR_ON.swap(true, Ordering::Relaxed) {
         eprintln!("[網路] Hugging Face 連不上、改用 hf-mirror.com 成功：之後的下載先用鏡像");
+    }
+    if mirrors().values().any(|m| m == url) && !MS_BACKUP_ON.swap(true, Ordering::Relaxed) {
+        eprintln!("[網路] 原本的來源連不上、改用繪匣在魔搭的備份成功：之後的下載先用備份");
     }
 }
 
@@ -713,5 +756,26 @@ mod tests {
             "https://registry.npmmirror.com/-/binary/node/v24.21.0/node-v24.21.0-win-x64.zip"
         );
         assert_eq!(candidates("https://github.com/x/y.zip").len(), 1);
+    }
+
+    /// 繪匣在魔搭的備份：原始網址（Civitai 的 token 參數不算）找得到就排在最後；備份成功過一次之後排第一
+    #[test]
+    fn modelscope_backup() {
+        let t: HashMap<String, String> = [
+            ("https://civitai.com/api/download/models/1?fileId=2".to_string(), "https://www.modelscope.cn/models/u/m/resolve/master/loras/a.safetensors".to_string()),
+            ("https://github.com/x/y.zip".to_string(), "https://www.modelscope.cn/models/u/t/resolve/master/y.zip".to_string()),
+        ]
+        .into_iter()
+        .collect();
+        assert_eq!(backup_in(&t, "https://civitai.com/api/download/models/1?fileId=2&token=SECRET"), Some("https://www.modelscope.cn/models/u/m/resolve/master/loras/a.safetensors"));
+        assert_eq!(backup_in(&t, "https://civitai.com/api/download/models/1?token=SECRET&fileId=2"), Some("https://www.modelscope.cn/models/u/m/resolve/master/loras/a.safetensors"));
+        assert_eq!(backup_in(&t, "https://github.com/x/y.zip"), Some("https://www.modelscope.cn/models/u/t/resolve/master/y.zip"));
+        assert_eq!(backup_in(&t, "https://github.com/x/z.zip"), None);
+        let base = vec!["https://github.com/x/y.zip".to_string()];
+        assert_eq!(with_backup(base.clone(), Some("ms"), false), vec!["https://github.com/x/y.zip", "ms"]);
+        assert_eq!(with_backup(base.clone(), Some("ms"), true), vec!["ms", "https://github.com/x/y.zip"]);
+        assert_eq!(with_backup(base, None, true), vec!["https://github.com/x/y.zip"]);
+        // 表本身讀得出來（打包進程式的 resources\share\mirrors.json）
+        let _ = mirrors().len();
     }
 }

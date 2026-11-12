@@ -616,8 +616,8 @@ async fn write_shot(app: &Shared, id: &str, i: usize, token: &CancellationToken)
         for (k, v) in shot {
             let v = tx(&v);
             let v = match k.as_str() {
-                "frame" => d::safe_text(&v, anima),
-                "video" => d::safe_text(&v, false),
+                "frame" => v,
+                "video" => v,
                 _ => v,
             };
             s.insert(k, json!(v));

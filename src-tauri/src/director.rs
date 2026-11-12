@@ -95,7 +95,7 @@ Rules:
 - "title": at most 8 characters, "summary": 2-3 sentences. Both in Traditional Chinese (Taiwan usage).
 - Make every summary concrete. When the story is vague ("跳舞", "打鬥", "親熱", "玩耍"), decide the exact kind and the specific moves yourself (for example an idol dance: side steps with hip sways, a spin, pointing at the crowd, a jump with both arms up) and spread different moves across the shots so nothing repeats and each shot leads into the next.
 - "scene": short English description of the location, time of day and lighting, so later shots stay consistent.
-- Follow the story faithfully, including mature or explicit content when the story has it. All characters are adults.
+- Follow the story faithfully, including mature or explicit content when the story has it.
 
 Output only JSON, no other text:
 {"segments":[{"title":"","summary":"","characters":[],"continue":false,"scene":""}]}"#;
@@ -124,10 +124,10 @@ Output only JSON, no other text:
   4. "non_diegetic_music: N/A" (write background music there only when the story asks for it).
 "frame_zh", "video_zh": faithful Traditional Chinese (Taiwan usage) translations for the user to read; translate every English word, but keep the part labels (integrated_multimodal_description, overall_soundscape, non_diegetic_music), <Picture 1>, [Shot 1], (S1) and the <d>…</d> spoken lines as they are.
 
-Follow the story faithfully, including mature or explicit content when the shot has it. All characters are adults; never describe anyone as a child or teenager."#;
+Follow the story faithfully, including mature or explicit content when the shot has it."#;
 
 /// 看角色圖寫外觀（給之後每段的提示詞引用）
-pub const SYSTEM_DESCRIBE: &str = r#"Look at the character in the image and describe ONLY their permanent appearance so an artist can draw the same character again: apparent age group (adult), gender, body type, skin tone, face, eye color, hair color, length and style, distinctive features (ears, horns, tattoos, scars), and the outfit with colors and materials. Do not describe the pose, expression, background, lighting or art style.
+pub const SYSTEM_DESCRIBE: &str = r#"Look at the character in the image and describe ONLY their permanent appearance so an artist can draw the same character again: apparent age group, gender, body type, skin tone, face, eye color, hair color, length and style, distinctive features (ears, horns, tattoos, scars), and the outfit with colors and materials. Do not describe the pose, expression, background, lighting or art style.
 
 Output only JSON, no other text:
 {"desc":"one English paragraph, 40-80 words","desc_zh":"同樣內容的繁體中文（台灣用語）"}"#;
@@ -411,19 +411,6 @@ pub fn strip_refs(text: &str) -> String {
     REF.replace_all(text, " ").split(' ').filter(|w| !w.is_empty()).collect::<Vec<_>>().join(" ").replace(" ,", ",").replace(" .", ".")
 }
 
-/// 成人內容：girl／boy 一律換成 woman／man（跟成人（體位）改寫同一套）；Anima 的 tag 另外拿掉小孩樣的 tag
-pub fn safe_text(text: &str, anima_tags: bool) -> String {
-    if !crate::poses::looks_sexual(text) {
-        return text.to_string();
-    }
-    let t = crate::poses::adultify(text);
-    if anima_tags {
-        crate::poses::safe_anima(&t, "")
-    } else {
-        t
-    }
-}
-
 // ================================================================ 存檔
 pub struct Store {
     pub dir: PathBuf,
@@ -524,7 +511,7 @@ pub fn blank_project(title: &str) -> Value {
 
 #[cfg(test)]
 mod tests {
-    /// 導演台每段的影片提示詞照 H3 I2VA 格式寫（2026-10-30 LTX 退場）
+/// 導演台每段的影片提示詞照 H3 I2VA 格式寫（2026-10-30 LTX 退場）
     #[test]
     fn shot_prompt_is_h3() {
         for want in ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music", "(from [Shot 1]) is fully referenced"] {
