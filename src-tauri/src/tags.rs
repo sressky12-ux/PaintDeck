@@ -88,23 +88,31 @@ impl TagIndex {
                     .push((f(0).to_string(), int0(f(1)), int0(f(2)), aliases));
             }
         }
-        if let Ok(text) = std::fs::read_to_string(dir.join("zh_map.json")) {
-            if let Ok(Value::Array(pairs)) = serde_json::from_str::<Value>(&text) {
-                for p in pairs {
-                    let (Some(zh), Some(en)) = (p[0].as_str(), p[1].as_str()) else {
-                        continue;
-                    };
-                    let en = en.replace(' ', "_");
-                    ix.zh
-                        .entry(en.to_lowercase())
-                        .or_insert_with(|| zh.to_string());
-                    ix.zh_fold.push(fold_zh(zh));
-                    ix.zh_rows.push((zh.to_string(), en));
-                }
-            }
-        }
+        ix.add_zh_file(&dir.join("zh_map.json"));
         ix.count = ix.rows.iter().map(|(t, _, c, _)| (t.clone(), *c)).collect();
         ix
+    }
+
+    /// 讀一份中文對照（[["中文", "tag"], ...]）接在現有的後面；同一個 tag 已經有中文就不蓋。
+    /// zh_map.json 之外，開站時再接 resources\tags\weilin\zh_extra.json（WeiLin 詞庫的 danbooru 翻譯，MIT，2026-11-17）
+    pub fn add_zh_file(&mut self, path: &Path) {
+        let Ok(text) = std::fs::read_to_string(path) else {
+            return;
+        };
+        let Ok(Value::Array(pairs)) = serde_json::from_str::<Value>(&text) else {
+            return;
+        };
+        for p in pairs {
+            let (Some(zh), Some(en)) = (p[0].as_str(), p[1].as_str()) else {
+                continue;
+            };
+            let en = en.replace(' ', "_");
+            self.zh
+                .entry(en.to_lowercase())
+                .or_insert_with(|| zh.to_string());
+            self.zh_fold.push(fold_zh(zh));
+            self.zh_rows.push((zh.to_string(), en));
+        }
     }
 
     /// 一個 tag 的中文對照（反推視窗用）；對照表是簡轉繁，「头发」會被轉成「頭發」，跟頭髮有關的改回「髮」。
@@ -427,5 +435,42 @@ mod tests {
         ] {
             assert_eq!(ix.zh_of(tag).as_deref(), Some(zh), "{tag}");
         }
+    }
+
+    /// WeiLin 的翻譯接在後面：對照表沒有的 tag 用中文找得到，原本就有中文的不被蓋掉；簡體輸入也找得到
+    #[test]
+    fn weilin_extra_fills_missing_tags_only() {
+        let mut ix = index();
+        let before = ix.zh_of("long_hair");
+        assert!(!ix.search("芙莉蓮", 5).iter().any(|r| r["tag"] == "frieren"));
+        let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("resources").join("tags");
+        ix.add_zh_file(&dir.join("weilin").join("zh_extra.json"));
+        assert_eq!(ix.zh_of("long_hair"), before);
+        assert!(ix.search("芙莉蓮", 5).iter().any(|r| r["tag"] == "frieren"));
+        assert!(ix.search("芙莉莲", 5).iter().any(|r| r["tag"] == "frieren"));
+        assert!(ix.zh_of("frieren").is_some_and(|z| z.starts_with("芙莉蓮")));
+        // WeiLin 原本把 Furina 翻成「芙莉蓮」（AI 編錯），校對後是芙寧娜，搜「芙莉蓮」不該跳出她
+        assert!(ix.zh_of("furina_(genshin_impact)").is_some_and(|z| z.starts_with("芙寧娜")));
+        assert!(!ix.search("芙莉蓮", 10).iter().any(|r| r["tag"] == "furina (genshin impact)"));
+    }
+
+    /// 分類詞庫檔：結構對、每條都有字
+    #[test]
+    fn weilin_library_shape() {
+        let p = Path::new(env!("CARGO_MANIFEST_DIR")).join("../resources/tags/weilin/library.json");
+        let v: Value = serde_json::from_str(&std::fs::read_to_string(p).unwrap()).unwrap();
+        let groups = v["groups"].as_array().unwrap();
+        assert!(groups.len() >= 10);
+        assert_eq!(groups[0]["name"], "人物");
+        let n: usize = groups
+            .iter()
+            .flat_map(|g| g["subs"].as_array().unwrap())
+            .map(|s| {
+                let t = s["tags"].as_array().unwrap();
+                assert!(t.iter().all(|x| !x[0].as_str().unwrap().trim().is_empty()));
+                t.len()
+            })
+            .sum();
+        assert!(n > 4000, "{n}");
     }
 }

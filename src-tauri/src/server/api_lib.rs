@@ -122,7 +122,37 @@ pub fn clean_asset(kind: &str, data: &Value) -> Value {
     if !refmod.is_empty() {
         out.insert("refmod".into(), json!({"file": refmod, "name": text(data["refmod"].get("name"), 80)}));
     }
+    // 角色卡綁的 LoRA（2026-11-16，漫畫台加角色時自動掛）：[{name, strength, trigger}]，最多 4 個。
+    // 有送就照送的（空陣列＝拿掉），沒送由 save 沿用舊的
+    if kind == "char" {
+        if let Some(list) = data.get("loras").and_then(Value::as_array) {
+            out.insert("loras".into(), json!(clean_loras(list)));
+        }
+    }
     Value::Object(out)
+}
+
+/// LoRA 名字能不能送：ComfyUI 清單裡的相對路徑（Windows 上是反斜線，原樣保留，不然 ComfyUI 對不到）；不准 ..、磁碟代號、絕對路徑
+pub(super) fn safe_lora_name(name: &str) -> bool {
+    let n = name.replace('\\', "/");
+    !n.is_empty() && !n.starts_with('/') && !n.contains(':') && !n.split('/').any(|p| p == "..")
+}
+
+/// 角色卡綁的 LoRA：名字見 safe_lora_name，強度夾在 -3～3，觸發詞 300 字
+fn clean_loras(list: &[Value]) -> Vec<Value> {
+    let mut out: Vec<Value> = vec![];
+    for l in list {
+        let name = text(l.get("name"), 300);
+        if !safe_lora_name(&name) || out.iter().any(|o| o["name"] == name.as_str()) {
+            continue;
+        }
+        let strength = l.get("strength").and_then(Value::as_f64).unwrap_or(0.8).clamp(-3.0, 3.0);
+        out.push(json!({"name": name, "strength": (strength * 100.0).round() / 100.0, "trigger": text(l.get("trigger"), 300)}));
+        if out.len() >= 4 {
+            break;
+        }
+    }
+    out
 }
 
 /// 資產的圖片、聲音清單以伺服器上的為準（加檔、拿檔只走 /api/assets/*）：送來的清單只拿來改用途。
@@ -237,6 +267,12 @@ pub async fn save(State(app): State<Shared>, Body(body): Body) -> ApiResult {
                 Some(r) => obj.insert("refmod".into(), r.clone()),
                 None => obj.remove("refmod"),
             };
+            // 綁的 LoRA：這次沒送（導演台之類只改外觀）就留舊的
+            if it.kind == "char" && !obj.contains_key("loras") {
+                if let Some(l) = old.and_then(|d| d.get("loras")).filter(|l| l.is_array()) {
+                    obj.insert("loras".into(), l.clone());
+                }
+            }
         }
         // cid 是既有角色的身分，不能因只更新描述而換號。
         if let Some(cid) = old.and_then(|d| d["cid"].as_str()).filter(|s| !s.is_empty()) {
@@ -467,6 +503,28 @@ mod tests {
         // 場景不收設定表
         let r = body(save(State(app.clone()), Body(json!({"kind": "scene", "name": "教室", "data": {"spec": spec}}))).await.unwrap()).await;
         assert!(r["data"].get("spec").is_none());
+    }
+
+    #[tokio::test]
+    async fn char_loras_are_cleaned_and_kept_when_not_sent() {
+        let root = std::env::temp_dir().join(format!("anima_char_lora_{}", crate::director::new_id()));
+        let paths = crate::paths::Paths::new(&root, &root.join("web"), Some(root.join("comfy")));
+        let app = super::super::start(paths, "http://127.0.0.1:9").await.unwrap();
+        let loras = json!([{"name": "moss\\lin.safetensors", "strength": 9, "trigger": "lin_v1"}, {"name": "..\\evil.safetensors"},
+                           {"name": "C:/x.safetensors"}, {"name": "moss\\lin.safetensors"}, {"name": "b.safetensors"}]);
+        let r = body(save(State(app.clone()), Body(json!({"kind": "char", "name": "Lin", "data": {"loras": loras}}))).await.unwrap()).await;
+        let id = r["id"].as_i64().unwrap();
+        // 反斜線原樣保留（Windows 的 ComfyUI 清單就是這樣寫）
+        assert_eq!(r["data"]["loras"], json!([{"name": "moss\\lin.safetensors", "strength": 3.0, "trigger": "lin_v1"},
+                                              {"name": "b.safetensors", "strength": 0.8, "trigger": ""}]));
+        // 只改外觀沒送 loras：留著；送空陣列：拿掉
+        let r = body(save(State(app.clone()), Body(json!({"id": id, "data": {"look_en": "x"}}))).await.unwrap()).await;
+        assert_eq!(r["data"]["loras"].as_array().map(Vec::len), Some(2));
+        let r = body(save(State(app.clone()), Body(json!({"id": id, "data": {"loras": []}}))).await.unwrap()).await;
+        assert_eq!(r["data"]["loras"], json!([]));
+        // 場景不收
+        let r = body(save(State(app.clone()), Body(json!({"kind": "scene", "name": "教室", "data": {"loras": loras}}))).await.unwrap()).await;
+        assert!(r["data"].get("loras").is_none());
     }
 
     #[test]

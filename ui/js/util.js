@@ -131,4 +131,4 @@ export const isVideo = (rec) => /\.(mp4|webm|mkv)$/i.test(rec?.filename || "");
 /** 只對圖片有用的動作 */
 // 只有影片才有的動作（拆幀台）
 export const VIDEO_ONLY_ACTS = ["frames"];
-export const IMAGE_ONLY_ACTS = ["reuse", "img2img", "inpaint", "multiref", "upscale", "strip", "sheet", "charsheet", "tagger", "video", "lib", "asset", "play"];
+export const IMAGE_ONLY_ACTS = ["reuse", "img2img", "inpaint", "multiref", "upscale", "strip", "sheet", "charsheet", "tagger", "video", "lib", "asset", "lorapreview", "play"];

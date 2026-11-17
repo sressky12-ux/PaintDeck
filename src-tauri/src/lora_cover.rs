@@ -140,6 +140,66 @@ pub fn file_name(name: &str, meta: Option<&Value>, previews: &Path) -> String {
     format!("{stem}_{h}.jpg")
 }
 
+// ---------------------------------------------------------------- 使用者自己換的預覽圖（2026-11-17 網友：「能不能加入一個給 lora 換預覽圖」）
+/// 換上去的預覽圖存進 previews\ 的檔名：`custom_<名稱雜湊 8 碼>.jpg`。同一個 LoRA 換幾次都蓋同一個檔（網頁用 preview_t 防快取）
+pub fn custom_file_name(name: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let h: String = Sha256::digest(name.as_bytes()).iter().take(4).map(|b| format!("{b:02x}")).collect();
+    format!("custom_{h}.jpg")
+}
+
+/// previews\ 裡這個檔是不是使用者換上去的（還原時只刪這種，C 站抓的原圖不動）
+pub fn is_custom_file(file: &str) -> bool {
+    let f = crate::server::basename(file);
+    f.len() == "custom_00000000.jpg".len() && f.starts_with("custom_") && f.ends_with(".jpg") && f[7..15].bytes().all(|b| b.is_ascii_hexdigit())
+}
+
+/// 預覽圖縮成長邊最多 640 的 JPEG（品質 88）；只縮不放，有透明的墊白底（JPEG 沒有透明，不墊會變黑）
+pub fn custom_thumb(raw: &[u8]) -> Result<Vec<u8>, String> {
+    let img = image::load_from_memory(raw).map_err(|_| "讀不出這張圖：請用 PNG、JPG 或 WebP".to_string())?;
+    let img = if img.width() > 640 || img.height() > 640 { img.thumbnail(640, 640) } else { img };
+    let mut rgb = image::RgbImage::new(img.width(), img.height());
+    for (x, y, p) in img.to_rgba8().enumerate_pixels() {
+        let a = p[3] as u32;
+        let mix = |c: u8| ((c as u32 * a + 255 * (255 - a)) / 255) as u8;
+        rgb.put_pixel(x, y, image::Rgb([mix(p[0]), mix(p[1]), mix(p[2])]));
+    }
+    let mut out = Vec::new();
+    image::codecs::jpeg::JpegEncoder::new_with_quality(&mut out, 88).encode_image(&rgb).map_err(|e| format!("存預覽圖失敗：{e}"))?;
+    Ok(out)
+}
+
+/// 換預覽圖後的 LoRA 資訊：本來有的（C 站抓的、下載時存的）預覽圖記到 preview_orig，還原時換回去
+pub fn with_custom_preview(meta: &mut Map<String, Value>, file: &str, nsfw: i64, now: f64) {
+    if let Some(old) = meta.get("preview").and_then(Value::as_str).filter(|p| !is_custom_file(p)).map(str::to_string) {
+        meta.insert("preview_orig".into(), Value::from(old));
+        meta.insert("preview_orig_nsfw".into(), meta.get("preview_nsfw").cloned().unwrap_or(Value::Null));
+    }
+    meta.insert("preview".into(), Value::from(file));
+    meta.insert("preview_nsfw".into(), Value::from(nsfw));
+    meta.insert("preview_custom".into(), Value::from(true));
+    meta.insert("preview_t".into(), Value::from(now));
+}
+
+/// 還原：拿掉換上去的預覽圖，有 preview_orig 就換回原本那張。回傳要刪的自訂檔名（沒有就 None）
+pub fn without_custom_preview(meta: &mut Map<String, Value>) -> Option<String> {
+    let custom = meta.get("preview").and_then(Value::as_str).filter(|p| is_custom_file(p)).map(str::to_string);
+    if custom.is_some() {
+        meta.remove("preview");
+        meta.remove("preview_nsfw");
+    }
+    if let Some(orig) = meta.remove("preview_orig") {
+        meta.insert("preview".into(), orig);
+        match meta.remove("preview_orig_nsfw") {
+            Some(Value::Null) | None => {}
+            Some(n) => { meta.insert("preview_nsfw".into(), n); }
+        }
+    }
+    meta.remove("preview_custom");
+    meta.remove("preview_t");
+    custom
+}
+
 /// 抓回來的真的是圖（JPEG／PNG／WebP／GIF）：擋掉登入頁、錯誤頁
 pub fn is_image(b: &[u8]) -> bool {
     b.starts_with(&[0xFF, 0xD8, 0xFF])
@@ -245,5 +305,49 @@ mod tests {
         assert_eq!(c.bundled(&dir, "evil.safetensors"), None);
         assert!(bundled_path(&dir, "../0123456789abcdef.webp").is_none());
         std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn custom_preview_name_is_stable_and_recognised() {
+        let a = custom_file_name("sub\\a.safetensors");
+        assert_eq!(a, custom_file_name("sub\\a.safetensors"));
+        assert_ne!(a, custom_file_name("a.safetensors"));
+        assert!(is_custom_file(&a));
+        assert!(!is_custom_file("hinaAnimaBase_R_Tweaker_v4.jpg"));
+        assert!(!is_custom_file("custom_zz000000.jpg"));
+    }
+
+    #[test]
+    fn custom_preview_keeps_and_restores_the_original() {
+        let mut m = json!({"triggers": ["x"], "preview": "civ.jpg", "preview_nsfw": 2}).as_object().unwrap().clone();
+        let f = custom_file_name("a.safetensors");
+        with_custom_preview(&mut m, &f, 1, 5.0);
+        assert_eq!(m["preview"], json!(f));
+        assert_eq!(m["preview_orig"], json!("civ.jpg"));
+        assert_eq!(m["preview_orig_nsfw"], json!(2));
+        // 再換一次：原圖還是 C 站那張，不會被自訂圖蓋掉
+        with_custom_preview(&mut m, &f, 4, 6.0);
+        assert_eq!(m["preview_orig"], json!("civ.jpg"));
+        assert_eq!(m["preview_nsfw"], json!(4));
+        assert_eq!(without_custom_preview(&mut m), Some(f));
+        assert_eq!(m, json!({"triggers": ["x"], "preview": "civ.jpg", "preview_nsfw": 2}).as_object().unwrap().clone());
+        // 本來沒預覽圖的：還原後就沒有 preview（網頁回到內建縮圖或抓封面）
+        let mut m = Map::new();
+        with_custom_preview(&mut m, "custom_0123abcd.jpg", 1, 1.0);
+        assert!(without_custom_preview(&mut m).is_some());
+        assert!(m.is_empty());
+    }
+
+    #[test]
+    fn custom_thumb_shrinks_and_flattens_alpha() {
+        let mut png = Vec::new();
+        let img = image::RgbaImage::from_pixel(1280, 640, image::Rgba([0, 0, 0, 0]));
+        image::DynamicImage::ImageRgba8(img).write_to(&mut std::io::Cursor::new(&mut png), image::ImageFormat::Png).unwrap();
+        let jpg = custom_thumb(&png).unwrap();
+        assert!(is_image(&jpg) && jpg.starts_with(&[0xFF, 0xD8]));
+        let back = image::load_from_memory(&jpg).unwrap().to_rgb8();
+        assert_eq!((back.width(), back.height()), (640, 320));
+        assert!(back.get_pixel(10, 10)[0] > 240, "透明要墊白底");
+        assert!(custom_thumb(b"not an image").is_err());
     }
 }

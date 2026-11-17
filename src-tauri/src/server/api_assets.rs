@@ -379,7 +379,8 @@ fn views_of(data: &Value, images: &[String]) -> Value {
 /// 一筆資產拿去給某個模型家族用：{text, images（資產檔名）, views, audio, warn, voice, lang}。
 /// 規則見設計文件 4.5：anima＝tag＋外觀英文、全部圖給前端選底圖或控制圖；moss 只有文字；
 /// qwen21 最多 10 張參考圖、超過 4 張提醒；h3 中文外觀、少量參考圖（few_refs）、帶聲音語言和音檔；agent（助手）中文外觀、少量參考圖；
-/// comic＝tag＋外觀；其他（含以前導演台用的 ltx）只有外觀文字
+/// comic＝外觀英文句子（MOSS 讀自然語言；沒有外觀才退回 tag）＋角色的少量參考圖（漫畫台「照資產修角色」給 Qwen 2.1 用，2026-11-16）；
+/// 其他（含以前導演台用的 ltx）只有外觀文字。每一筆都帶 loras（資產卡綁的 LoRA，漫畫台加角色時自動掛）
 pub fn apply_plan(item: &Row, family: &str) -> Value {
     let kind = item.get("kind").and_then(Value::as_str).unwrap_or("");
     let null = Value::Null;
@@ -407,20 +408,20 @@ pub fn apply_plan(item: &Row, family: &str) -> Value {
         let fixed = if fixed.is_empty() { all.iter().take(2).cloned().collect() } else { fixed };
         let (text, images) = match family {
             "anima" => (pick(bt, be), all.clone()),
-            "comic" => (pick(bt, be), vec![]),
+            "comic" => (pick(be, bt), fixed),
             "moss" => (pick(be, bz), vec![]),
             "qwen21" => (pick(be, bz), fixed),
             "h3" | "agent" => (pick(bz, be), fixed),
             _ => (pick(be, bz), vec![]),
         };
         let av = family == "h3";
-        return json!({"text": text, "views": views_of(data, &images), "images": images, "warn": warn, "locked": true, "spec": {"zh": bz, "en": be, "tags": bt},
+        return json!({"text": text, "views": views_of(data, &images), "images": images, "warn": warn, "locked": true, "spec": {"zh": bz, "en": be, "tags": bt}, "loras": loras_of(data),
                       "refmod": data["refmod"]["name"].as_str().unwrap_or(""), "audio": if av { data["audio"]["file"].clone() } else { Value::Null },
                       "voice": if av { s("voice") } else { String::new() }, "lang": if av { s("lang") } else { String::new() }});
     }
     let (mut text, images, zh) = match family {
         "anima" => (tag_text, all.clone(), false),
-        "comic" => (tag_text, vec![], false),
+        "comic" => (if look_en.is_empty() && look_zh.is_empty() { tag_text } else { either(&look_en, &look_zh) }, few_refs(kind, data, &all), false),
         "moss" => (either(&look_en, &look_zh), vec![], true),
         "qwen21" => {
             if all.len() > 10 {
@@ -441,8 +442,13 @@ pub fn apply_plan(item: &Row, family: &str) -> Value {
         text = if text.is_empty() { line } else { format!("{text}{}{line}", if zh { "。" } else { ". " }) };
     }
     let av = family == "h3";
-    json!({"text": text, "views": views_of(data, &images), "images": images, "warn": warn, "locked": false, "audio": if av { data["audio"]["file"].clone() } else { Value::Null },
+    json!({"text": text, "views": views_of(data, &images), "images": images, "warn": warn, "locked": false, "loras": loras_of(data), "audio": if av { data["audio"]["file"].clone() } else { Value::Null },
            "voice": if av { s("voice") } else { String::new() }, "lang": if av { s("lang") } else { String::new() }})
+}
+
+/// 資產卡綁的 LoRA（只有角色卡會有；存檔時 api_lib::clean_asset 整理過）
+fn loras_of(data: &Value) -> Value {
+    data.get("loras").filter(|v| v.is_array()).cloned().unwrap_or_else(|| json!([]))
 }
 
 /// 角色做 RefMod 用哪張圖：正面特寫 → 原圖 → 第一張
@@ -571,7 +577,14 @@ mod tests {
         assert_eq!(ltx["images"], json!([]));
         assert_eq!(ltx["lang"], "");
         assert_eq!(apply_plan(&it, "comic")["voice"], "");
-        assert_eq!(apply_plan(&it, "comic")["images"], json!([]), "漫畫只帶文字與 tag");
+        // 漫畫：外觀英文句子（不是 tag）＋正面特寫／多視圖（給 Qwen 修角色）＋綁的 LoRA
+        assert_eq!(apply_plan(&portrait, "comic")["images"], json!(["b.png", "c.png"]));
+        let lo = item("char", json!({"look_en": "A girl with orange hair", "tags_anima": ["1girl", "orange hair"],
+                                      "loras": [{"name": "moss/xk.safetensors", "strength": 0.8, "trigger": "xk"}]}));
+        let c = apply_plan(&lo, "comic");
+        assert_eq!(c["text"], "A girl with orange hair");
+        assert_eq!(c["loras"][0]["trigger"], "xk");
+        assert_eq!(apply_plan(&item("char", json!({"tags_anima": ["1girl"]})), "comic")["text"], "1girl", "沒有外觀才退回 tag");
     }
 
     #[test]

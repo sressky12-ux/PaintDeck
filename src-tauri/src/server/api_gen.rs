@@ -361,16 +361,17 @@ pub async fn set_settings(State(app): State<Shared>, Body(body): Body) -> ApiRes
 /// 一次最多送幾張（網頁最多 16）
 const MAX_COUNT: i64 = 32;
 
-/// 外部直接打 API 最常漏的參數：沒給不會報錯，只會畫出 256 寬、0 步、CFG 0 的圖。
-/// 只管文生圖：網頁一定帶齊；其他模式的尺寸跟著輸入圖走，有的模式（去背、放大、差分）也不用步數
-fn missing_txt2img(p: &Map<String, Value>) -> Vec<&'static str> {
-    if p.get("mode").and_then(Value::as_str).unwrap_or("txt2img") != "txt2img" {
-        return vec![];
-    }
-    ["width", "height", "steps", "cfg"]
-        .into_iter()
-        .filter(|k| p.get(*k).is_none_or(Value::is_null))
-        .collect()
+/// 外部直接打 API 最常漏的參數：沒給不會報錯，只會畫出 256 寬、0 步、CFG 0 的圖。網頁一定帶齊。
+/// 文生圖要寬高＋步數＋CFG；圖生圖、局部重繪、擴圖、多圖參考、修臉修手的尺寸跟著輸入圖走，但一樣要取樣，
+/// 少了步數／CFG 會組出 0 步、CFG 0 的取樣器（2026-11-13 以前只擋文生圖）。
+/// 其他模式（去背、放大、設定圖、差分、脫衣）不用或自己帶固定參數；走匯入的工作流組時，沒給就用工作流裡的值
+fn missing_params(p: &Map<String, Value>) -> Vec<&'static str> {
+    let need: &[&str] = match p.get("mode").and_then(Value::as_str).unwrap_or("txt2img") {
+        "txt2img" => &["width", "height", "steps", "cfg"],
+        "img2img" | "inpaint" | "outpaint" | "multiref" | "detail" if p.get("image_workflow").is_none_or(Value::is_null) => &["steps", "cfg"],
+        _ => &[],
+    };
+    need.iter().copied().filter(|k| p.get(*k).is_none_or(Value::is_null)).collect()
 }
 
 fn random_seed() -> i64 {
@@ -406,9 +407,9 @@ pub async fn generate(State(app): State<Shared>, Body(body): Body) -> ApiResult 
     if !(1..=MAX_COUNT).contains(&count) {
         return Err(bad(format!("count 要在 1～{MAX_COUNT} 之間（送來的是 {count}）")));
     }
-    let missing = missing_txt2img(&p);
+    let missing = missing_params(&p);
     if !missing.is_empty() {
-        return Err(bad(format!("文生圖缺少參數：{}", missing.join("、"))));
+        return Err(bad(format!("缺少參數：{}（沒給不會用預設值，會組出 0 步、CFG 0 的圖）", missing.join("、"))));
     }
     resolve_seed(&mut p)?;
     submit(&app, p, count).await
@@ -438,6 +439,52 @@ struct Prepared {
     fam: String,
     /// 家族不合而略過的 LoRA 檔名
     skipped: Vec<String>,
+    /// 給了卻不會生效的參數（白話，一條一句）
+    notes: Vec<String>,
+}
+
+/// 明確開了、這個家族或模式卻不會用到的參數：以前都是靜默沒作用，現在每個 job 帶 notes 回去（網頁跳提示、MCP 原樣轉給 AI）。
+/// 只挑「使用者動手開的」：網頁每次都會帶的預設值不算（不然每張圖都跳）。走匯入工作流的不看（那邊用什麼照工作流）
+fn ignored_notes(p: &Map<String, Value>, fam: &str, mode: &str) -> Vec<String> {
+    let on = |c: &Value| truthy(Some(c)) && truthy(c.get("enabled")) && truthy(c.get("image"));
+    let ctl = |k: &str| match p.get(k) {
+        Some(Value::Array(a)) => a.iter().any(on),
+        Some(c) => on(c),
+        None => false,
+    };
+    let sampled = matches!(mode, "txt2img" | "img2img");
+    let name = families::label(fam);
+    let mut out = vec![];
+    if ctl("control") && !(fam == families::ANIMA && sampled) {
+        out.push(format!("構圖控制只在 Anima 的文生圖、圖生圖有作用：這次（{name}・{mode}）沒有套用"));
+    }
+    if ctl("moss_control") && !(fam == families::MOSS && mode == "txt2img") {
+        out.push(format!("色彩／深度控制只在 MOSS 的文生圖有作用：這次（{name}・{mode}）沒有套用"));
+    }
+    let pose = p.get("pose_control").is_some_and(|pc| ["depth", "pose"].iter().any(|k| pc.get(*k).and_then(Value::as_str).is_some_and(|x| !x.is_empty())));
+    let pose_ok = match fam {
+        families::ANIMA => sampled,
+        families::MOSS => mode == "txt2img",
+        families::QWEN21 => true,
+        _ => false,
+    };
+    if pose && !pose_ok {
+        out.push(format!("姿勢參考圖只在 Anima（文生圖、圖生圖）、MOSS（文生圖）、Qwen 2.1 有作用：這次（{name}・{mode}）沒有套用"));
+    }
+    if p.get("hires").is_some_and(|h| truthy(Some(h)) && truthy(h.get("enabled"))) && !sampled {
+        out.push(format!("高解析修復只在文生圖、圖生圖有作用：這次（{mode}）沒有套用"));
+    }
+    if p.get("layout").and_then(Value::as_array).is_some_and(|a| !a.is_empty()) && !(fam == families::MOSS && sampled) {
+        out.push(format!("版面框只在 MOSS 的文生圖、圖生圖有作用：這次（{name}・{mode}）沒有套用"));
+    }
+    // 跟 graphs::sample 同一個條件：Qwen 2.1 的 Turbo 走固定的 ManualSigmas
+    let model = p.get("model").and_then(Value::as_str).unwrap_or("").to_lowercase();
+    if fam == families::QWEN21 && model.contains("turbo") {
+        if let Some(n) = p.get("steps").and_then(crate::py::int).filter(|n| *n != 8) {
+            out.push(format!("Qwen 2.1 Turbo 用固定的蒸餾排程：步數 {n} 和排程器沒有作用（要調步數請換非 Turbo 的模型）"));
+        }
+    }
+    out
 }
 
 /// 決定用哪個流程、家族，並照家族篩 LoRA。不碰 ComfyUI（匯出內建工作流也用它）
@@ -517,6 +564,15 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
             }
         }
     }
+    // 檔頭認得出是 SD 1.5／Flux／SD3，但內建流程沒有它們的節點圖：以前會靜默走 Anima 那條（UNETLoader＋Anima 的文字編碼器），
+    // ComfyUI 才報一個看不懂的形狀錯誤。認不出來的（other）照舊放行：新微調的檔頭可能只是沒見過
+    if !video && flow.is_none() && fam != families::OTHER && fam != "custom" && !families::is_builtin(&fam) {
+        return Err(bad(format!(
+            "「{model}」是{}的模型，內建流程不會畫。到「設定 → 模型與工作流」匯入它用的 ComfyUI 工作流，再從模型選單選「⚙ 工作流」那一項",
+            families::label(&fam)
+        )));
+    }
+    let notes = if flow.is_none() && !video { ignored_notes(&p, &fam, &mode) } else { vec![] };
     p.insert("family".into(), json!(fam));
     // 一鍵脫衣：改圖指令和精修 tag 是外部內容補丁（feature_strip），這裡照 target／keep 算好塞進 params，
     // graph 本身不含露骨文字；沒裝補丁就擋下。
@@ -554,11 +610,11 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
     p.insert("loras".into(), json!(kept));
     // 以前內建 LTX 的影片 LoRA 欄位（舊網頁、重跑舊任務會帶來）：LTX 退場，丟掉
     p.shift_remove("video_loras");
-    Ok(Prepared { p, video, flow, fam, skipped })
+    Ok(Prepared { p, video, flow, fam, skipped, notes })
 }
 
 /// 同 submit，回傳 [{"job": 任務編號, "seed": 種子}]（導演台自己等任務跑完）。
-/// 有因為家族不合而略過的 LoRA，每個 job 多一個 skipped_loras（檔名清單）
+/// 有因為家族不合而略過的 LoRA，每個 job 多一個 skipped_loras（檔名清單）；有給了卻沒作用的參數，多一個 notes（白話句子）
 pub async fn submit_jobs(
     app: &Shared,
     p: Map<String, Value>,
@@ -578,7 +634,7 @@ pub async fn submit_jobs(
         let u = app.comfy.url().to_string();
         let _ = blocking(move || crate::model_dirs::refresh_live(&u)).await;
     }
-    let Prepared { p, video, flow, fam, skipped } = prepare(app, p)?;
+    let Prepared { p, video, flow, fam, skipped, notes } = prepare(app, p)?;
     // AI 改寫的 llama-server 在 GPU 上會占掉 5～6GB，ComfyUI 會爆顯存：先關掉（正在改寫就等它寫完）
     app.pe.release_for_generation().await;
     if video {
@@ -611,6 +667,11 @@ pub async fn submit_jobs(
     if !skipped.is_empty() {
         for j in &mut jobs {
             j["skipped_loras"] = json!(skipped);
+        }
+    }
+    if !notes.is_empty() {
+        for j in &mut jobs {
+            j["notes"] = json!(notes);
         }
     }
     Ok(jobs)
@@ -683,9 +744,9 @@ pub async fn export_graph(State(app): State<Shared>, Body(body): Body) -> ApiRes
     let Some(Value::Object(mut p)) = body.get("params").cloned() else {
         return Err(bad("送來的資料格式不對：缺少 params"));
     };
-    let missing = missing_txt2img(&p);
+    let missing = missing_params(&p);
     if !missing.is_empty() {
-        return Err(bad(format!("文生圖缺少參數：{}", missing.join("、"))));
+        return Err(bad(format!("缺少參數：{}（沒給不會用預設值，會組出 0 步、CFG 0 的圖）", missing.join("、"))));
     }
     // 只匯得出工作流組也有的模式（匯回去才有地方放）
     let m = p.get("mode").and_then(Value::as_str).unwrap_or("txt2img");
@@ -887,4 +948,64 @@ pub async fn free_vram(State(app): State<Shared>) -> ApiResult {
         .map_err(|e| internal(format!("ComfyUI 沒有回應：{e}")))?;
     let stopped = app.pe.stop("網頁按了釋放顯存").await.map_err(internal)?;
     ok(json!({"ok": true, "pe_stopped": stopped}))
+}
+
+#[cfg(test)]
+mod missing_tests {
+    use super::missing_params;
+    use serde_json::json;
+
+    fn miss(v: serde_json::Value) -> Vec<&'static str> {
+        missing_params(v.as_object().unwrap())
+    }
+
+    /// 文生圖要寬高＋步數＋CFG；要取樣的圖片模式要步數＋CFG（尺寸跟輸入圖走）；不取樣的模式、走工作流組的不擋
+    #[test]
+    fn missing_params_by_mode() {
+        assert_eq!(miss(json!({"prompt": "a"})), ["width", "height", "steps", "cfg"]);
+        assert_eq!(miss(json!({"mode": "txt2img", "width": 832, "height": 1216, "steps": 8, "cfg": 1})), Vec::<&str>::new());
+        for mode in ["img2img", "inpaint", "outpaint", "multiref", "detail"] {
+            assert_eq!(miss(json!({"mode": mode})), ["steps", "cfg"], "{mode}");
+            assert_eq!(miss(json!({"mode": mode, "steps": null, "cfg": 1})), ["steps"], "{mode}");
+            assert!(miss(json!({"mode": mode, "steps": 8, "cfg": 1})).is_empty(), "{mode}");
+            assert!(miss(json!({"mode": mode, "image_workflow": "wf_abc"})).is_empty(), "{mode} 走工作流組用工作流裡的值");
+        }
+        for mode in ["upscale", "rembg", "video", "charsheet"] {
+            assert!(miss(json!({"mode": mode})).is_empty(), "{mode}");
+        }
+    }
+
+    fn notes(v: serde_json::Value, fam: &str, mode: &str) -> Vec<String> {
+        super::ignored_notes(v.as_object().unwrap(), fam, mode)
+    }
+
+    /// 開了卻不會生效的參數要講出來；會生效的、沒開的、網頁預設帶的不講
+    #[test]
+    fn ignored_params_are_reported() {
+        let ctl = json!({"control": {"enabled": true, "image": "a.png"}});
+        assert!(notes(ctl.clone(), "anima", "txt2img").is_empty());
+        assert!(notes(ctl.clone(), "anima", "img2img").is_empty());
+        assert!(notes(ctl.clone(), "qwen21", "txt2img")[0].contains("構圖控制"));
+        assert!(notes(ctl.clone(), "anima", "inpaint")[0].contains("構圖控制"));
+        assert!(notes(json!({"control": [{"enabled": false, "image": "a.png"}, {"enabled": true, "image": ""}]}), "moss", "txt2img").is_empty(), "沒開、沒放圖的不算");
+        assert!(notes(json!({"control": [{"enabled": true, "image": "a.png"}]}), "moss", "txt2img")[0].contains("構圖控制"));
+        let pose = json!({"pose_control": {"depth": "d.png"}});
+        assert!(notes(pose.clone(), "qwen21", "multiref").is_empty());
+        assert!(notes(pose.clone(), "moss", "txt2img").is_empty());
+        assert!(notes(pose.clone(), "moss", "img2img")[0].contains("姿勢參考圖"));
+        assert!(notes(pose.clone(), "sdxl", "txt2img")[0].contains("姿勢參考圖"));
+        assert!(notes(json!({"pose_control": {"depth": "", "strength": 0.5}}), "sdxl", "txt2img").is_empty());
+        let hi = json!({"hires": {"enabled": true}});
+        assert!(notes(hi.clone(), "anima", "txt2img").is_empty());
+        assert!(notes(hi.clone(), "anima", "inpaint")[0].contains("高解析修復"));
+        assert!(notes(json!({"hires": {"enabled": false}}), "anima", "inpaint").is_empty());
+        assert!(notes(json!({"layout": [{"type": "text", "box": [0, 0, 1, 1]}]}), "anima", "txt2img")[0].contains("版面框"));
+        assert!(notes(json!({"layout": [{"type": "text", "box": [0, 0, 1, 1]}]}), "moss", "txt2img").is_empty());
+        assert!(notes(json!({"layout": []}), "anima", "txt2img").is_empty());
+        let turbo = |steps: i64| json!({"model": "qwen_image_2.1_turbo_int8_convrot.safetensors", "steps": steps});
+        assert!(notes(turbo(8), "qwen21", "txt2img").is_empty(), "網頁預設的 8 步不講");
+        assert!(notes(turbo(20), "qwen21", "txt2img")[0].contains("步數 20"));
+        assert!(notes(json!({"model": "qwen_image_2.1_int8.safetensors", "steps": 25}), "qwen21", "txt2img").is_empty());
+        assert!(notes(json!({"model": "anima-turbo-v1.1.safetensors", "steps": 12}), "anima", "txt2img").is_empty());
+    }
 }

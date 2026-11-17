@@ -22,8 +22,13 @@ const STEPS: i64 = 8;
 const ASPECTS: &[&str] = &["16:9", "9:16", "1:1", "4:3", "3:4", "21:9"];
 const QUALITIES: &[&str] = &["fast", "std", "high"];
 const STATUSES: &[&str] = &["todo", "running", "done", "error", "stopped", "review"];
-/// 在哪拍：runpod＝雲端顯卡（接上一段的 latent，最順）；runninghub＝一段一個任務，用 H3「接著上一支拍」（上一段最後約 0.9 秒畫面＋聲音當開頭引導）
-const WHERES: &[&str] = &["runpod", "runninghub"];
+/// 在哪拍：runpod＝雲端顯卡（接上一段的 latent，最順）；local＝這台電腦的 ComfyUI（同一套 latent 接續，慢但不花錢）；
+/// runninghub＝一段一個任務，用 H3「接著上一支拍」（上一段最後約 0.9 秒畫面＋聲音當開頭引導）
+const WHERES: &[&str] = &["runpod", "local", "runninghub"];
+/// 本機每 1 秒影片大約要算幾秒（2026-11-13 RTX 3070 8GB、10Eros w4a8、864×480、8 步實測 60～74 秒）
+pub const LOCAL_SECS_PER_SEC: f64 = 70.0;
+/// 繪匣附帶的小節點（resources\extras\anima_h3_nodes）：把參考圖編碼後放進 minimax_refs
+pub const REF_NODE: &str = "AnimaH3AddRefLatents";
 /// 每段拍完才有的欄位（網頁存檔不能改，重拍時清掉）
 /// 拍攝單的多張參考圖：最多 8 張（第 1 段首幀佔 <Picture 1>，合起來不超過 qwen_reference 的 9 張）
 pub const MAX_REFS: usize = 8;
@@ -122,6 +127,8 @@ pub fn normalize(v: &Value) -> Result<Value, String> {
         "look": s("look"), "scene": s("scene"), "style": s("style"), "voice": s("voice"), "sound": s("sound"),
         "ref": opt_file(&v["ref"], "角色參考圖")?, "first": opt_file(&v["first"], "第 1 段首幀")?,
         "refs": refs, "sheet": sheet, "review": v["review"].as_bool().unwrap_or(false), "where": pick(&v["where"], WHERES, "runpod"),
+        // 接續段把參考圖（沒有就用第 1 段首幀）也送進 DiT：預設開，舊存檔沒有這欄也算開
+        "ref_dit": v["ref_dit"].as_bool().unwrap_or(true),
         "segments": segs, "final": v.get("final").cloned().unwrap_or(Value::Null),
     }))
 }
@@ -170,7 +177,8 @@ pub fn reset_from(c: &mut Value, n: usize) {
 
 /// 還沒拍的段大約要算幾秒
 pub fn est_secs(c: &Value) -> f64 {
-    c["segments"].as_array().into_iter().flatten().filter(|s| s["status"] != "done").map(|s| s["secs"].as_f64().unwrap_or(DEFAULT_SECS) * SECS_PER_SEC).sum()
+    let rate = if on_local(c) { LOCAL_SECS_PER_SEC } else { SECS_PER_SEC };
+    c["segments"].as_array().into_iter().flatten().filter(|s| s["status"] != "done").map(|s| s["secs"].as_f64().unwrap_or(DEFAULT_SECS) * rate).sum()
 }
 
 /// 一句話：去頭尾空白，沒有句號就補一個
@@ -185,8 +193,18 @@ fn sentence(s: &str) -> Option<String> {
 /// 第 i 段（0 起算）的提示詞：外觀、場景、畫風、這段的畫面，每句台詞「At 2.0 seconds she says to the viewer in <聲音>: <d>[語言] 台詞</d>」
 /// （聲音描述寫在 <d> 前面，第七十五筆的規則），最後是環境音
 pub fn seg_prompt(c: &Value, i: usize) -> String {
+    seg_prompt_with(c, i, 0)
+}
+
+/// dit_refs＝這段有幾張參考圖同時送進 DiT（<Picture 1>～<Picture N>）：開頭先交代它們是參考圖、不是影片的畫格
+pub fn seg_prompt_with(c: &Value, i: usize, dit_refs: usize) -> String {
     let seg = &c["segments"][i];
-    let mut parts: Vec<String> = [&c["look"], &c["scene"], &c["style"], &seg["text"]].iter().filter_map(|v| sentence(&tx(v))).collect();
+    let note = match dit_refs {
+        0 => None,
+        1 => Some("<Picture 1> is a reference image, not a frame of the video: whatever it shows (characters, outfits, setting) looks the same in the video, and the whole video keeps the line art, coloring and color palette of <Picture 1>.".to_string()),
+        n => Some(format!("<Picture 1> to <Picture {n}> are reference images, not frames of the video: whatever they show (characters, outfits, setting) looks the same in the video, and the whole video keeps their line art, coloring and color palette.")),
+    };
+    let mut parts: Vec<String> = note.into_iter().chain([&c["look"], &c["scene"], &c["style"], &seg["text"]].iter().filter_map(|v| sentence(&tx(v)))).collect();
     let voice = tx(&c["voice"]);
     for l in seg["lines"].as_array().into_iter().flatten() {
         let text = tx(&l["text"]);
@@ -208,9 +226,49 @@ pub fn on_runninghub(c: &Value) -> bool {
     c["where"] == "runninghub"
 }
 
+pub fn on_local(c: &Value) -> bool {
+    c["where"] == "local"
+}
+
+/// 節點圖跟著機器變的部分：用哪顆主模型、要不要低顯存切塊、那台 ComfyUI 有沒有 REF_NODE
+#[derive(Clone, Debug)]
+pub struct GraphOpts {
+    pub model: String,
+    /// MiniMaxChunkFeedForward 切幾塊（小顯存卡用，結果一樣）；None＝不切
+    pub chunks: Option<i64>,
+    pub ref_node: bool,
+    /// 上一段 latent 的路徑（相對 ComfyUI output）；None＝固定的 h3chain/<id>/lat_0000N.safetensors。
+    /// 本機一定要給不重複的檔名：Windows 上 ComfyUI 讀過的 safetensors 會一直被對應在記憶體裡（節點輸出快取著），
+    /// 同名檔覆寫不了也刪不掉（2026-11-13 實測「user-mapped section open」），重拍同一段會卡在放檔那一步
+    pub latent_in: Option<String>,
+}
+
+impl Default for GraphOpts {
+    fn default() -> Self {
+        GraphOpts { model: h3::MODEL.to_string(), chunks: None, ref_node: false, latent_in: None }
+    }
+}
+
+/// 第 i 段要同時送進 DiT 的參考圖（input 檔名，照 <Picture 1>… 的順序）。
+/// 只有這段沒有首幀／尾幀佔掉 <Picture> 編號時才送（那種編號對不上的接法沒測過）；
+/// 這段沒有參考圖時，接續段用第 1 段的首幀當參考（2026-11-13 對照：洋裝、髮色守得住）。長片關掉 ref_dit＝空的
+pub fn dit_refs(c: &Value, i: usize) -> Vec<String> {
+    if c["ref_dit"] == false || c["segments"][i]["last"].is_string() || (i == 0 && c["first"].is_string()) {
+        return vec![];
+    }
+    let own: Vec<String> = seg_refs(c, i).into_iter().filter_map(|r| r.as_str().map(str::to_string)).collect();
+    if !own.is_empty() || i == 0 || c["segments"][i]["refs"].is_array() {
+        return own;
+    }
+    c["first"].as_str().map(|f| vec![f.to_string()]).unwrap_or_default()
+}
+
 /// RunningHub 版第 i 段送給 h3::build 的參數（素材板模式）：
 /// 第 1 段＝參考圖（＋首幀釘在第 0 秒）；第 2 段起＝上一段的影片當「接著拍」（帶聲音）＋參考圖。
-/// 開頭那 CONTINUE_FRAMES 格是上一段尾巴的重疊，秒數先加回去，拍完再切掉
+/// 開頭那 CONTINUE_FRAMES 格是上一段尾巴的重疊，先加回去，拍完再切掉。
+/// H3 的總格數只能是 17k＋5：照「這段自己的格數＋重疊」找最近的一格（最多 15 秒的 362 格）。
+/// 2026-11-13 以前是秒數直接加 22/24 再往上對齊，10 秒一段切掉重疊後變 255 格（10.6 秒），每段都多半秒；
+/// 現在 238 格（9.9 秒）。15 秒的段被 362 格的上限卡住，切掉重疊後只有 340 格（14.2 秒）
 pub fn rh_params(c: &Value, i: usize, prev: Option<&str>, seed: i64) -> Value {
     let seg = &c["segments"][i];
     let mut items: Vec<Value> = seg_refs(c, i).into_iter().filter_map(|r| r.as_str()).map(|n| json!({"kind": "image", "name": n, "use": "ref"})).collect();
@@ -218,7 +276,9 @@ pub fn rh_params(c: &Value, i: usize, prev: Option<&str>, seed: i64) -> Value {
     match prev {
         Some(v) if i > 0 => {
             items.insert(0, json!({"kind": "video", "name": v, "use": "continue", "audio": true}));
-            secs += h3::CONTINUE_FRAMES as f64 / h3::FPS as f64;
+            let want = h3::frames(secs) + h3::CONTINUE_FRAMES;
+            let total = (17 * (((want - 5) as f64 / 17.0).round() as i64) + 5).min(h3::frames(15.0));
+            secs = total as f64 / h3::FPS as f64;
         }
         _ => {
             if let Some(f) = c["first"].as_str() {
@@ -266,6 +326,10 @@ pub fn inputs_of(c: &Value, i: usize) -> Vec<String> {
 }
 
 pub fn seg_graph(c: &Value, i: usize, seed: i64) -> Result<Map<String, Value>, String> {
+    seg_graph_with(c, i, seed, &GraphOpts::default())
+}
+
+pub fn seg_graph_with(c: &Value, i: usize, seed: i64, o: &GraphOpts) -> Result<Map<String, Value>, String> {
     let id = tx(&c["id"]);
     if !valid_id(&id) {
         return Err("長片編號不對".into());
@@ -280,27 +344,46 @@ pub fn seg_graph(c: &Value, i: usize, seed: i64) -> Result<Map<String, Value>, S
         g.insert(k.clone(), json!({"class_type": cls, "inputs": inputs}));
         k
     };
-    let unet = add("UNETLoader", json!({"unet_name": h3::MODEL, "weight_dtype": "default"}));
+    let mut unet = if o.model.to_lowercase().ends_with(".gguf") {
+        add("UnetLoaderGGUF", json!({"unet_name": o.model}))
+    } else {
+        add("UNETLoader", json!({"unet_name": o.model, "weight_dtype": "default"}))
+    };
+    if let Some(n) = o.chunks.filter(|n| (2..=64).contains(n)) {
+        unet = add("MiniMaxChunkFeedForward", json!({"model": [unet, 0], "chunks": n, "seq_threshold": 4096}));
+    }
+    let dit: Vec<String> = if o.ref_node { dit_refs(c, i) } else { vec![] };
     let clip = add("CLIPLoader", json!({"clip_name": h3::TE, "type": "minimax", "device": "default"}));
     let vae = add("VAELoader", json!({"vae_name": h3::VAE}));
     let avae = add("VAELoader", json!({"vae_name": h3::AVAE}));
-    let mut cond_in = json!({"clip": [clip, 0], "vae": [vae, 0], "prompt": seg_prompt(c, i), "width": w, "height": h, "duration": secs, "ref_image_size": "match"});
+    let mut cond_in = json!({"clip": [clip, 0], "vae": [vae, 0], "prompt": seg_prompt_with(c, i, dit.len()), "width": w, "height": h, "duration": secs, "ref_image_size": "match"});
+    // 同時送進 DiT 的參考圖：LoadImage 的節點編號留著，後面接 REF_NODE
+    let mut dit_imgs: Vec<String> = vec![];
     let mut img = |k: &str, v: &Value| {
         if let Some(n) = v.as_str() {
             let li = add("LoadImage", json!({"image": n}));
-            cond_in[k] = json!([li, 0]);
+            cond_in[k] = json!([li.clone(), 0]);
+            if k.starts_with("qwen_reference_") {
+                dit_imgs.push(li);
+            }
         }
     };
-    // 拍攝單的多張參考圖每段都接（這段挑過就用這段的）；沒有就照舊用一張 ref
-    for (k, r) in seg_refs(c, i).into_iter().enumerate() {
-        img(&format!("qwen_reference_{}", k + 1), r);
+    if dit.is_empty() {
+        // 拍攝單的多張參考圖每段都接（這段挑過就用這段的）；沒有就照舊用一張 ref
+        for (k, r) in seg_refs(c, i).into_iter().enumerate() {
+            img(&format!("qwen_reference_{}", k + 1), r);
+        }
+    } else {
+        for (k, r) in dit.iter().enumerate() {
+            img(&format!("qwen_reference_{}", k + 1), &json!(r));
+        }
     }
     img("last_frame", &seg["last"]);
     let (cond, head) = if i == 0 {
         img("first_frame", &c["first"]);
         (add("H3ContinuousStartV14", cond_in), None)
     } else {
-        let load = add("H3ContinuousLoadLatent", json!({"latent_path": format!("{sub}/{}", latent_name(i)), "clip_index": 0}));
+        let load = add("H3ContinuousLoadLatent", json!({"latent_path": o.latent_in.clone().unwrap_or_else(|| format!("{sub}/{}", latent_name(i))), "clip_index": 0}));
         for (k, v) in [
             ("previous_latent", json!([load, 0])),
             ("handover", json!([load, 3])),
@@ -315,13 +398,23 @@ pub fn seg_graph(c: &Value, i: usize, seed: i64) -> Result<Map<String, Value>, S
         add("PreviewAny", json!({"source": [cont, 4]}));
         (cont.clone(), Some(json!([cont, 2])))
     };
+    // 參考圖也送進 DiT（minimax_refs）：跟 qwen_reference 同一批圖、同一個順序
+    let cond_out = if dit.is_empty() {
+        json!([cond, 0])
+    } else {
+        let mut inputs = json!({"positive": [cond, 0], "vae": [vae, 0], "latent": [cond, 1], "ref_image_size": "match"});
+        for (k, li) in dit_imgs.iter().enumerate() {
+            inputs[format!("image_{}", k + 1)] = json!([li, 0]);
+        }
+        json!([add(REF_NODE, inputs), 0])
+    };
     // 拍攝單勾了「用 RefMod 鎖臉」：條件先接 RefMod（refmod.rs）再進 guider
     let refmods = crate::refmod::names_of(c)?;
     let positive = if refmods.is_empty() {
-        json!([cond, 0])
+        cond_out
     } else {
         let mods = add("MiniMaxH3RefModsLoader", crate::refmod::loader_inputs(&refmods));
-        json!([add("MiniMaxH3RefModApply", crate::refmod::apply_inputs(json!([cond, 0]), json!([mods, 0]))), 0])
+        json!([add("MiniMaxH3RefModApply", crate::refmod::apply_inputs(cond_out, json!([mods, 0]))), 0])
     };
     let guider = add("BasicGuider", json!({"model": [unet, 0], "conditioning": positive}));
     let sampler = add("KSamplerSelect", json!({"sampler_name": "res_multistep"}));
@@ -499,7 +592,19 @@ mod tests {
         let p1 = rh_params(&c, 1, Some("h3_prev.mp4"), 7);
         assert_eq!(p1["items"][0], json!({"kind": "video", "name": "h3_prev.mp4", "use": "continue", "audio": true}));
         assert_eq!(p1["items"].as_array().unwrap().len(), 2, "這段只送自己挑的參考圖、不再釘首幀");
-        assert!((p1["seconds"].as_f64().unwrap() - (8.0 + 22.0 / 24.0)).abs() < 1e-9, "重疊的格數先加回去");
+        // 8 秒＝192 格，加重疊 22 格＝214，最近的 17k＋5 是 209（切掉重疊剩 187 格、7.8 秒；以前往上對齊成 226、剩 204 格、8.5 秒）
+        assert!((p1["seconds"].as_f64().unwrap() - 209.0 / 24.0).abs() < 1e-9, "重疊的格數先加回去，總格數對齊最近的 17k＋5");
+        for secs in [5.0, 8.0, 10.0, 12.0, 15.0] {
+            let mut cs = c.clone();
+            cs["segments"][1]["secs"] = json!(secs);
+            let total = crate::h3::frames(rh_params(&cs, 1, Some("h3_prev.mp4"), 7)["seconds"].as_f64().unwrap());
+            assert_eq!(total % 17, 5, "{secs} 秒");
+            assert!(total <= 362, "{secs} 秒");
+            let net = total - crate::h3::CONTINUE_FRAMES;
+            if secs < 15.0 {
+                assert!((net - crate::h3::frames(secs)).abs() <= 8, "{secs} 秒：切掉重疊後 {net} 格，跟第 1 段同秒數差不到半個 17 格");
+            }
+        }
         assert!(p1["prompt"].as_str().unwrap().contains("她揮手"));
         // 真的組得出節點圖（接續的影片走 AddGuide）
         let input = std::env::temp_dir();
@@ -594,6 +699,97 @@ mod tests {
         let s2 = seg_graph(&bare, 0, 7).unwrap();
         let st = &classes(&s2, "H3ContinuousStartV14")[0]["inputs"];
         assert!(st.get("first_frame").is_none() && st.get("qwen_reference_1").is_none());
+    }
+
+    /// 本機拍：where=local 留得住、估時用本機的速度；節點圖換成本機的模型（GGUF 用 GGUF 載入器）、小顯存切塊接在取樣前
+    #[test]
+    fn local_chain_uses_local_model_and_chunks() {
+        let mut v = json!({"id": "abc", "where": "local", "segments": [{"text": "a", "secs": 10}]});
+        let c = normalize(&v).unwrap();
+        assert!(on_local(&c) && !on_runninghub(&c));
+        assert_eq!(est_secs(&c), 10.0 * LOCAL_SECS_PER_SEC);
+        v["where"] = json!("somewhere");
+        assert_eq!(normalize(&v).unwrap()["where"], "runpod");
+        let o = GraphOpts { model: "10Eros_w4a8.safetensors".into(), chunks: Some(8), ref_node: false, latent_in: None };
+        let g = seg_graph_with(&c, 0, 1, &o).unwrap();
+        assert_eq!(classes(&g, "UNETLoader")[0]["inputs"]["unet_name"], "10Eros_w4a8.safetensors");
+        let chunk = g.iter().find(|(_, n)| n["class_type"] == "MiniMaxChunkFeedForward").map(|(k, _)| k.clone()).unwrap();
+        assert_eq!(classes(&g, "BasicGuider")[0]["inputs"]["model"][0], chunk);
+        assert_eq!(classes(&g, "BasicScheduler")[0]["inputs"]["model"][0], chunk);
+        let g = seg_graph_with(&c, 0, 1, &GraphOpts { model: "h3-Q3.gguf".into(), chunks: None, ref_node: false, latent_in: None }).unwrap();
+        assert_eq!(classes(&g, "UnetLoaderGGUF")[0]["inputs"]["unet_name"], "h3-Q3.gguf");
+        assert!(classes(&g, "UNETLoader").is_empty() && classes(&g, "MiniMaxChunkFeedForward").is_empty());
+    }
+
+    /// 參考圖也送進 DiT：只有這段沒有首幀／尾幀佔掉 <Picture> 編號、那台 ComfyUI 有 REF_NODE 時才接；
+    /// 同一批圖同時接 qwen_reference_N 和 image_N，提示詞開頭交代它們是參考圖
+    #[test]
+    fn dit_refs_only_where_picture_numbers_line_up() {
+        let on = GraphOpts { ref_node: true, ..Default::default() };
+        let c = chain(json!([{"text": "a"}, {"text": "b"}, {"text": "c", "last": "end_3.png"}]));
+        assert!(c["ref_dit"] == true);
+        // 第 1 段有首幀：不送；第 3 段有尾幀：不送
+        assert!(dit_refs(&c, 0).is_empty() && dit_refs(&c, 2).is_empty());
+        for i in [0, 2] {
+            assert!(classes(&seg_graph_with(&c, i, 1, &on).unwrap(), REF_NODE).is_empty(), "第 {i} 段");
+        }
+        // 第 2 段：角色參考圖進 DiT
+        assert_eq!(dit_refs(&c, 1), ["ref_1.png"]);
+        let g = seg_graph_with(&c, 1, 1, &on).unwrap();
+        let node = &classes(&g, REF_NODE)[0]["inputs"];
+        let cont = &classes(&g, "H3ContinuousContinueV14")[0]["inputs"];
+        assert_eq!(node["image_1"], cont["qwen_reference_1"]);
+        assert_eq!(g[node["image_1"][0].as_str().unwrap()]["inputs"]["image"], "ref_1.png");
+        assert_eq!(g[node["positive"][0].as_str().unwrap()]["class_type"], "H3ContinuousContinueV14");
+        assert!(cont["prompt"].as_str().unwrap().starts_with("<Picture 1> is a reference image, not a frame of the video"));
+        assert_eq!(g[classes(&g, "BasicGuider")[0]["inputs"]["conditioning"][0].as_str().unwrap()]["class_type"], REF_NODE);
+        // 那台沒有節點＝跟舊的一模一樣；長片關掉 ref_dit 也是
+        assert_eq!(seg_graph_with(&c, 1, 1, &GraphOpts::default()).unwrap(), seg_graph(&c, 1, 1).unwrap());
+        let mut off = c.clone();
+        off["ref_dit"] = json!(false);
+        assert_eq!(seg_graph_with(&off, 1, 1, &on).unwrap(), seg_graph(&c, 1, 1).unwrap());
+        assert!(!seg_prompt(&c, 1).contains("<Picture"));
+    }
+
+    /// 沒放參考圖的長片：接續段拿第 1 段首幀當參考；這段自己關掉全部參考圖（refs: []）就不送；多張時說明寫範圍
+    #[test]
+    fn dit_refs_fall_back_to_first_frame() {
+        let c = normalize(&json!({"id": "abc", "first": "first_1.png", "segments": [{"text": "a"}, {"text": "b"}, {"text": "c", "refs": []}]})).unwrap();
+        assert!(dit_refs(&c, 0).is_empty());
+        assert_eq!(dit_refs(&c, 1), ["first_1.png"]);
+        assert!(dit_refs(&c, 2).is_empty());
+        // 首幀只是順便當參考：不算這段「一定要有」的素材（檔不見了不擋開拍）
+        assert!(inputs_of(&c, 1).is_empty());
+        let g = seg_graph_with(&c, 1, 1, &GraphOpts { ref_node: true, ..Default::default() }).unwrap();
+        assert_eq!(g[classes(&g, REF_NODE)[0]["inputs"]["image_1"][0].as_str().unwrap()]["inputs"]["image"], "first_1.png");
+        let many = normalize(&json!({"id": "abc", "refs": ["a.png", "b.png"], "segments": [{"text": "a"}]})).unwrap();
+        assert_eq!(dit_refs(&many, 0), ["a.png", "b.png"]);
+        let g = seg_graph_with(&many, 0, 1, &GraphOpts { ref_node: true, ..Default::default() }).unwrap();
+        let node = &classes(&g, REF_NODE)[0]["inputs"];
+        assert!(node["image_2"].is_array() && node.get("image_3").is_none());
+        assert!(classes(&g, "H3ContinuousStartV14")[0]["inputs"]["prompt"].as_str().unwrap().starts_with("<Picture 1> to <Picture 2> are reference images"));
+    }
+
+    /// 本機拍：上一段的 latent 換成呼叫端給的（不重複的）檔名；沒給就是固定檔名
+    #[test]
+    fn local_chain_loads_latent_from_given_path() {
+        let c = chain(json!([{"text": "a"}, {"text": "b"}]));
+        let o = GraphOpts { latent_in: Some("h3chain/abc/prev_00001_17_99.safetensors".into()), ..Default::default() };
+        let g = seg_graph_with(&c, 1, 1, &o).unwrap();
+        assert_eq!(classes(&g, "H3ContinuousLoadLatent")[0]["inputs"]["latent_path"], "h3chain/abc/prev_00001_17_99.safetensors");
+        // 存檔的那顆不變：這段自己的 latent 照舊存固定檔名
+        assert_eq!(classes(&g, "H3ContinuousSaveLatent"), classes(&seg_graph(&c, 1, 1).unwrap(), "H3ContinuousSaveLatent"));
+        assert!(classes(&seg_graph(&c, 1, 1).unwrap(), "H3ContinuousLoadLatent")[0]["inputs"]["latent_path"].as_str().unwrap().ends_with("/lat_00001.safetensors"));
+    }
+
+    /// RefMod 鎖臉和參考圖一起開：RefMod 吃的是加過參考圖的條件
+    #[test]
+    fn refmod_applies_after_dit_refs() {
+        let sheet = json!({"refmod": true, "cast": [{"name": "甲", "locked": true, "refmod": "paintdeck/pd_char_7"}]});
+        let c = normalize(&json!({"id": "abc", "sheet": sheet, "refs": ["a.png"], "segments": [{"text": "a"}]})).unwrap();
+        let g = seg_graph_with(&c, 0, 1, &GraphOpts { ref_node: true, ..Default::default() }).unwrap();
+        let apply = &classes(&g, "MiniMaxH3RefModApply")[0];
+        assert_eq!(g[apply["inputs"]["conditioning"][0].as_str().unwrap()]["class_type"], REF_NODE);
     }
 
     #[test]

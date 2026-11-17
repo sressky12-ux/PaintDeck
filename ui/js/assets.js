@@ -3,6 +3,7 @@
 import { $, $$, api, el, toast, pickFile, uploadFile, openModal, closeModal } from "./util.js";
 import { pickFromGallery } from "./gallery.js";
 import * as library from "./library.js";
+import * as loras from "./loras.js";
 
 const F = (id) => document.getElementById(id);
 
@@ -130,9 +131,35 @@ function fill() {
   F("asDel").hidden = !cur.id;
   paintImgs();
   paintAudio();
+  paintLoras();
   paintCard();
   byKind();
   paint();
+}
+
+/** 角色卡綁的 LoRA（漫畫台加角色時自動掛上）：名字、強度、觸發詞；存檔時跟著 data 送 */
+function paintLoras() {
+  const box = F("asLoras");
+  if (!box || !cur) return;
+  const list = cur.data?.loras || [];
+  if (!list.length) return box.replaceChildren(el("div", { class: "muted sm" }, "沒有綁 LoRA"));
+  box.replaceChildren(...list.map((l, i) => el("div", { class: "lora-item as-lora", title: l.name },
+    el("span", { class: "nm" }, String(l.name).split(/[\\/]/).pop().replace(/\.safetensors$/, "")),
+    el("input", { type: "number", min: -2, max: 3, step: 0.05, value: l.strength ?? 0.8, "aria-label": "強度",
+      onchange: (e) => { l.strength = Math.min(3, Math.max(-2, +e.target.value || 0)); e.target.value = l.strength; } }),
+    el("input", { type: "text", value: l.trigger || "", placeholder: "觸發詞（可空）", "aria-label": "觸發詞", oninput: (e) => { l.trigger = e.target.value; } }),
+    el("button", { type: "button", class: "icon", title: "解除綁定", onclick: () => { list.splice(i, 1); paintLoras(); } }, "✕"))));
+}
+
+function bindLora(l) {
+  if (!cur) return;
+  cur.data = cur.data || {};
+  const list = (cur.data.loras = cur.data.loras || []);
+  if (list.some((x) => x.name === l.name)) return toast("這個 LoRA 已經綁了");
+  if (list.length >= 4) return toast("一個角色最多綁 4 個 LoRA", "err");
+  list.push({ name: l.name, strength: 0.8, trigger: (l.triggers || []).map((t) => String(t).replace(/[,\s]+$/, "")).filter(Boolean).join(", ") });
+  paintLoras();
+  toast("綁好了，記得按「存檔」", "ok");
 }
 
 /** 分類不同，顯示的欄位不同 */
@@ -219,7 +246,7 @@ function collect() {
   const k = F("asKind").value;
   const d = { ...(cur.data || {}) };
   Object.assign(d, { look_zh: F("asLookZh").value, look_en: F("asLookEn").value, tags_anima: splitList(F("asAnima").value) });
-  if (k === "char") Object.assign(d, { voice: F("asVoice").value, lang: F("asLang").value });
+  if (k === "char") Object.assign(d, { voice: F("asVoice").value, lang: F("asLang").value, loras: cur.data?.loras || [] });
   if (k === "scene") d.layout = Object.fromEntries(LAYOUT.map(([key]) => [key, F("asL_" + key).value]));
   if (TEXT_KINDS.has(k)) d.text = F("asText").value;
   return { id: cur.id || undefined, kind: k, name: F("asName").value.trim(), folder: F("asFolder").value.trim(),
@@ -330,6 +357,7 @@ export function init() {
   F("asNew").onclick = newOne;
   F("asSave").onclick = () => save();
   F("asDel").onclick = del;
+  F("asLoraAdd").onclick = () => { if (cur) loras.openPicker((l) => bindLora(l), null); };
   F("asImgUp").onclick = async () => {
     if (busy || !cur) return;
     const target = cur, role = F("asRole").value;

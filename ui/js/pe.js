@@ -73,6 +73,11 @@ export function init(c) {
       toast("AI 改寫改用：" + F("peGeneral").selectedOptions[0].textContent, "ok");
     } catch (e) { toast(e.message, "err"); }
   };
+  // 2026-11-17 使用者：「雲端助手api/本地都可以自由選擇」。送 body.brain（api_pe.rs：cloud／api:<id>；空＝本機，跟以前一樣）
+  brainWant = store.get("pe_brain", "");
+  F("peBrain").onchange = () => { brainWant = F("peBrain").value; store.set("pe_brain", brainWant); refreshTask(); };
+  F("peBrain").addEventListener("focus", () => loadBrains());
+  loadBrains();
   // 到設定頁改這個類型的系統提示詞
   F("peEditSys").onclick = () => {
     const t = task();
@@ -114,6 +119,34 @@ export function init(c) {
 }
 
 let own = { zh: false, think: false }; // 中文對照、深度思考：使用者自己切過沒（沒切過＝照設定頁的預設）
+
+// AI 改寫用哪顆腦袋：本機（空字串）／雲端／API 頁的每一組連線（GET /api/llm 的 profiles）
+let brainWant = "";
+async function loadBrains() {
+  const sel = F("peBrain");
+  let profiles = [];
+  try { profiles = (await api("/api/llm")).profiles || []; } catch { /* API 頁讀不到就只有本機、雲端 */ }
+  const opts = profiles.map((p) => [`api:${p.id}`, `API：${p.name}${p.ready ? "" : "（沒填好）"}`]);
+  const now = [...sel.querySelectorAll("option[data-api]")].map((o) => [o.value, o.textContent]);
+  if (JSON.stringify(opts) === JSON.stringify(now) && sel.dataset.filled) return;   // 沒變就不重畫（選單打開時不會跳）
+  sel.querySelectorAll("option[data-api]").forEach((o) => o.remove());
+  for (const [v, t] of opts) sel.append(el("option", { value: v, "data-api": "1" }, t));
+  sel.dataset.filled = "1";
+  // 存的那組連線不見了：先顯示本機，存的值留著（API 頁補回來就又對上）
+  sel.value = [...sel.options].some((o) => o.value === brainWant) ? brainWant : "";
+  refreshTask();
+}
+
+/** 隨機頁「AI 組成完整提示詞」：提示詞框的 tag 當想法，照現在的改寫預設寫成完整提示詞；結果在 AI 改寫區，按「套用」才進提示詞 */
+export function composeFromPrompt() {
+  const text = ctx?.prompt.value.trim();
+  if (!text) { toast("提示詞框是空的：先點幾個詞，或抽幾個", "err"); return null; }
+  F("peIdea").value = text;
+  F("peBox").open = true;
+  save();
+  F("peBox").scrollIntoView({ block: "start", behavior: "smooth" });
+  return run({ fresh: true });
+}
 function save() {
   store.set("pe", { list: V.list.slice(-30), i: V.i, applied, seed: peSeed, zhCost, idea: F("peIdea").value,
     ...(own.zh ? { zh: F("peZhOn").checked } : {}), ...(own.think ? { think: F("peThinkOn").checked } : {}), auto: F("peAuto").checked, open: F("peBox").open, diff: F("peDiffOn").checked,
@@ -215,8 +248,10 @@ export function refreshTask() {
   syncGeneral(app.state?.settings?.pe_general || "auto");
   F("peZhCost").textContent = zhCost != null ? `（約多 ${Math.max(1, Math.round(zhCost))} 秒）` : "（會多花幾秒）";
   const st = app.state?.pe;
-  F("peBox").classList.toggle("disabled", !!st && !st.ok);
-  if (st && !st.ok) F("peTask").textContent = "AI 改寫無法使用：" + st.error;
+  // 本機模型不能用時才算不能用；選了雲端或 API 連線就不看本機
+  const localDown = !!st && !st.ok && !F("peBrain").value;
+  F("peBox").classList.toggle("disabled", localDown);
+  if (localDown) F("peTask").textContent = "AI 改寫無法使用：" + st.error + "（也可以在下面「用哪顆腦袋」改用雲端或 API 連線）";
 }
 
 // ---------------------------------------------------------------- 串流請求
@@ -295,6 +330,7 @@ async function run(opts = {}) {
   const body = {
     task: refining ? "refine" : t, base: t, idea, images, prev, instruction: opts.instruction || "", ratio: cur()?.wh_ratio || "",
     seed: peSeed, zh: F("peZhOn").checked, think: F("peThinkOn").checked, noct_anime: isNoctAnime(), family: ctx.family(),
+    ...(F("peBrain").value ? { brain: F("peBrain").value } : {}),
   };
   if (t === "adult") {
     const qwen = ctx.family() === "qwen21";

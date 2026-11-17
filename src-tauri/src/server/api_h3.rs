@@ -289,7 +289,7 @@ fn h3ish(n: &str) -> bool {
 
 /// 本機沒指定模型時挑哪顆：10Eros w4a8（8GB 卡實測最快）→ GGUF；都沒有＝None（用預設 int8）。
 /// 只挑 10Eros：官方 fl2va 那類 w4a8 不一定每種玩法都能用（2026-10-30）
-fn pick_local_model(models: &[String]) -> Option<String> {
+pub(super) fn pick_local_model(models: &[String]) -> Option<String> {
     let l = |m: &&String| m.to_lowercase();
     models
         .iter()
@@ -299,7 +299,7 @@ fn pick_local_model(models: &[String]) -> Option<String> {
 }
 
 /// 低顯存切塊的節點（ComfyUI-KJNodes 的 MiniMaxChunkFeedForward）在不在
-async fn local_chunk_node(app: &Shared) -> bool {
+pub(super) async fn local_chunk_node(app: &Shared) -> bool {
     // chunks 是 INT 欄位、沒有選項清單：看節點在不在就好
     app.comfy.object_info("MiniMaxChunkFeedForward").await.is_ok()
 }
@@ -327,7 +327,7 @@ fn keep_h3(names: Vec<String>, roots: &[PathBuf]) -> Vec<String> {
 }
 
 /// 本機的 H3 模型：一般檔＋GGUF 量化版（裝了 ComfyUI-GGUF 才有 UnetLoaderGGUF）
-async fn local_models(app: &Shared) -> Vec<String> {
+pub(super) async fn local_models(app: &Shared) -> Vec<String> {
     let mut v = app.comfy.options("UNETLoader", "unet_name").await.unwrap_or_default();
     v.extend(app.comfy.options("UnetLoaderGGUF", "unet_name").await.unwrap_or_default());
     let names: Vec<String> = v.into_iter().filter_map(|x| x.as_str().map(str::to_owned)).collect();
@@ -761,7 +761,7 @@ pub fn writer_request(mode: &str, secs: f64, media: &[Value], idea: &str, trigge
     let (name, _) = writer_of(mode);
     let mut t = format!("Mode: {name}\nDuration: {:.2} seconds\n", h3::frames(secs) as f64 / h3::FPS as f64);
     if mode == "continue" {
-        t.push_str("This clip continues directly from the end of the previous clip (no cut, no reset); <Picture 1> is the previous clip's last frame.\n");
+        t.push_str("This clip continues directly from the end of the previous clip (no cut, no reset). The previous clip's last frames are already pinned at the start of this clip, so there is no <Picture 1>: do not write any <Picture N> tag.\n");
     }
     if !media.is_empty() {
         t.push_str("Media (in order):\n");

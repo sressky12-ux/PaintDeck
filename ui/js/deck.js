@@ -26,6 +26,7 @@ export const ICONS = {
   multi: '<path d="M10 2h10a2 2 0 0 1 2 2v10M6 6h10a2 2 0 0 1 2 2v10"/><rect x="2" y="10" width="12" height="12" rx="2"/><rect class="af" x="5" y="13" width="6" height="6" rx="1"/>',
   zoom: '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l6 6" stroke-width="3"/><path d="M10 7v6M7 10h6"/>',
   search: '<circle cx="10" cy="10" r="6.5"/><path d="M15 15l6 6" stroke-width="3"/>',
+  tags: '<path d="M3 4a1 1 0 0 1 1-1h7.5l9.5 9.5-8.5 8.5L3 11.5z"/><circle class="af" cx="7.5" cy="7.5" r="1.8"/>',
   loop: '<path d="M4 12a4 4 0 0 1 4-4h11M16 5l3 3-3 3M20 12a4 4 0 0 1-4 4H5M8 13l-3 3 3 3"/>',
   rewind: '<path class="f" d="M11 6v12L3 12zM20 6v12l-8-6z"/>',
   rec: '<circle cx="12" cy="12" r="8.5"/><circle class="af" cx="12" cy="12" r="4.5"/>',

@@ -86,6 +86,11 @@ pub struct Comfy {
     hub: Hub,
     live: Mutex<Live>,
     diagnostics: OnceLock<Arc<crate::diagnostics::Store>>,
+    /// 主節點：繪匣存輸入圖的資料夾（paths.input）。連到的 ComfyUI 讀的 input 不是這裡時（自己開的 ComfyUI 加了
+    /// --input-directory／--base-directory、或連到別份安裝），送出被 LoadImage 打回來就從這裡上傳再送（2026-11-14 回報）
+    local_input: OnceLock<std::path::PathBuf>,
+    /// 已經發現這台 ComfyUI 看不到 local_input：之後每次送出前先上傳輸入圖
+    upload_local: std::sync::atomic::AtomicBool,
 }
 
 impl Comfy {
@@ -128,6 +133,8 @@ impl Comfy {
             hub,
             live: Mutex::new(Live::default()),
             diagnostics: OnceLock::new(),
+            local_input: OnceLock::new(),
+            upload_local: std::sync::atomic::AtomicBool::new(false),
         })
     }
 
@@ -138,6 +145,9 @@ impl Comfy {
     }
 
     pub fn attach_diagnostics(&self, store: Arc<crate::diagnostics::Store>) { let _ = self.diagnostics.set(store); }
+
+    /// 主節點：告訴它繪匣把輸入圖存在哪（見 local_input）
+    pub fn set_local_input(&self, dir: &std::path::Path) { let _ = self.local_input.set(dir.to_path_buf()); }
 
     /// 節點 id（主節點 main）
     pub fn node_id(&self) -> &str {
@@ -190,7 +200,17 @@ impl Comfy {
 
     /// 遠端節點：節點圖用到的輸入圖先傳過去（ComfyUI 的 /upload/image，同名覆蓋）
     async fn upload_inputs(&self, nodes: &Value) -> Result<(), ComfyError> {
-        let Some((in_dir, _)) = self.node.as_ref().and_then(|n| n.remote.as_ref()) else { return Ok(()) };
+        if let Some((in_dir, _)) = self.node.as_ref().and_then(|n| n.remote.as_ref()) {
+            return self.upload_from(in_dir, nodes).await;
+        }
+        match self.local_input.get() {
+            Some(dir) if self.upload_local.load(std::sync::atomic::Ordering::Relaxed) => self.upload_from(dir, nodes).await,
+            _ => Ok(()),
+        }
+    }
+
+    /// 節點圖用到的輸入圖從 in_dir 讀出來，用 /upload/image 傳給這台 ComfyUI（同名覆蓋）
+    async fn upload_from(&self, in_dir: &std::path::Path, nodes: &Value) -> Result<(), ComfyError> {
         for f in crate::nodes::input_files(nodes) {
             let bytes = std::fs::read(in_dir.join(&f)).map_err(|e| ComfyError(format!("讀不到輸入圖 {f}：{e}")))?;
             let (sub, name) = match f.rsplit_once('/') {
@@ -257,6 +277,22 @@ impl Comfy {
         Ok(r.bytes().await.map_err(conn_err)?.to_vec())
     }
 
+    /// 原樣轉一個請求給 ComfyUI（外掛自己的 HTTP API：隨機頁的隨機產生器轉送 /anima-wardrobe-v6/…）。
+    /// url 要是這台 ComfyUI 底下的網址；回 (狀態碼, content-type, 內容)，狀態碼不管好壞都原樣回
+    pub async fn forward(&self, method: reqwest::Method, url: reqwest::Url, body: Option<(Vec<u8>, String)>) -> Result<(u16, String, Vec<u8>), ComfyError> {
+        if !url.as_str().starts_with(&format!("{}/", self.url)) {
+            return Err(ComfyError(format!("不是這台 ComfyUI 的網址：{url}")));
+        }
+        let mut rq = self.http.request(method, url).timeout(Duration::from_secs(120));
+        if let Some((b, ct)) = body {
+            rq = rq.header(reqwest::header::CONTENT_TYPE, ct).body(b);
+        }
+        let r = rq.send().await.map_err(conn_err)?;
+        let status = r.status().as_u16();
+        let ct = r.headers().get(reqwest::header::CONTENT_TYPE).and_then(|v| v.to_str().ok()).unwrap_or("application/octet-stream").to_string();
+        Ok((status, ct, r.bytes().await.map_err(conn_err)?.to_vec()))
+    }
+
     pub async fn post(&self, path: &str, payload: &Value) -> Result<Value, ComfyError> {
         let (ok, data) = self.post_raw(path, payload).await?;
         if !ok {
@@ -317,6 +353,19 @@ impl Comfy {
         if !ok && fix_listed_names(&mut nodes, &r) {
             crate::diagnostics::snapshot("workflow_retry_resolved_names", &nodes);
             (ok, r) = self.post_raw("/prompt", &payload(&nodes)).await?;
+        }
+        // 主節點的 LoadImage 說圖無效，但繪匣存圖的資料夾裡明明有：這台 ComfyUI 讀的是別的 input 資料夾 → 上傳再送一次，之後都先上傳
+        if !ok && self.node.is_none() && !self.upload_local.load(std::sync::atomic::Ordering::Relaxed) && invalid_input_image(&r) {
+            if let Some(dir) = self.local_input.get() {
+                let files = crate::nodes::input_files(&nodes);
+                if !files.is_empty() && files.iter().all(|f| dir.join(f).is_file()) {
+                    eprintln!("ComfyUI 看不到繪匣 input 資料夾（{}）的圖，改用上傳", dir.display());
+                    self.upload_from(dir, &nodes).await?;
+                    self.upload_local.store(true, std::sync::atomic::Ordering::Relaxed);
+                    crate::diagnostics::snapshot("workflow_retry_uploaded_inputs", &json!(files));
+                    (ok, r) = self.post_raw("/prompt", &payload(&nodes)).await?;
+                }
+            }
         }
         match r.get("prompt_id").and_then(Value::as_str) {
             // 有 prompt_id＝已經排進佇列：node_errors 只是某些輸出節點跑不了（其他的照跑），記下來就好
@@ -531,7 +580,8 @@ impl Comfy {
                 Some(pid),
             ) {
                 // 整本上色的原始輸出：只記一筆給背景工作找（跑完就搬走、從圖庫隱藏），不推到網頁的圖庫
-                Ok(_) if job["params"].get("colorbook").is_some() => {}
+                // 漫畫台修角色的每一格也一樣（2026-11-16）
+                Ok(_) if job["params"].get("colorbook").is_some() || job["params"]["comic"]["kind"] == "fix_part" => {}
                 Ok(iid) => {
                     let image = self
                         .db
@@ -653,6 +703,19 @@ fn py_str(v: Option<&Value>) -> String {
     }
 }
 
+/// /prompt 的回應：有 LoadImage／LoadImageMask 因為「Invalid image file」被打回來（檔案不在那台 ComfyUI 的 input）
+pub fn invalid_input_image(r: &Value) -> bool {
+    r.get("node_errors").and_then(Value::as_object).is_some_and(|ne| {
+        ne.values().any(|n| {
+            matches!(n["class_type"].as_str(), Some("LoadImage" | "LoadImageMask"))
+                && n["errors"].as_array().into_iter().flatten().any(|e| {
+                    let t = format!("{} {}", py_str(e.get("message")), py_str(e.get("details"))).to_lowercase();
+                    t.contains("invalid image file")
+                })
+        })
+    })
+}
+
 /// 把 ComfyUI 的驗證錯誤整理成看得懂的一句話
 pub fn explain(data: &Value) -> String {
     let mut parts: Vec<String> = vec![];
@@ -716,7 +779,7 @@ const FRIENDLY: &[(&[&str], &str)] = &[
     (&["mat1 and mat2", "size mismatch", "shapes cannot be multiplied", "lora key not loaded"],
      "模型和 LoRA 不相容（多半是家族不同，例如 Anima 的 LoRA 套在 MOSS-Image 上）。解法：把劃掉的 LoRA 移除，或換回對應的模型。"),
     (&["no such file", "filenotfound", "invalid image file", "cannot identify image"],
-     "找不到輸入圖片，或圖片壞掉了。解法：重新放一次圖片。"),
+     "找不到輸入圖片，或圖片壞掉了。解法：重新放一次圖片；換了圖還是一樣的話，多半是繪匣連到的 ComfyUI 讀的 input 資料夾跟繪匣存圖的地方不同（自己開的 ComfyUI 加了 --input-directory，或「設定 → 安裝與修復」指的 ComfyUI 跟正在跑的不是同一份），把兩邊改成同一份再試。"),
     (&["cannot connect", "connection refused", "connect call failed"],
      "連不到 ComfyUI。解法：重新開啟「繪匣 PaintDeck」。"),
     // A 卡（ROCm）：矩陣運算走到 hipBLASLt，這張卡沒有它的 kernel（2026-11-06 回報：RX 6750 XT，
@@ -917,6 +980,90 @@ mod tests {
     }
 
     use super::*;
+
+    /// 2026-11-14 有人回報：主頁圖生圖一律「LoadImage：Invalid image file: aw_image_….png」，文生圖、反推（本機 ONNX 讀檔）正常。
+    /// 繪匣把圖存進自己認定的 ComfyUI\input，連到的 ComfyUI 讀的是別的 input → 第一次被打回來就上傳再送，之後先上傳
+    #[tokio::test]
+    async fn main_node_uploads_inputs_when_comfy_reads_another_input_dir() {
+        use axum::extract::{Multipart, State};
+        use axum::routing::post;
+        use axum::{http::StatusCode, Json, Router};
+        type St = Arc<Mutex<(Vec<String>, usize)>>;
+        let st: St = Arc::new(Mutex::new((vec![], 0)));
+        let app = Router::new()
+            .route(
+                "/upload/image",
+                post(|State(s): State<St>, mut mp: Multipart| async move {
+                    while let Ok(Some(f)) = mp.next_field().await {
+                        if f.name() == Some("image") {
+                            let name = f.file_name().unwrap_or_default().to_string();
+                            let _ = f.bytes().await;
+                            s.lock().unwrap().0.push(name);
+                        }
+                    }
+                    Json(json!({}))
+                }),
+            )
+            .route(
+                "/prompt",
+                post(|State(s): State<St>, Json(v): Json<Value>| async move {
+                    let mut g = s.lock().unwrap();
+                    g.1 += 1;
+                    let f = v["prompt"]["1"]["inputs"]["image"].as_str().unwrap_or_default().to_string();
+                    if g.0.contains(&f) {
+                        (StatusCode::OK, Json(json!({"prompt_id": format!("p{}", g.1), "node_errors": {}})))
+                    } else {
+                        (StatusCode::BAD_REQUEST, Json(json!({
+                            "error": {"type": "prompt_outputs_failed_validation", "message": "Prompt outputs failed validation"},
+                            "node_errors": {"1": {"class_type": "LoadImage", "errors": [{"type": "custom_validation_failed", "message": "Custom validation failed for node", "details": format!("image - Invalid image file: {f}")}]}}
+                        })))
+                    }
+                }),
+            )
+            .with_state(st.clone());
+        let l = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", l.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(l, app).await.unwrap() });
+
+        let d = std::env::temp_dir().join(format!("anima_comfy_input_{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let db = Arc::new(Db::open(&d.join("t.db")).unwrap());
+        let c = Comfy::new(&url, db, Hub::new());
+        let g = |f: &str| json!({"1": {"class_type": "LoadImage", "inputs": {"image": f}}, "9": {"class_type": "SaveImage", "inputs": {"filename_prefix": "x"}}});
+
+        // 沒設 local_input：照舊回錯誤，不亂傳
+        let e = c.submit(&g("aw_a.png"), &json!({})).await.unwrap_err();
+        assert!(e.0.contains("找不到輸入圖片"), "{e}");
+        assert!(st.lock().unwrap().0.is_empty());
+
+        // 檔案不在繪匣的 input：照舊回錯誤
+        c.set_local_input(&d);
+        assert!(c.submit(&g("aw_a.png"), &json!({})).await.is_err());
+        assert!(st.lock().unwrap().0.is_empty());
+
+        // 繪匣的 input 有這張：上傳後重送成功
+        std::fs::write(d.join("aw_a.png"), b"png").unwrap();
+        assert_eq!(c.submit(&g("aw_a.png"), &json!({})).await.unwrap(), "p4");
+        assert_eq!(st.lock().unwrap().0, ["aw_a.png"]);
+
+        // 之後送出前就先上傳，一次成功
+        std::fs::write(d.join("aw_b.png"), b"png").unwrap();
+        assert_eq!(c.submit(&g("aw_b.png"), &json!({})).await.unwrap(), "p5");
+        assert_eq!(st.lock().unwrap().0, ["aw_a.png", "aw_b.png"]);
+        drop(c);
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    #[test]
+    fn invalid_input_image_only_for_load_image() {
+        let bad = |cls: &str, details: &str| json!({"node_errors": {"1": {"class_type": cls, "errors": [{"message": "Custom validation failed for node", "details": details}]}}});
+        assert!(invalid_input_image(&bad("LoadImage", "image - Invalid image file: a.png")));
+        assert!(invalid_input_image(&bad("LoadImageMask", "image - Invalid image file: m.png")));
+        assert!(!invalid_input_image(&bad("CLIPLoader", "Invalid image file")));
+        assert!(!invalid_input_image(&bad("LoadImage", "Value not in list")));
+        assert!(!invalid_input_image(&json!({"error": {"message": "x"}})));
+    }
 
     fn have(v: &[&str]) -> Vec<String> {
         v.iter().map(|s| s.to_string()).collect()

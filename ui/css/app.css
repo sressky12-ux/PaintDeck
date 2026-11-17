@@ -349,6 +349,75 @@ input[type=range]:focus-visible { outline-offset: 0; }
 .pzh-t, .pzh-s { background: rgba(141,255,176,.06); border: 1px solid rgba(141,255,176,.16); border-radius: 4px; padding: 3px 7px; color: var(--ph-green); text-align: left; cursor: pointer; font: 12px/1.35 var(--f-ui); min-width: 0; }
 .pzh-t:hover, .pzh-s:hover { border-color: rgba(141,255,176,.6); }
 .pzh-t { display: inline-flex; flex-direction: column; gap: 1px; max-width: 100%; }
+/* 詞庫抽屜（taglib.js）：大類、小類兩排頁籤，下面一顆顆詞；在框裡的亮琥珀色 */
+#tagLibBtn.on { color: var(--ph-amber); }
+.taglib { margin-top: 8px; padding: 8px; border: 1px solid rgba(141,255,176,.22); border-radius: 6px; background: rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 6px; font: 12px/1.35 var(--f-ui); }
+.tl-head b { color: var(--ph-amber); }
+.tl-q { flex: 1 1 160px; min-width: 0; }
+.tl-info { flex: 1 1 100%; }
+.tl-tabs { display: flex; flex-wrap: wrap; gap: 4px; }
+.tl-subs { padding-top: 6px; border-top: 1px dashed rgba(141,255,176,.2); max-height: 92px; overflow-y: auto; }
+.tl-tab { background: none; border: 1px solid rgba(141,255,176,.2); border-radius: 4px; padding: 2px 8px; color: var(--ph-dim); cursor: pointer; font: 12px/1.4 var(--f-ui); }
+.tl-tab:hover { color: var(--ph-green); border-color: rgba(141,255,176,.5); }
+.tl-tab.on { color: var(--ph-amber); border-color: rgba(255,181,71,.6); background: rgba(255,181,71,.1); }
+.tl-list { display: flex; flex-wrap: wrap; gap: 4px; max-height: 260px; overflow-y: auto; padding-top: 6px; border-top: 1px dashed rgba(141,255,176,.2); }
+.tl-chip { display: inline-flex; flex-direction: column; gap: 1px; max-width: 100%; text-align: left; background: rgba(141,255,176,.06); border: 1px solid rgba(141,255,176,.16); border-radius: 4px; padding: 3px 7px; color: var(--ph-green); cursor: pointer; font: 12px/1.35 var(--f-ui); }
+.tl-chip:hover { border-color: rgba(141,255,176,.6); }
+.tl-chip small { color: var(--ph-dim); font: 400 11px/1.3 var(--f-data); overflow-wrap: anywhere; }
+.tl-chip.on { background: rgba(255,181,71,.16); border-color: rgba(255,181,71,.65); color: var(--ph-amber); }
+.tl-src { opacity: .7; }
+/* Danbooru 分類詞庫：小類裡的段落小標、「再顯示」鈕、來源下拉 */
+.tl-sec { flex: 1 1 100%; margin-top: 4px; color: var(--ph-amber); font: 600 11px/1.4 var(--f-ui); opacity: .85; }
+.tl-sec:first-child { margin-top: 0; }
+.tl-more { flex: 1 1 100%; }
+.tl-src-sel { width: auto; max-width: 160px; }
+.tl-rc { display: inline-flex; align-items: center; gap: 2px; padding: 1px 2px 1px 8px; border: 1px solid rgba(110,190,255,.35); border-radius: 4px; color: var(--ph-green); }
+/* 隨機產生器（wardrobe.js） */
+.wd { display: flex; flex-direction: column; gap: 8px; font: 12px/1.35 var(--f-ui); }
+.wd b { color: var(--ph-amber); }
+.wd-top { display: flex; flex-direction: column; gap: 6px; padding: 8px; border: 1px solid rgba(141,255,176,.22); border-radius: 6px; background: rgba(0,0,0,.18); }
+.wd select.sm { width: auto; max-width: 220px; }
+.wd input.wd-seed { width: 9em; flex: 0 0 auto; }
+.wd input.wd-prob { width: 6em; flex: 0 0 auto; }
+.wd-result { display: flex; flex-direction: column; gap: 4px; }
+.wd-text { width: 100%; resize: vertical; font: 12px/1.4 var(--f-data); }
+.wd-zh { color: var(--ph-dim); }
+.wd-body { display: flex; flex-direction: column; gap: 8px; }
+.wd-sec { padding: 6px 8px; border: 1px solid rgba(141,255,176,.16); border-radius: 6px; }
+.wd-sec.off { opacity: .55; }
+.wd-fields { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 4px 12px; margin-top: 6px; }
+.wd-field { display: grid; grid-template-columns: 6.5em auto minmax(0, 1fr); gap: 4px; align-items: center; }
+.wd-field select.sm { max-width: none; width: 100%; }
+.wd-lab { color: var(--ph-green); overflow-wrap: anywhere; }
+.wd-picked { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; }
+.wd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 6px; }
+.wd-card { position: relative; display: flex; flex-direction: column; gap: 2px; padding: 4px; border: 1px solid rgba(141,255,176,.16); border-radius: 6px; background: rgba(141,255,176,.04); cursor: pointer; min-width: 0; }
+.wd-card:hover { border-color: rgba(141,255,176,.6); }
+.wd-card.on { border-color: rgba(255,181,71,.8); background: rgba(255,181,71,.14); }
+.wd-card img, .wd-noimg { width: 100%; aspect-ratio: 3 / 4; object-fit: cover; border-radius: 4px; background: rgba(0,0,0,.3); }
+.wd-noimg { display: grid; place-items: center; color: var(--ph-dim); }
+.wd-card b { color: var(--ph-green); font-weight: 600; overflow-wrap: anywhere; }
+.wd-card.on b { color: var(--ph-amber); }
+.wd-card small { color: var(--ph-dim); font: 11px/1.3 var(--f-data); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wd-fav { position: absolute; top: 6px; right: 6px; padding: 0 4px; background: rgba(0,0,0,.55); border-radius: 4px; color: var(--ph-dim); }
+.wd-fav.on { color: var(--ph-amber); }
+.wd-more { grid-column: 1 / -1; }
+/* 左邊「隨機」頁（#taglib）：三欄＝隨機產生器｜提示詞＋LoRA（生成鈕黏底）｜模型、尺寸、取樣、附加（borrow.js 借來的生成頁面板）
+   1500 以下中右兩欄疊成一欄一起捲；1100 以下整頁一欄。借過來的提示詞區裡的「詞」抽屜藏起來（這頁不放詞庫） */
+#page-taglib.on { grid-template-rows: minmax(0, 1fr); }
+.tlp { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 12px; min-height: 0; }
+.tlp-right { display: grid; grid-template-columns: 430px 350px; gap: 12px; min-height: 0; }
+.tlp-lib, .tlp-mid, .tlp-side { min-height: 0; overflow-y: auto; padding: 12px; }
+.tlp-mid { display: flex; flex-direction: column; gap: 12px; padding-bottom: 0; }
+.tlp-borrow { display: flex; flex-direction: column; gap: 12px; }
+.tlp-gen { position: sticky; bottom: 0; z-index: 2; margin-top: auto; display: flex; gap: 10px; align-items: stretch; padding: 10px 0 12px; background: var(--case-2); border-top: 1px dashed rgba(141,255,176,.25); }
+.tlp-genrow { flex: 1 1 auto; min-width: 0; }
+.tlp-genrow .genrow { width: 100%; }
+.tlp-last { flex: 0 0 auto; width: 84px; padding: 0; border: 1px solid rgba(141,255,176,.3); border-radius: 6px; background: rgba(0,0,0,.25); cursor: pointer; overflow: hidden; }
+.tlp-last img { width: 100%; height: 100%; object-fit: cover; display: block; }
+#page-taglib #tagLib, #page-taglib #tagLibBtn { display: none; }
+@media (max-width: 1500px) { .tlp-right { grid-template-columns: 430px; grid-auto-rows: max-content; align-content: start; overflow-y: auto; } .tlp-mid, .tlp-side { overflow: visible; min-height: auto; } }
+@media (max-width: 1100px) { .tlp, .tlp-right { grid-template-columns: minmax(0, 1fr); overflow: visible; } .tlp-lib { overflow: visible; } #page-taglib.on { display: block; overflow-y: auto; } }
 .pzh-s { flex: 1 1 100%; display: flex; flex-direction: column; gap: 2px; }
 .pzh-t b, .pzh-s b { font: 400 12px/1.35 var(--f-data); overflow-wrap: anywhere; }
 .pzh-t i, .pzh-s i { font-style: normal; color: var(--ph-amber); overflow-wrap: anywhere; }
@@ -652,6 +721,26 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .card .btn, .ft .btn { font-size: 12px; }
 .card.pick { cursor: pointer; }
 .card.pick:hover { box-shadow: 0 4px 0 var(--key-side), 0 0 0 2px var(--acc); }
+/* LoRA 列表模式（2026-11-17）：一行一個，小縮圖滑過放大；預覽圖可以直接拖圖上去換 */
+.cards.as-list { display: flex; flex-direction: column; gap: 6px; }
+.card.lrow { flex-direction: row; align-items: center; gap: 10px; padding: 5px 8px; overflow: visible; }
+.card.lrow .ph { flex: none; width: 60px; height: 60px; aspect-ratio: auto; transition: transform .15s; z-index: 1; }
+.card.lrow .ph:hover { transform: scale(3.4); transform-origin: left center; z-index: 5; }
+.card.lrow .ph:has(.ph-name) { padding: 4px; gap: 2px; }
+.card.lrow .ph .ph-name { font-size: 10px; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.card.lrow .ph .ph-note { display: none; }
+.card.lrow .bd { padding: 0; min-width: 0; gap: 2px; }
+.card.lrow .bd > * { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card.lrow .t .badge { margin-left: 6px; }
+.card.lrow .ft { flex: none; margin: 0; padding: 0; flex-wrap: nowrap; }
+.card .ph.over { box-shadow: 0 0 0 3px var(--acc); }
+@media (max-width: 760px) { .card.lrow { flex-wrap: wrap; } .card.lrow .bd { flex: 1 1 60%; } .card.lrow .ft { flex-wrap: wrap; } }
+/* 換預覽圖視窗 */
+.lpv-drop { display: flex; gap: 14px; align-items: flex-start; padding: 12px; margin-top: 8px; border: 2px dashed var(--key-side); border-radius: 6px; outline: none; }
+.lpv-drop.over, .lpv-drop:focus-visible { border-color: var(--acc); }
+.lpv-card { flex: none; width: 180px; padding: 4px; }
+.lpv-how { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+@media (max-width: 560px) { .lpv-drop { flex-direction: column; } }
 .bar { height: 5px; background: var(--key-dark); border-radius: 2px; overflow: hidden; box-shadow: inset 0 1px 2px rgba(0,0,0,.6); }
 .bar > div { height: 100%; background: var(--ph-green); width: 0; transition: width .3s; }
 .bar.warn > div { background: var(--ph-amber); } .bar.crit > div { background: var(--ph-red); }
@@ -1021,6 +1110,17 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .cm-panel-hd select { max-width: 170px; }
 .cm-panel textarea { font: 12px/1.5 var(--f-data); }
 .cm-line { display: grid; grid-template-columns: 1fr 120px 110px; gap: 6px; }
+/* 漫畫台角色卡、每格有誰、LoRA 清單（2026-11-16） */
+.cm-chars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 4px; }
+.cm-char { display: grid; grid-template-columns: 56px 1fr; gap: 8px; align-items: start; background: var(--case-3); border-radius: 6px; padding: 6px; }
+.cm-char > img, .cm-char > .adr-ph { width: 56px; aspect-ratio: 1; object-fit: cover; border-radius: 4px; background: var(--viewer); }
+.cm-char-bd { display: flex; flex-direction: column; gap: 4px; min-width: 0; }
+.cm-char-bd input[type=text] { flex: 1; min-width: 0; }
+.cm-char-bd textarea { font: 12px/1.5 var(--f-data); }
+.cm-who { align-items: center; }
+.cm-who .chip { padding: 2px 8px; font-size: 12px; }
+.lora-item.cm-lora, .lora-item.as-lora { grid-template-columns: 26px 1fr 64px 22px; }
+.lora-item.as-lora { grid-template-columns: 1fr 64px 1fr 22px; }
 /* 自訂版面：示意圖（點編號跳到那一格）＋列／格控制 */
 /* 漫畫台自訂版面：左欄小示意圖＋排版工作台（ui/js/comiclayout.js）。頁面一律是白紙黑框，深色主題也一樣 */
 .cm-wire { display: flex; justify-content: center; margin: 2px 0 6px; }
@@ -1383,7 +1483,7 @@ input.sh-num { width: 64px; flex: none; }
 /* 提示詞標題列：「提示詞」三個字不要被選單擠成直排；右邊的選單換到第二行、兩個平分寬度 */
 #promptBox > .lbl { flex-wrap: wrap; row-gap: 6px; }
 #promptBox > .lbl > label { white-space: nowrap; }
-#promptBox > .lbl .tools { flex: 1 1 100%; }
+#promptBox > .lbl .tools { flex: 1 1 100%; min-width: 0; } /* 不設 min-width:0 時「最近用過」裡的長提示詞會把整列撐出框，庫／詞／✕ 被擠到框外看不到 */
 #promptBox > .lbl .tools select { flex: 1 1 0; min-width: 0; max-width: none; }
 
 /* 絲印標籤：每一區標題前面一小段英文窄體字，像機器面板上印的字（英文介面就不重複） */

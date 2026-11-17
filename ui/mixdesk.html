@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="zh-Hant-TW">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>混音台</title>
+<link rel="stylesheet" href="/static/css/fonts.css">
+<link rel="stylesheet" href="/static/css/mixdesk.css">
+</head>
+<body>
+<!-- 混音台（設計 docs/superpowers/specs/2026-11-04-mixdesk-panel-design.md）：
+     上半部編曲時間軸＋影片預覽，下半部分頁切換調音台／鋼琴捲軸／樂器庫。資料都來自 mixdesk（/api/mixdesk/*）。 -->
+<div class="md" id="md">
+  <header class="md-bar" id="mdBar">
+    <select id="mdSong" aria-label="曲子"></select>
+    <button class="md-btn" id="mdNew" type="button" title="新曲子">＋</button>
+    <button class="md-btn on" id="mdPlay" type="button" title="播放／暫停（空白鍵）">▶</button>
+    <button class="md-btn" id="mdStop" type="button" title="停止並回到開頭">■</button>
+    <button class="md-btn" id="mdLoop" type="button" title="循環播放（在尺規上拖一段設範圍）">⟲</button>
+    <span class="md-vfd" id="mdTime">00:00.0</span>
+    <span class="md-vfd" id="mdTempo">— BPM</span>
+    <span class="md-vfd" id="mdSig">4/4</span>
+    <span class="md-vfd" id="mdBarNo">第 1 小節</span>
+    <button class="md-btn" id="mdAB" type="button" title="聽正式母帶（渲染出來的 mix.wav）／預覽各軌">預覽</button>
+    <span class="md-grow"></span>
+    <span class="md-vfd md-pending" id="mdPending" hidden></span>
+    <button class="md-btn" id="mdUndo" type="button" title="復原（Ctrl+Z）">↶</button>
+    <button class="md-btn" id="mdRedo" type="button" title="重做（Ctrl+Y）">↷</button>
+    <button class="md-btn acc" id="mdApply" type="button" title="把修改寫回譜檔並重新渲染">套用＋重新渲染</button>
+    <button class="md-btn" id="mdVideoBtn" type="button" title="設定這首配的影片">🎬 影片</button>
+    <button class="md-btn" id="mdStudio" type="button" title="把配樂（和各軌分軌）放進剪輯台素材">送到剪輯台</button>
+  </header>
+  <div class="md-msg" id="mdMsg" role="status" hidden></div>
+  <div class="md-err" id="mdErr" role="alert" hidden></div>
+  <div class="md-progress" id="mdProgress" hidden><i></i><span></span><button class="md-btn sm" id="mdCancel" type="button">取消</button></div>
+
+  <div class="md-top">
+    <div class="md-arr" id="mdArr" tabindex="0" aria-label="編曲時間軸"></div>
+    <div class="md-prev" id="mdPrev">
+      <video id="mdVideo" playsinline preload="auto" muted></video>
+      <div class="md-sub" id="mdSub"></div>
+      <div class="md-cap" id="mdVideoCap">沒有影片：按上面的「🎬 影片」選一支</div>
+    </div>
+  </div>
+
+  <nav class="md-tabs" role="tablist">
+    <button class="md-tab on" data-p="mix" type="button" role="tab">調音台</button>
+    <button class="md-tab" data-p="roll" type="button" role="tab" id="mdRollTab">鋼琴捲軸</button>
+    <button class="md-tab" data-p="lib" type="button" role="tab">樂器庫</button>
+  </nav>
+  <section class="md-pane" data-p="mix" id="mdMixer"></section>
+  <section class="md-pane" data-p="roll" id="mdRoll" hidden></section>
+  <section class="md-pane" data-p="lib" id="mdLib" hidden></section>
+
+  <div class="md-empty" id="mdEmpty" hidden></div>
+</div>
+
+<div class="md-dialog" id="mdDialog" hidden><div class="md-dialog-box" id="mdDialogBox"></div></div>
+<div class="md-menu" id="mdMenu" hidden></div>
+
+<script type="module" src="/static/js/mixdesk/main.js"></script>
+</body>
+</html>

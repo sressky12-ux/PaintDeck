@@ -442,8 +442,11 @@ pub async fn take_select(State(app): State<Shared>, Body(b): Body) -> ApiResult 
         return Err(bad("這版接續的是上一鏡的另一個版本；請先採用相容的上一鏡，或重拍這一鏡"));
     }
     let changed = crate::film_takes::select(&mut p["segments"][index], &take_id, d::RESULT_KEYS).map_err(bad)?;
-    d::adopt_take_recipe(&mut p["segments"][index], &take_id);
-    if changed { d::invalidate_dependents(&mut p, index); }
+    // 已經是採用版又送一次：不要再把配方蓋回欄位（使用者可能已經在這版上面改了重拍用的提示詞，草稿只在第一次採用時留底）
+    if changed {
+        d::adopt_take_recipe(&mut p["segments"][index], &take_id);
+        d::invalidate_dependents(&mut p, index);
+    }
     app.director.store.save_project(&mut p).map_err(internal)?;
     ok(p)
 }
@@ -502,10 +505,19 @@ fn end(app: &Shared, id: &str) {
 type Step = Result<(), String>;
 
 fn spawn(app: &Shared, id: &str, token: CancellationToken, work: impl std::future::Future<Output = Step> + Send + 'static) {
+    // 背景工作不管怎麼結束（含 panic：diagnostics::spawn 接住後會再往外丟）都要從執行名單除名，
+    // 不然這個專案永遠「正在執行」，存檔、採用版本、開拍全被擋住，只能重開程式（跟長片的 Unlist 同一招）
+    struct Unlist(Shared, String);
+    impl Drop for Unlist {
+        fn drop(&mut self) {
+            end(&self.0, &self.1);
+        }
+    }
     let (app, id) = (app.clone(), id.to_string());
     crate::diagnostics::spawn(async move {
+        let unlist = Unlist(app.clone(), id.clone());
         let r = work.await;
-        end(&app, &id);
+        drop(unlist);
         match r {
             Ok(()) => {
                 let review = app.director.store.project(&id).is_some_and(|p| p["segments"].as_array().is_some_and(|a| a.iter().any(|s| !s["pending_take"].is_null())));

@@ -46,7 +46,7 @@ export function openFramesSession(sid) { setTab("frames", true); framesShow(sid)
 function setTab(t, quiet = false) {
   // 2026-10-24 起 H3 影片和長片合成「影片」一個分頁；舊值（存在 localStorage 的、別處呼叫的）換成子區塊
   if (t === "h3" || t === "chain") { videoSub = t === "chain" ? "long" : "short"; t = "video"; }
-  if (!["plan", "edit", "frames", "video"].includes(t)) t = "plan";
+  if (!["plan", "edit", "frames", "video", "mixdesk"].includes(t)) t = "plan";
   if (!["short", "long"].includes(videoSub)) videoSub = "short";
   tab = t;
   store.set("dirTab", t);
@@ -59,10 +59,26 @@ function setTab(t, quiet = false) {
   if (quiet || app.page !== "director") return;
   if (t === "edit") editShow();
   if (t === "frames") framesShow();
+  if (t === "mixdesk") mixdeskShow();
   if (t === "video") {
     if (videoSub === "long") h3chain.show(); else h3.show();
     import("./shotsheet.js").then((m) => m.show()).catch(() => {});
   }
+}
+
+// ================================================================ 混音台（ui/mixdesk.html；同一個伺服器的獨立頁面）
+function mixdeskShow() {
+  const fr = F("mdFrame");
+  if (!fr.dataset.on) { fr.src = "/mixdesk"; fr.dataset.on = "1"; }
+  F("mdFull").onclick = () => { F("mdBody").classList.add("full"); F("mdUnfull").hidden = false; };
+  F("mdUnfull").onclick = () => { F("mdBody").classList.remove("full"); F("mdUnfull").hidden = true; };
+  // 全螢幕：先放大到整個視窗（瀏覽器不准蓋滿螢幕時也有效），再請瀏覽器蓋滿螢幕；Esc 退出全螢幕後還是放大狀態，紅鈕縮回
+  F("mdFs").onclick = () => { F("mdFull").onclick(); F("mdBody").requestFullscreen?.().catch(() => {}); };
+  // 混音台的「🎬 影片 → 從圖庫挑」借用這裡的圖庫挑選器（全螢幕時先退出，不然看不到視窗）
+  window.mixdeskPickVideo = (cb) => {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    pickFromGallery(cb, { video: "only", title: "選一支影片給混音台配樂" });
+  };
 }
 
 // ================================================================ 剪輯台（FableCut）

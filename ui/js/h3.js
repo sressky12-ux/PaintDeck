@@ -948,8 +948,12 @@ async function saveRh() {
     rhub = await api("/api/runninghub/config", { json: body });
     F("h3RhKey").value = "";
     toast("RunningHub 設定存好了", "ok");
-  } catch (e) { toast(e.message, "err"); }
-  paintRh();
+    paintRh();
+  } catch (e) {
+    // 沒存成功：畫面上打的字留著（以前會被重畫蓋回舊值，看起來像存好了）
+    toast(e.message, "err");
+    F("h3RhMsg").textContent = `沒存成功：${e.message}`;
+  }
 }
 
 async function testRh() {
@@ -1045,7 +1049,9 @@ function paintModels() {
   const names = [...new Set([d.model, d.official_ref2va, ...(pool || [])])];
   const sel = F("h3Model");
   const cur = sel.value;
-  const def = where === "local" && info.local?.pick ? `預設：${info.local.pick}（本機最省顯存的）` : "預設：10Eros-Max（無審核、8 步）";
+  // RunningHub 上沒有 10Eros：沒選模型時後端會換成那邊有的官方 H3（runninghub.rs 的 h3_defaults）
+  const def = where === "local" && info.local?.pick ? `預設：${info.local.pick}（本機最省顯存的）`
+    : where === "runninghub" ? "預設：RunningHub 上的官方 H3（自動加 8 步 Turbo LoRA）" : "預設：10Eros-Max（無審核、8 步）";
   sel.replaceChildren(el("option", { value: "" }, def),
     ...names.filter((n) => n !== d.model).map((n) => el("option", { value: n }, n === d.official_ref2va ? "官方 H3 ref2va（會自動加 8 步 Turbo LoRA）" : n)));
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";
@@ -1061,8 +1067,9 @@ function paintModels() {
 function paintModelNote() {
   const n = (F("h3Model").value || "").split(/[\\/]/).pop().toLowerCase();
   const official = n.startsWith("minimax_h3_ref2va") && !/turbo|dmd/.test(n);
-  F("h3ModelNote").textContent = !n || official || /turbo|dmd|8step|4step|lightning|distill/.test(n) ? ""
-    : "這顆的檔名看不出有烤 Turbo：照預設 8 步跑可能是糊的。把步數調到 30 以上，或在下面加一顆 H3 的 Turbo LoRA。";
+  const rhNote = n && where === "runninghub" ? "RunningHub 上要有同名的模型檔才跑得動；名字不一樣就到上面 RunningHub 設定的「模型對照」填「這邊 => 那邊」。" : "";
+  F("h3ModelNote").textContent = (!n || official || /turbo|dmd|8step|4step|lightning|distill/.test(n) ? ""
+    : "這顆的檔名看不出有烤 Turbo：照預設 8 步跑可能是糊的。把步數調到 30 以上，或在下面加一顆 H3 的 Turbo LoRA。") + rhNote;
 }
 
 function allLoras() {

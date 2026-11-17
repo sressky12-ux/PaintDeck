@@ -29,11 +29,15 @@ import * as charsheet from "./charsheet.js";
 import * as i18n from "./i18n.js";
 import * as diagnostics from "./diagnostics.js";
 import { mountDock } from "./dock.js";
+import * as taglibPage from "./taglibpage.js";
 
 function showPage(p) {
+  // 隨機頁借走的生成頁面板：離開就還回去（要在生成頁顯示之前，自由版面才量得到）
+  if (app.page === "taglib" && p !== "taglib") taglibPage.hide();
   app.page = p;
   $$("#tabs button").forEach((b) => { b.classList.toggle("on", b.dataset.page === p); b.setAttribute("aria-selected", String(b.dataset.page === p)); });
   $$(".page").forEach((pg) => pg.classList.toggle("on", pg.id === `page-${p}`));
+  if (p === "taglib") taglibPage.show();
   if (p === "gallery") gallery.show();
   if (p === "assets") assets.show();
   if (p === "loras") loras.showPage();
@@ -190,6 +194,7 @@ await i18n.init();
 deck.init();
 system.init();
 gen.init();
+taglibPage.init();   // 要在 gen.init 之後：隨機頁接的是生成頁的提示詞框
 gallery.init();
 assets.init();
 loras.init();
@@ -214,7 +219,7 @@ connect();
 // 網址的 #gallery、#loras、#civitai、#settings、#director、#comic、#agent 直接打開那一頁；#jobs 打開任務面板、#help 打開說明（系統列選單也用這個）
 function fromHash() {
   const h = location.hash.slice(1);
-  if (["gen", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent", "train", "api"].includes(h)) showPage(h);
+  if (["gen", "taglib", "gallery", "assets", "loras", "civitai", "settings", "director", "comic", "agent", "train", "api"].includes(h)) showPage(h);
   else if (h === "jobs") queue.toggle();
   else if (h === "help") system.openHelp();
 }

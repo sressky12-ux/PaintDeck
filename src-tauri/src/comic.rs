@@ -710,7 +710,56 @@ fn has_scene(c: &Value) -> bool {
     !field(c, "what").is_empty()
 }
 
-/// MOSS-Image 一次畫完整頁＋字。cast＝角色外貌（每個角色完整寫一次）
+// ================================================================ 角色卡（2026-11-16）
+/// 角色卡最多幾張（一頁 MOSS 畫得清楚的人數；Qwen 修角色時每格最多也只帶這麼多人的參考圖）
+pub const MAX_CHARS: usize = 4;
+
+/// 這頁的角色卡：[{asset, name, text, trigger, refs:[資產檔名], loras:[…]}]。名字是空的不算
+pub fn chars(p: &Value) -> Vec<Value> {
+    p["chars"].as_array().into_iter().flatten().filter(|c| !field(c, "name").is_empty()).take(MAX_CHARS).cloned().collect()
+}
+
+/// 角色卡的名字（排分鏡的 who、修角色對格子都用它）
+pub fn char_names(p: &Value) -> Vec<String> {
+    chars(p).iter().map(|c| field(c, "name")).collect()
+}
+
+/// 一張角色卡 → 一句外貌：「Lin (lin_v1): A tall woman …」。觸發詞放名字後面，跟外貌一起出現 LoRA 比較吃得到
+fn char_sentence(c: &Value) -> String {
+    let (name, text, trig) = (field(c, "name"), field(c, "text"), field(c, "trigger"));
+    let head = if trig.is_empty() { name } else { format!("{name} ({})", trig.trim_end_matches([',', '.'])) };
+    if text.is_empty() {
+        sentence(&head)
+    } else {
+        sentence(&format!("{head}: {}", text.trim_end_matches([',', '.'])))
+    }
+}
+
+/// 整頁的角色外貌：角色卡一張一句（有名字，分格內容可以直接用名字指人），再接自由寫的外貌欄
+pub fn cast_text(p: &Value) -> String {
+    let mut out: Vec<String> = chars(p).iter().map(char_sentence).collect();
+    let cast = field(p, "cast");
+    if !cast.is_empty() {
+        out.push(sentence(&cast));
+    }
+    out.join(" ")
+}
+
+/// 一格裡有誰（只留這頁角色卡上有的名字）
+pub fn panel_who(c: &Value, names: &[String]) -> Vec<String> {
+    let mut out: Vec<String> = vec![];
+    for w in c["who"].as_array().into_iter().flatten() {
+        let w = tx(w).trim().to_string();
+        if let Some(n) = names.iter().find(|n| n.eq_ignore_ascii_case(&w)) {
+            if !out.contains(n) {
+                out.push(n.clone());
+            }
+        }
+    }
+    out
+}
+
+/// MOSS-Image 一次畫完整頁＋字。cast＝角色外貌（角色卡一張一句＋自由寫的外貌）
 pub fn moss_page(p: &Value) -> Result<String, String> {
     let (desc, slots) = layout_of(p)?;
     let list = p["panels"].as_array().cloned().unwrap_or_default();
@@ -718,9 +767,9 @@ pub fn moss_page(p: &Value) -> Result<String, String> {
     let mut sent = vec![format!(
         "The image is a vertical full-color anime manga page divided into {desc}, separated by thin black borders with white gutters, read from right to left."
     )];
-    let cast = field(p, "cast");
+    let cast = cast_text(p);
     if !cast.is_empty() {
-        sent.push(sentence(&cast));
+        sent.push(cast);
     }
     for (i, (slot, _)) in slots.iter().enumerate() {
         let c = list.get(i).unwrap_or(&Value::Null);
@@ -775,12 +824,13 @@ pub const SYSTEM_SCRIPT: &str = r#"You lay out ONE page of a manga for an AI ima
 
 Return JSON only. No prose, no explanation, no code fences.
 
-{"panels":[{"shot":"a medium shot","what":"...","line":"...","bubble":"top","sfx":""}]}
+{"panels":[{"shot":"a medium shot","what":"...","who":[],"line":"...","bubble":"top","sfx":""}]}
 
 Rules:
 - Exactly {N} panel objects, in reading order. Use every panel; never merge, skip or add panels.
 - "shot" must be one of: a wide shot, a full-body view, a cowboy shot, a medium shot, a close-up, an extreme close-up, a low-angle view, a high-angle view, a first-person point-of-view shot, a side view, a dynamic wide shot.
-- "what" is ONE short English phrase describing who is where, what they are doing and how the picture is composed. Visible physical things only. Never repeat hair, clothing or body details already listed in the character descriptions. Never write text, signs, captions, speech or letters in this field.
+- "what" is ONE short English phrase describing who is where, what they are doing and how the picture is composed. Visible physical things only. Never repeat hair, clothing or body details already listed in the character descriptions. Never write text, signs, captions, speech or letters in this field. When named characters are given, call them by their exact names in this field.
+- "who" lists the exact names of the named characters visible in the panel, [] when none of them appears.
 - "line" is the spoken dialogue inside the speech bubble, in Traditional Chinese (Taiwan usage), 8 characters or fewer when the panel is small. Use "" when nobody speaks.
 - "bubble" is where the bubble sits: top left, top right, top, left side, right side, or bottom.
 - "sfx" is a short Japanese onomatopoeia drawn as a large hand-lettered sound effect, or "".
@@ -805,10 +855,12 @@ pub fn script_messages(p: &Value, story: &str) -> (String, String) {
         })
         .collect();
     let or_free = |s: String| if s.trim().is_empty() { "(free choice)".to_string() } else { s };
+    let names = char_names(p);
+    let named = if names.is_empty() { "(none)".to_string() } else { names.join(", ") };
     let user = format!(
-        "Page layout: {desc}.\nPanel order (reading order, right to left):\n{}\n\nFixed character descriptions: {}\nLighting: {}\nMood: {}\nStyle trigger words: {}\n\nStory for this page:\n{}\n\nExactly {n} panels. Return the JSON now.",
+        "Page layout: {desc}.\nPanel order (reading order, right to left):\n{}\n\nNamed characters: {named}\nFixed character descriptions: {}\nLighting: {}\nMood: {}\nStyle trigger words: {}\n\nStory for this page:\n{}\n\nExactly {n} panels. Return the JSON now.",
         order.join("\n"),
-        or_free(field(p, "cast")),
+        or_free(cast_text(p)),
         or_free(field(p, "light")),
         or_free(field(p, "mood")),
         or_free(field(p, "trigger")),
@@ -866,7 +918,7 @@ fn snap_bubble(s: &str) -> &'static str {
 }
 
 fn blank_panel() -> Value {
-    json!({"shot": "a medium shot", "what": "", "line": "", "bubble": "top", "sfx": ""})
+    json!({"shot": "a medium shot", "what": "", "who": [], "line": "", "bubble": "top", "sfx": ""})
 }
 
 /// 模型輸出 → 剛好 n 格（多出來的不理、不夠的補空白）。一格的內容都沒有＝格式壞掉，回 None 讓呼叫的人重試。
@@ -889,9 +941,16 @@ pub fn parse_script(text: &str, n: usize) -> Option<Vec<Value>> {
             continue;
         };
         let what = get(c, &["what", "content", "description", "scene", "action"]);
+        // who：名字清單（偶爾吐成一個字串「Lin, Ken」）；對不對得上角色卡由呼叫的人篩（panel_who）
+        let who: Vec<String> = match c.get("who").or_else(|| c.get("characters")) {
+            Some(Value::Array(a)) => a.iter().map(|v| tx(v).trim().to_string()).filter(|s| !s.is_empty()).collect(),
+            Some(v) => tx(v).split([',', '、', '，']).map(|s| s.trim().to_string()).filter(|s| !s.is_empty()).collect(),
+            None => vec![],
+        };
         out.push(json!({
             "shot": snap_shot(&get(c, &["shot", "framing"])),
             "what": what,
+            "who": who,
             "line": get(c, &["line", "dialogue", "speech"]),
             "bubble": snap_bubble(&get(c, &["bubble", "bubble_at", "position"])),
             "sfx": get(c, &["sfx", "sound", "onomatopoeia"]),
@@ -952,11 +1011,11 @@ impl Store {
 
 /// 新作品的預設值（四格）
 pub fn blank(title: &str) -> Value {
-    let panel = || json!({"shot": "a medium shot", "what": "", "line": "", "bubble": "top", "sfx": ""});
+    let panel = || json!({"shot": "a medium shot", "what": "", "who": [], "line": "", "bubble": "top", "sfx": ""});
     json!({
         "id": new_id(), "title": if title.trim().is_empty() { "未命名" } else { title.trim() }, "created": now(), "updated": now(),
         "layout": "L4", "trigger": "", "cast": "", "light": "", "mood": "", "script": "",
-        "panels": [panel(), panel(), panel(), panel()], "image": null, "count": 4, "runs": [],
+        "panels": [panel(), panel(), panel(), panel()], "chars": [], "loras": [], "image": null, "count": 4, "runs": [],
     })
 }
 
@@ -1252,5 +1311,30 @@ mod tests {
         assert!(user.contains("two panels side by side"), "{user}");
         assert!(user.contains("1. right panel / 右邊那格"), "{user}");
         assert!(user.contains("她拔劍。"), "{user}");
+    }
+
+    #[test]
+    fn character_cards_feed_cast_names_and_who() {
+        let mut p = sample();
+        p["cast"] = json!("A black cat sleeps on the bed");
+        p["chars"] = json!([
+            {"name": "Lin", "text": "A tall woman with long silver hair and red eyes.", "trigger": "lin_v1,"},
+            {"name": "", "text": "no name: ignored"},
+            {"name": "Ken", "text": ""}]);
+        let s = moss_page(&p).unwrap();
+        assert!(s.contains("Lin (lin_v1): A tall woman with long silver hair and red eyes. Ken. A black cat sleeps on the bed."), "{s}");
+        assert!(!s.contains("ignored"));
+        assert_eq!(char_names(&p), vec!["Lin", "Ken"]);
+        let (sys, user) = script_messages(&p, "她拔劍。");
+        assert!(sys.contains("\"who\""), "{sys}");
+        assert!(user.contains("Named characters: Lin, Ken"), "{user}");
+        // who 只留角色卡上的名字（大小寫不拘、不重複）；模型吐成字串也讀得懂
+        let out = parse_script(r#"{"panels":[{"what":"Lin waves","who":"lin, Bob"},{"what":"Ken nods","who":["Ken","Ken"]}]}"#, 2).unwrap();
+        let names = char_names(&p);
+        assert_eq!(panel_who(&out[0], &names), vec!["Lin"]);
+        assert_eq!(panel_who(&out[1], &names), vec!["Ken"]);
+        // 沒有角色卡：照舊
+        let plain = moss_page(&sample()).unwrap();
+        assert!(plain.contains("The tall right panel shows"), "{plain}");
     }
 }

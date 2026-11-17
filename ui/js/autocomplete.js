@@ -1,8 +1,32 @@
 // 提示詞自動完成：輸入英文找 Danbooru tag，輸入中文找對應的英文 tag
-import { el, debounce, escTag, fmtN } from "./util.js";
+import { el, debounce, escTag, fmtN, store } from "./util.js";
 
 // 逗號：半形 , 、全形 ，（中文輸入法打的）、頓號 、 都算 tag 的分隔
 const SEP = /[,，、]/;
+
+// 中文輸入法打出來的全形標點（2026-11-17，玩家回報「手動打 tag 時老是來回切輸入法」）：
+// 前一個字是英數或半形符號（在打英文 tag）才換成半形；前一個字是中文（在寫中文句子）就不動。
+// 用 execCommand("insertText") 換，Ctrl+Z 一下就回到全形。設定記在 aw_punctFix（預設開），提示詞框下面有開關
+const FULL = { "，": ", ", "、": ", ", "：": ":", "（": "(", "）": ")" };
+export const punctFixOn = () => store.get("punctFix", true);
+export function fixPunct(ta) {
+  if (!punctFixOn()) return false;
+  const pos = ta.selectionStart;
+  if (pos !== ta.selectionEnd || pos < 1) return false;
+  const v = ta.value, ch = v[pos - 1];
+  let rep = FULL[ch];
+  if (!rep) return false;
+  const prev = v.slice(0, pos - 1).replace(/[ \t]+$/, "").slice(-1);
+  // 「（」開權重括號常常在詞的開頭（逗號、換行後面，或整框第一個字）
+  if (!(/[\x21-\x7e]/.test(prev) || (ch === "（" && (!prev || /[\n,]/.test(prev))))) return false;
+  if (rep === ", " && /^\s/.test(v.slice(pos))) rep = ",";
+  ta.setSelectionRange(pos - 1, pos);
+  if (!document.execCommand("insertText", false, rep)) {
+    ta.setRangeText(rep, pos - 1, pos, "end");
+    ta.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+  return true;
+}
 
 export function attachAutocomplete(ta, box) {
   let items = [], sel = 0, range = null, reqId = 0, composing = false;
@@ -59,8 +83,12 @@ export function attachAutocomplete(ta, box) {
 
   // 輸入法組字中（拼音、注音還沒選字）：不查，也不攔按鍵，否則 Enter／Tab／方向鍵會被選單搶走；選字完成（compositionend）才查
   ta.addEventListener("compositionstart", () => { composing = true; reqId++; close(); });
-  ta.addEventListener("compositionend", () => { composing = false; query(); });
-  ta.addEventListener("input", (e) => { if (e.isTrusted !== false && !composing && !e.isComposing) query(); });
+  ta.addEventListener("compositionend", () => { composing = false; if (!fixPunct(ta)) query(); });
+  ta.addEventListener("input", (e) => {
+    if (e.isTrusted === false || composing || e.isComposing) return;
+    if (/^insert/.test(e.inputType || "") && fixPunct(ta)) return;
+    query();
+  });
   ta.addEventListener("keydown", (e) => {
     if (composing || e.isComposing || e.keyCode === 229 || e.key === "Process") return;
     if (!box.classList.contains("on")) return;

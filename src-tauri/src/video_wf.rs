@@ -779,14 +779,12 @@ pub fn build(
         return Err(GraphError(format!("「{}」是素材槽，請透過選檔指定，不能同時當一般參數覆寫", slot.label)));
     }
 
+    // 一格一格看：這格原本有 {{prompt}} 就只換那幾個字，沒有才整格換。
+    // 以前是「全部的格都有標記才用替換」：兩格裡只有一格寫標記時，寫了標記那格的其他字（例如後面接的品質詞）會被整格蓋掉
     for (id, k) in &a.prompt {
-        let v = if a.placeholder {
-            json!(input(&g, id, k)
-                .and_then(Value::as_str)
-                .unwrap_or("")
-                .replace(PROMPT, &prompt))
-        } else {
-            json!(prompt)
+        let v = match input(&g, id, k).and_then(Value::as_str).filter(|t| t.contains(PROMPT)) {
+            Some(t) => json!(t.replace(PROMPT, &prompt)),
+            None => json!(prompt),
         };
         set(&mut g, id, k, v);
     }
@@ -1477,6 +1475,18 @@ mod tests {
         assert_eq!(out["50"]["inputs"]["length"], 81, "沒送秒數：照工作流");
         assert!(out.get("anima_web_first").is_none(), "沒有 poster 就不存封面");
         assert_eq!(info["frames"], 81);
+    }
+
+    /// 自己指定兩格提示詞、只有一格寫 {{prompt}}：有寫的那格只換標記（後面的字留著），沒寫的那格整格換
+    #[test]
+    fn mixed_placeholder_fields_are_replaced_one_by_one() {
+        let mut g = wan();
+        g["6"]["inputs"]["text"] = json!("{{prompt}}, masterpiece");
+        g["9"] = json!({"class_type": "CLIPTextEncode", "inputs": {"text": "old words", "clip": ["38", 0]}});
+        let wf = json!({"name": "x", "graph": g, "map": {"prompt": [["6", "text"], ["9", "text"]]}});
+        let (out, _) = build(&json!({"prompt": "she waves", "init_image": "tall.png", "seed": 1}), &wf, &input_dir(), 0).unwrap();
+        assert_eq!(out["6"]["inputs"]["text"], "she waves, masterpiece");
+        assert_eq!(out["9"]["inputs"]["text"], "she waves");
     }
 
     #[test]

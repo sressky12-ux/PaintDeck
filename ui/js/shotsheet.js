@@ -157,6 +157,7 @@ export function setSegCount(n) {
     const lost = S.segments.slice(n).map((s, k) => (hasContent(s) ? n + k + 1 : 0)).filter(Boolean);
     if (lost.length && !confirm(`第 ${lost.join("、")} 段已經寫了東西，確定拿掉？`)) { paint(); return false; }
     S.segments.splice(n);
+    issues = issues.filter((x) => !(x.seg >= n));  // 拿掉的段的健檢提醒一起拿掉
   } else while (S.segments.length < n) S.segments.push(seg());
   if (S.engine === "h3" && (cur === 1) !== (n === 1)) studio.openVideo(n === 1 ? "short" : "long");
   save();
@@ -169,7 +170,9 @@ export function setSegCount(n) {
 export async function addCast(it) {
   if (S.cast.length >= LIM.max_cast) { toast(`角色最多 ${LIM.max_cast} 個`, "err"); return false; }
   let p;
+  const draft = S;
   try { p = await api(`/api/assets/${it.id}/apply`, { json: { family: "h3" } }); } catch (e) { toast(e.message, "err"); return false; }
+  if (S !== draft) return false;  // 等的時候換了一張拍攝單：不要把角色加進別張
   if (S.cast.length >= LIM.max_cast) { toast(`角色最多 ${LIM.max_cast} 個`, "err"); return false; }
   castImgs.set(it.id, p.images || []);
   const locked = !!p.locked;
@@ -412,6 +415,8 @@ async function addRef(get, who = "") {
     const draft = S;
     const r = await get();
     if (!r || S !== draft) return;
+    // 同一張放兩次會變成兩個 <Picture N> 指同一張圖（鎖定角色自動放過的，再按「用角色的圖」最常見）
+    if (S.refs.items.some((x) => x.file === r.name)) { if (!who) toast("這張已經在參考圖裡了", "err"); return; }
     if (S.refs.items.filter((x) => x.file).length >= LIM.max_refs) return toast(`參考圖最多 ${LIM.max_refs} 張`, "err");
     const empty = S.refs.items.find((x) => !x.file && r.asset_id && x.asset_id === r.asset_id) || S.refs.items.find((x) => !x.file);
     const item = { file: r.name, asset_id: r.asset_id ?? empty?.asset_id ?? null, who: who || empty?.who || "" };
@@ -648,7 +653,10 @@ export async function applyTo() {
   if (applying) return;
   applying = true;
   try {
-  if (!(await composeNow())) return;
+  // 剛打完字 0.3 秒內按下去：自動重組會插隊、這次的結果作廢。多試幾次；真的組不出來要講，不能按了沒反應
+  let composed = false;
+  for (let k = 0; k < 4 && !composed; k++) composed = await composeNow();
+  if (!composed) return toast("提示詞沒組出來：再按一次，或先按「直接組」看是哪裡出錯", "err");
   const draft = S, version = seq;
   const prompts = S.segments.map((s) => s.prompt);
   if (prompts.some((p) => !p.trim())) return toast("有段落還沒有提示詞：先按「直接組」", "err");

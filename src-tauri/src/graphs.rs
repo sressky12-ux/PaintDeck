@@ -616,6 +616,10 @@ const OUTPAINT_HINT: &str = "Extend the scene naturally into the empty gray bord
 
 /// 修臉／修手用的偵測模型（ComfyUI 0.38 原生 SAM3_Detect；Comfy-Org/sam3.1，放 models\checkpoints）
 pub const SAM3_CKPT: &str = "sam3.1_multiplex_fp16.safetensors";
+/// SAM3 找每顆頭的詞：後面的「:8」＝最多 8 個（ComfyUI 的 SAM3 詞不加 :N 只回分數最高的 1 個，2026-11-17 查 sam3_clip._parse_prompts）
+pub const HEAD_PROMPT: &str = "head:8";
+/// SAM3 每個詞最多找幾個（修臉修手、預演台找人、漫畫找頭）
+pub const DETECT_MAX: u32 = 8;
 /// 去背模型（ComfyUI 0.38 原生 RemoveBackground；Comfy-Org/BiRefNet，放 models\background_removal）
 pub const BG_MODEL: &str = "birefnet.safetensors";
 
@@ -626,6 +630,8 @@ pub fn detect_graph(image: &str, words: &[&str], threshold: f64) -> Map<String, 
     let ck = g.add("CheckpointLoaderSimple", json!({"ckpt_name": SAM3_CKPT}));
     let li = g.add("LoadImage", json!({"image": image}));
     for w in words {
+        // 沒寫「:N」的詞 SAM3 只回分數最高的 1 個（ComfyUI sam3_clip._parse_prompts），一律補上限
+        let w = if w.contains(':') { w.to_string() } else { format!("{w}:{DETECT_MAX}") };
         let cond = g.add("CLIPTextEncode", json!({"text": w, "clip": Graph::slot(&ck, 1)}));
         let det = g.add(
             "SAM3_Detect",
@@ -838,6 +844,7 @@ fn hires(
     w: i64,
     h: i64,
     lay: Option<&Layout>,
+    negative: &str,
 ) -> (Ref, i64, i64) {
     let empty = json!({});
     let hf = p.get("hires").filter(|v| truthy(Some(v))).unwrap_or(&empty);
@@ -847,10 +854,20 @@ fn hires(
     let st = if g.family == "qwen21" { 32 } else { 16 };
     let sc = f(hf.get("scale"), 1.5);
     let (ww, hh) = (snap(w as f64 * sc, st, 256), snap(h as f64 * sc, st, 256));
-    // 版面框的座標是像素：放大後要照新尺寸重算一次
-    let pos = &match lay {
-        Some(l) => g.text(&l.prompt(ww, hh)),
-        None => pos.clone(),
+    // 版面框的座標是像素：放大後要照新尺寸重算一次。
+    // 重算出來的是全新的正面條件：開著 MOSS 色彩／深度控制時要照新尺寸重新包一次，
+    // 不然第二段變成「正面沒控制、負面還帶著第一段的控制」（2026-11-13 審查）
+    let (pos, neg) = &match lay {
+        Some(l) => {
+            let t = g.text(&l.prompt(ww, hh));
+            if moss_control_adapter(p).is_some() {
+                let n = g.neg_text(&t, negative, f(p.get("cfg"), 0.0));
+                moss_control(g, p, t, n, ww, hh)
+            } else {
+                (t, neg.clone())
+            }
+        }
+        None => (pos.clone(), neg.clone()),
     };
     let up = g.add(
         "UpscaleModelLoader",
@@ -987,7 +1004,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 (w0, h0),
             );
             let im = g.decode(&smp, w0, h0);
-            (img, w, h) = hires(&mut g, im, p, &model, &pos, &neg, seed, w0, h0, lay.as_ref());
+            (img, w, h) = hires(&mut g, im, p, &model, &pos, &neg, seed, w0, h0, lay.as_ref(), &negative);
         }
         "img2img" => {
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
@@ -1045,7 +1062,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 (w0, h0),
             );
             let im = g.decode(&smp, w0, h0);
-            (img, w, h) = hires(&mut g, im, p, &model, &pos, &neg, seed, w0, h0, lay.as_ref());
+            (img, w, h) = hires(&mut g, im, p, &model, &pos, &neg, seed, w0, h0, lay.as_ref(), &negative);
         }
         "inpaint" | "outpaint" => {
             // 擴圖＝局部重繪的特例：ImagePadForOutpaint 把畫布往外補灰、外圈當遮罩（往原圖內羽化），整張重畫遮罩那圈
@@ -1109,7 +1126,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 region = orig.clone();
                 rmask = full_mask.clone();
             }
-            let (w0, h0) = fit_pixels(rw, rh, f(ip.get("pixels"), 1024.0 * 1024.0), step);
+            let (w0, h0) = fit_pixels(rw, rh, f(ip.get("pixels"), 1024.0 * 1024.0).clamp(256.0 * 256.0, 4096.0 * 4096.0), step);
             let work = g.scale(&region, w0, h0, "disabled", "lanczos");
             let mut wmask = g.mask_scale(&rmask, w0, h0);
             let grow = i(ip.get("grow"), 8);
@@ -1230,6 +1247,59 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             );
             img = g.decode(&smp, w0, h0);
             (w, h) = (w0, h0);
+        }
+        "headswap" => {
+            // 漫畫修角色只換頭（2026-11-16）：SAM3 找頭 → AnimaHeadCrop 裁頭放大 → Qwen 多圖參考（<image1>＝頭部裁切）
+            // 只在頭部遮罩裡重畫（SetLatentNoiseMask）→ AnimaHeadStitch 對齊顏色貼回原圖；節點在 resources\extras\anima_comic_nodes
+            if !q {
+                return err("多圖參考只支援 Qwen 2.1 模型（Noct Q），請先在「模型」換成 Qwen 2.1");
+            }
+            let init = p.get("init_image").cloned().unwrap_or(Value::Null);
+            let (ow, oh) = image_size(&inp(&init))?;
+            // refs 空的＝只改頭部（補表情），<image1> 一張圖
+            let refs: Vec<&Value> = p.get("refs").and_then(Value::as_array).into_iter().flatten().filter(|r| truthy(r.get("image"))).take(9).collect();
+            let hd = p.get("head").filter(|v| v.is_object()).unwrap_or(&empty);
+            let pixels = f(hd.get("pixels"), QWEN21_PIXELS).clamp(256.0 * 256.0, 2048.0 * 2048.0);
+            let src = g.add("LoadImage", json!({"image": init}));
+            // head.mask＝已經挑好的那顆頭（input 裡的黑白遮罩，比對參考圖挑的）；沒給才在這裡跑 SAM3、照 index 挑
+            let (det, index) = match hd.get("mask").and_then(Value::as_str).filter(|m| !m.is_empty()) {
+                Some(m) => (g.add("LoadImageMask", json!({"image": m, "channel": "red"})), 0),
+                None => {
+                    let sam = g.add("CheckpointLoaderSimple", json!({"ckpt_name": SAM3_CKPT}));
+                    let word = g.add("CLIPTextEncode", json!({"text": s(hd.get("word"), HEAD_PROMPT), "clip": Graph::slot(&sam, 1)}));
+                    let det = g.add(
+                        "SAM3_Detect",
+                        json!({"model": sam, "image": src, "conditioning": word, "threshold": f(hd.get("threshold"), 0.35).clamp(0.05, 0.95),
+                               "refine_iterations": 2, "individual_masks": true}),
+                    );
+                    (det, i(hd.get("index"), 0).clamp(0, 16))
+                }
+            };
+            let crop = g.add(
+                "AnimaHeadCrop",
+                json!({"image": src, "masks": det, "index": index, "context": f(hd.get("context"), 0.6).clamp(0.0, 3.0),
+                       "pixels": pixels as i64, "grow": i(hd.get("grow"), 16).clamp(0, 128), "blur": i(hd.get("blur"), 12).clamp(0, 128)}),
+            );
+            let mut imgs = vec![crop.clone()];
+            for r in &refs {
+                let (iw, ih) = image_size(&inp(&r["image"]))?;
+                let (tw, th) = fit_pixels(iw, ih, or_f(p, "ref_pixels", 512.0 * 1024.0), step);
+                let li = g.add("LoadImage", json!({"image": r["image"]}));
+                imgs.push(g.scale(&li, tw, th, "center", "lanczos"));
+            }
+            let model = model_chain(&mut g, p, vec![]);
+            let (pos, neg, _) = g.qtext(&prompt, &negative, &imgs);
+            // 裁切的實際尺寸要到 ComfyUI 裡才知道（約 pixels 個像素），編碼／解碼照 pixels 判斷要不要分塊
+            let side = pixels.sqrt() as i64;
+            let enc = g.encode(&crop, side, side);
+            let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": Graph::slot(&crop, 1)}));
+            let smp = sample(&mut g, &model, &pos, &neg, &lat, p, seed, 1.0, None, (side, side));
+            let fixed = g.decode(&smp, side, side);
+            img = g.add(
+                "AnimaHeadStitch",
+                json!({"image": src, "fixed": fixed, "mask": Graph::slot(&crop, 1), "stitch": Graph::slot(&crop, 2), "color_match": true}),
+            );
+            (w, h) = (ow, oh);
         }
         "strip" => {
             // 一鍵脫衣：Qwen 2.1 改圖脫掉 →（可選）Anima 低重繪精修 →（可選）只把改到的地方貼回 Qwen 那張
@@ -1661,6 +1731,18 @@ mod tests {
         assert_eq!(lays[0]["summary"]["caption"], "a cat red sofa");
         assert_eq!(lays[0]["items"][0]["bbox"], json!([-256, -256, 256, 256]));
         assert_eq!(lays[1]["items"][0]["bbox"], json!([-384, -384, 384, 384]));
+        // 版面框＋色彩／深度控制＋高解析修復：兩段的正負條件都要來自同一顆控制節點，第二段照新尺寸重新包一次
+        let mut qc = q.clone();
+        qc["moss_control"] = json!({"enabled": true, "image": "ctl.png", "color": false});
+        let (n, _) = build(&qc, &dir, 0).unwrap();
+        let ks: Vec<&Value> = n.values().filter(|v| v["class_type"] == "KSampler").collect();
+        assert_eq!(ks.len(), 2);
+        let src = |k: &Value, side: &str| k["inputs"][side][0].as_str().unwrap().to_string();
+        for k in &ks {
+            assert_eq!(src(k, "positive"), src(k, "negative"), "正負條件要來自同一顆控制節點");
+            assert_eq!(n[&src(k, "positive")]["class_type"], "MOSSImageControl");
+        }
+        assert_ne!(src(ks[0], "positive"), src(ks[1], "positive"), "第二段重新包一次");
         q["family"] = json!("anima");
         let (n, _) = build(&q, &dir, 0).unwrap();
         assert!(texts(&n).iter().all(|x| !x.starts_with('{')), "Anima 不吃排版 JSON");
@@ -1840,6 +1922,63 @@ mod tests {
 
     fn by_class(n: &Map<String, Value>, c: &str) -> Vec<Value> {
         n.values().filter(|v| v["class_type"] == c).cloned().collect()
+    }
+
+    #[test]
+    fn headswap_locks_everything_but_the_head() {
+        let dir = play_dir("headswap", 400, 300, &[]);
+        image::RgbImage::new(512, 512).save(dir.join("ref.png")).unwrap();
+        let p = json!({"mode": "headswap", "family": "qwen21", "model": STRIP_QWEN, "prompt": "head_swap: …", "negative": "", "seed": 1,
+                       "steps": 8, "cfg": 1, "sampler": "euler", "scheduler": "simple", "init_image": "in.png", "refs": [{"image": "ref.png"}],
+                       "loras": [{"name": "qwen21\\bfs_head_v1.1_qwen_2.1.safetensors", "strength": 1.0}],
+                       "head": {"threshold": 0.35, "index": 0, "context": 0.6, "pixels": 1048576}});
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        let id_of = |c: &str| n.iter().find(|(_, v)| v["class_type"] == c).map(|(k, _)| k.clone()).unwrap_or_else(|| panic!("沒有 {c}"));
+        let src = n.iter().find(|(_, v)| v["class_type"] == "LoadImage" && v["inputs"]["image"] == "in.png").map(|(k, _)| k.clone()).unwrap();
+        let det = &n[&id_of("SAM3_Detect")]["inputs"];
+        assert_eq!((det["image"][0].as_str(), det["individual_masks"].as_bool()), (Some(src.as_str()), Some(true)));
+        // SAM3 的詞不加「:N」只回 1 個（ComfyUI sam3_clip._parse_prompts）：要每顆頭都抓
+        let word = &n[det["conditioning"][0].as_str().unwrap()]["inputs"]["text"];
+        assert_eq!(word, HEAD_PROMPT);
+        assert!(HEAD_PROMPT.ends_with(":8"));
+        let crop_id = id_of("AnimaHeadCrop");
+        let crop = &n[&crop_id]["inputs"];
+        assert_eq!((crop["masks"][0].as_str(), crop["image"][0].as_str()), (Some(id_of("SAM3_Detect").as_str()), Some(src.as_str())));
+        assert_eq!((crop["context"].as_f64(), crop["pixels"].as_i64()), (Some(0.6), Some(1048576)));
+        // 只讓頭重畫：裁切 → VAEEncode → SetLatentNoiseMask（遮罩＝AnimaHeadCrop 第 1 個輸出）→ 取樣
+        let nm = &n[&id_of("SetLatentNoiseMask")]["inputs"];
+        assert_eq!(nm["mask"], json!([crop_id.clone(), 1]));
+        assert_eq!(n[nm["samples"][0].as_str().unwrap()]["class_type"], "VAEEncode");
+        let nm_id = id_of("SetLatentNoiseMask");
+        assert!(n.values().any(|v| v["inputs"]["latent_image"][0] == nm_id.as_str()), "取樣要吃 SetLatentNoiseMask");
+        // <image1>＝頭部裁切
+        let te = &by_class(&n, "TextEncodeQwenImage21")[0]["inputs"];
+        assert_eq!(te["images.image_1"], json!([crop_id.clone(), 0]));
+        assert!(te["images.image_2"].is_array());
+        // 貼回原圖
+        let st = &n[&id_of("AnimaHeadStitch")]["inputs"];
+        assert_eq!((st["image"][0].as_str(), st["stitch"].clone(), st["mask"].clone()), (Some(src.as_str()), json!([crop_id.clone(), 2]), json!([crop_id, 1])));
+        assert!(by_class(&n, "LoraLoaderModelOnly").iter().any(|l| l["inputs"]["lora_name"] == "qwen21\\bfs_head_v1.1_qwen_2.1.safetensors"));
+        // 指定了哪顆頭（比對挑好的遮罩檔）：不再跑 SAM3，遮罩直接進 AnimaHeadCrop
+        let mut picked = p.clone();
+        picked["head"]["mask"] = json!("m.png");
+        let (n2, _) = build(&picked, &dir, 0).unwrap();
+        assert!(by_class(&n2, "SAM3_Detect").is_empty());
+        let crop2 = &by_class(&n2, "AnimaHeadCrop")[0]["inputs"];
+        let lm = &n2[crop2["masks"][0].as_str().unwrap()];
+        assert_eq!((lm["class_type"].as_str(), lm["inputs"]["image"].as_str(), crop2["index"].as_i64()), (Some("LoadImageMask"), Some("m.png"), Some(0)));
+        // 沒參考圖：單張改頭部（補表情用），只有 <image1>
+        let mut no = p.clone();
+        no["refs"] = json!([]);
+        let (n, _) = build(&no, &dir, 0).unwrap();
+        let te = &by_class(&n, "TextEncodeQwenImage21")[0]["inputs"];
+        assert!(te["images.image_1"].is_array() && te.get("images.image_2").is_none());
+        assert_eq!(by_class(&n, "SetLatentNoiseMask").len(), 1);
+        // 不是 Qwen：擋
+        let mut moss = p.clone();
+        moss["family"] = json!("moss");
+        moss["model"] = json!("moss_image_sft_int8_convrot.safetensors");
+        assert!(build(&moss, &dir, 0).unwrap_err().0.contains("只支援 Qwen 2.1"));
     }
 
     #[test]
@@ -2051,6 +2190,11 @@ mod tests {
         assert_eq!(det["inputs"]["individual_masks"], true);
         assert_eq!(g.values().filter(|v| v["class_type"] == "PreviewImage").count(), 2);
         assert_eq!(g.values().filter(|v| v["class_type"] == "CheckpointLoaderSimple").count(), 1);
+        // SAM3 的詞沒寫「:N」只回 1 個（ComfyUI sam3_clip._parse_prompts）→ 一張圖好幾張臉、兩隻手都要找到
+        let words: Vec<&str> = g.values().filter(|v| v["class_type"] == "CLIPTextEncode").filter_map(|v| v["inputs"]["text"].as_str()).collect();
+        assert!(words.contains(&"face:8") && words.contains(&"hand:8"), "{words:?}");
+        let g = detect_graph("in.png", &["head:3"], 0.5);
+        assert!(g.values().any(|v| v["inputs"]["text"] == "head:3"), "自己寫了上限就照用");
         assert!(!g.values().any(|v| v["class_type"] == "SaveImage"), "偵測結果不能進 output");
         let mut m = image::GrayImage::new(50, 40);
         assert_eq!(bbox_of(&m), None);

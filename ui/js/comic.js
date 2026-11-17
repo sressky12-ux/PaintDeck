@@ -6,6 +6,8 @@ import { openLightbox } from "./gallery.js";
 import * as gen from "./gen.js";
 import * as drawer from "./assetdrawer.js";
 import * as CL from "./comiclayout.js";
+import * as loras from "./loras.js";
+import { app } from "./state.js";
 
 const F = (id) => document.getElementById(id);
 let META = null;     // 版型、景別、對話框位置（後端給，跟組提示詞同一份）
@@ -62,7 +64,8 @@ const EXAMPLES = [
       { shot: "an extreme close-up", what: "her foot in black pantyhose pressing on the bulge in his trousers", line: "", bubble: "top", sfx: "スリッ" }] },
 ];
 
-const blankPanel = () => ({ shot: "a medium shot", what: "", line: "", bubble: "top", sfx: "" });
+const blankPanel = () => ({ shot: "a medium shot", what: "", who: [], line: "", bubble: "top", sfx: "" });
+const MAX_CHARS = 4;  // 跟後端 comic::MAX_CHARS 一樣
 const layoutOf = (id) => META?.layouts.find((l) => l.id === id) || META?.layouts[0];
 
 // ---------------------------------------------------------------- 自訂版面（排版工作台：comiclayout.js）
@@ -182,6 +185,8 @@ async function fillForm() {
   layoutUi();
   renderPanels();
   renderWire();
+  renderChars();
+  renderLoras();
   imgInfo();
   preview();
 }
@@ -298,11 +303,122 @@ function renderPanels() {
       el("div", { class: "cm-panel-hd" }, el("span", { class: "vfd amb dir-no" }, String(i + 1).padStart(2, "0")), el("b", {}, slot),
         sel(META.shots, c.shot || "a medium shot", (v) => (c.shot = v))),
       inp("textarea", c.what, { rows: 2, spellcheck: "false", placeholder: i === 0 ? "這格畫什麼（英文最準），例：the woman leaning over his desk, smiling as he looks up" : "這格畫什麼（英文最準）" }, (v) => (c.what = v)),
+      whoRow(c),
       el("div", { class: "cm-line" },
         inp("input", c.line, { type: "text", placeholder: "台詞（中文，可空）" }, (v) => (c.line = v)),
         sel(META.bubbles.map(([en, zh]) => [en, `框在${zh}`]), c.bubble || "top", (v) => (c.bubble = v)),
         inp("input", c.sfx, { type: "text", list: "cmSfxList", placeholder: "狀聲詞（可空）", class: "cm-sfx" }, (v) => (c.sfx = v)))));
   });
+}
+
+/** 這格有誰：角色卡的名字一個一個勾（修角色照這個找參考圖；沒勾就看內容有沒有寫到名字） */
+function whoRow(c) {
+  const names = charNames();
+  if (!names.length) return null;
+  const canon = (w) => names.find((nm) => nm.toLowerCase() === String(w).trim().toLowerCase());
+  c.who = [...new Set((c.who || []).map(canon).filter(Boolean))];
+  return el("div", { class: "row wrap gap cm-who" }, el("span", { class: "muted sm" }, "這格有誰"),
+    ...names.map((nm) => el("button", { type: "button", class: "chip" + (c.who.includes(nm) ? " on" : ""), disabled: running, "aria-pressed": String(c.who.includes(nm)),
+      onclick: (e) => {
+        c.who = c.who.includes(nm) ? c.who.filter((w) => w !== nm) : [...c.who, nm];
+        e.currentTarget.classList.toggle("on", c.who.includes(nm));
+        e.currentTarget.setAttribute("aria-pressed", String(c.who.includes(nm)));
+        changed();
+      } }, nm)));
+}
+
+// ---------------------------------------------------------------- 角色卡（資產抽屜點角色 → 一張卡；名字、外貌、參考圖、綁的 LoRA）
+const charNames = () => (P?.chars || []).map((c) => (c.name || "").trim()).filter(Boolean);
+
+function renderChars() {
+  const box = F("cmChars");
+  if (!box) return;
+  P.chars = P.chars || [];
+  if (!P.chars.length) {
+    box.replaceChildren(el("div", { class: "muted sm" }, "打開下面的「資產」點角色，就會變成一張角色卡（外貌文字、參考圖、綁的 LoRA 一起帶過來）。畫好後可以按「照資產修角色」。"));
+    return;
+  }
+  box.replaceChildren(...P.chars.map((ch, i) => {
+    const name = el("input", { type: "text", value: ch.name || "", placeholder: "名字（英文最好，例：Lin）", disabled: running, "aria-label": "角色名字" });
+    name.oninput = () => { const old = ch.name; ch.name = name.value; renameWho(old, ch.name); changed(); };
+    name.onchange = () => renderPanels();
+    const text = el("textarea", { rows: 2, spellcheck: "false", disabled: running, placeholder: "外貌（英文句子）", "aria-label": "角色外貌" });
+    text.value = ch.text || "";
+    text.oninput = () => { ch.text = text.value; changed(); };
+    const info = [`參考圖 ${ch.refs?.length || 0} 張`, ch.loras?.length ? `LoRA：${ch.loras.map((l) => short(l.name)).join("、")}` : "", ch.trigger ? `觸發詞：${ch.trigger}` : ""].filter(Boolean).join("・");
+    return el("div", { class: "cm-char" },
+      ch.asset ? el("img", { src: `/api/lib/${ch.asset}/thumb`, alt: "", loading: "lazy" }) : el("span", { class: "adr-ph" }, "角色"),
+      el("div", { class: "cm-char-bd" },
+        el("div", { class: "row gap" }, name,
+          el("button", { type: "button", class: "minikey", title: "拿掉這張角色卡（它帶來的 LoRA 留在下面的清單，要拿自己拿）", "aria-label": "拿掉角色卡", disabled: running,
+            onclick: () => { P.chars.splice(i, 1); renderChars(); renderPanels(); changed(); } }, "✕")),
+        text,
+        el("div", { class: "muted sm" }, info)));
+  }));
+}
+
+/** 角色改名：每一格勾的名字跟著換 */
+function renameWho(old, now) {
+  for (const c of P.panels || []) if (c.who?.includes(old)) c.who = c.who.map((w) => (w === old ? now : w));
+}
+
+/** 資產抽屜點了角色：做成角色卡，綁的 LoRA 掛進漫畫的 LoRA 清單。回 true＝抽屜不用再插字 */
+function addChar(it, plan) {
+  if (!P || running) return false;
+  P.chars = P.chars || [];
+  const triggers = (plan.loras || []).map((l) => (l.trigger || "").trim()).filter(Boolean);
+  const card = { asset: it.id, name: it.name, text: plan.text || "", trigger: triggers.join(", "), refs: plan.images || [], loras: plan.loras || [] };
+  const at = P.chars.findIndex((c) => c.asset === it.id);
+  if (at >= 0) P.chars[at] = { ...card, name: P.chars[at].name || card.name };
+  else if (P.chars.length >= MAX_CHARS) { toast(`一頁最多 ${MAX_CHARS} 個角色`, "err"); return true; }
+  else P.chars.push(card);
+  P.loras = P.loras || [];
+  let added = 0;
+  for (const l of card.loras) if (!P.loras.some((x) => x.name === l.name)) { P.loras.push({ name: l.name, strength: l.strength ?? 0.8, enabled: true }); added++; }
+  renderChars();
+  renderLoras();
+  renderPanels();
+  changed();
+  toast(`角色卡：${it.name}${card.refs.length ? `（參考圖 ${card.refs.length} 張）` : "（這個資產沒有圖，修角色用不到它）"}${added ? `，掛上 ${added} 個 LoRA` : ""}`, "ok");
+  return true;
+}
+
+// ---------------------------------------------------------------- 漫畫台自己的 LoRA（跟「用生成頁目前的設定」帶來的疊在一起；同一個以這裡為準）
+const short = (n) => String(n || "").split(/[\\/]/).pop().replace(/\.safetensors$/, "");
+const loraMeta = (name) => (app.state?.models?.loras || []).find((x) => x.name === name);
+
+function renderLoras() {
+  const box = F("cmLoras");
+  if (!box) return;
+  P.loras = P.loras || [];
+  if (!P.loras.length) { box.replaceChildren(el("div", { class: "muted sm" }, "沒有掛 LoRA")); imgInfo(); return; }
+  box.replaceChildren(...P.loras.map((l, i) => {
+    const fam = loraMeta(l.name)?.family;
+    const bad = !!fam && fam !== "moss";
+    const num = el("input", { type: "number", min: -2, max: 3, step: 0.05, value: l.strength ?? 0.8, disabled: running, "aria-label": "強度",
+      onchange: (e) => { l.strength = Math.min(3, Math.max(-2, +e.target.value || 0)); e.target.value = l.strength; changed(); imgInfo(); } });
+    return el("div", { class: "lora-item cm-lora" + (l.enabled !== false && !bad ? "" : " off") + (bad ? " mismatch" : ""), title: l.name },
+      el("input", { type: "checkbox", checked: l.enabled !== false, disabled: running, title: "暫時停用", onchange: (e) => { l.enabled = e.target.checked; renderLoras(); changed(); } }),
+      el("span", { class: "nm" }, loraMeta(l.name)?.title || short(l.name)),
+      num,
+      el("button", { type: "button", class: "icon", title: "移除", disabled: running, onclick: () => { P.loras.splice(i, 1); renderLoras(); changed(); } }, "✕"),
+      bad ? el("div", { class: "lora-note" }, `不是 MOSS 用的 LoRA（${fam}），畫整頁時會被略過`) : null);
+  }));
+  imgInfo();
+}
+
+function addLora(l, withTriggers) {
+  if (!P || running) return;
+  P.loras = P.loras || [];
+  if (P.loras.some((x) => x.name === l.name)) return toast("這個 LoRA 已經在清單裡了");
+  P.loras.push({ name: l.name, strength: 0.8, enabled: true });
+  if (withTriggers && l.triggers?.length) {
+    const cur = F("cmTrigger").value.trim();
+    const add = l.triggers.map((t) => String(t).replace(/[,\s]+$/, "")).filter((t) => t && !cur.includes(t));
+    if (add.length) { F("cmTrigger").value = [cur, ...add].filter(Boolean).join(", "); readForm(); }
+  }
+  renderLoras();
+  changed();
 }
 
 function imgInfo() {
@@ -311,6 +427,8 @@ function imgInfo() {
   if (!im) t = "自動：挑 MOSS-Image（25 步、CFG 3）；不掛 LoRA。";
   else if (im.family !== "moss") t = `生成頁帶來的是 ${im.model}，漫畫台只用 MOSS-Image，會自動挑 MOSS 模型。`;
   else t = `${im.model}（MOSS-Image）・${im.steps} 步・CFG ${im.cfg}${im.loras?.length ? `・LoRA：${im.loras.map((l) => `${l.name.split(/[\\/]/).pop().replace(/\.safetensors$/, "")} ${l.strength}`).join("、")}` : ""}`;
+  const own = (P.loras || []).filter((l) => l.enabled !== false);
+  if (own.length) t += `・漫畫台 LoRA：${own.map((l) => `${short(l.name)} ${l.strength ?? 0.8}`).join("、")}`;
   F("cmImgInfo").textContent = t;
 }
 
@@ -335,7 +453,7 @@ const saveSoon = debounce(() => save(), 600);
 async function save() {
   if (!P) return;
   const body = { id: P.id };
-  for (const k of ["title", "layout", "trigger", "cast", "light", "mood", "panels", "custom", "script", "image", "count"]) body[k] = P[k];
+  for (const k of ["title", "layout", "trigger", "cast", "light", "mood", "panels", "custom", "script", "image", "count", "chars", "loras"]) body[k] = P[k];
   try { await api("/api/comic/project", { json: body }); } catch (e) { toast("作品存檔失敗：" + e.message, "err"); }
 }
 
@@ -365,13 +483,29 @@ function renderRuns() {
     // r.flow "a"＝舊版 Anima 畫完再填字的紀錄（page 是沒字的整頁、fill 是填好字的）；其他＝MOSS 一次畫完（字在整頁裡）
     const pic = (id, label) => el("button", { type: "button", class: "cm-pic", title: `${label}（點一下看大圖）`, onclick: () => openRec(id) },
       el("img", { src: `/thumb/${id}`, alt: label, loading: "lazy" }), el("span", { class: "cm-tag" }, label));
+    const canFix = r.flow !== "a" && (P.chars || []).some((c) => c.refs?.length);
     box.append(el("article", { class: "cm-run" },
-      el("div", { class: "cm-pics" }, pic(r.page, r.flow === "a" ? "整頁" : "整頁（含字）"), r.fill ? pic(r.fill, "填好字") : null),
+      el("div", { class: "cm-pics" }, pic(r.page, r.flow === "a" ? "整頁" : "整頁（含字）"), r.fill ? pic(r.fill, "填好字") : null, r.fix ? pic(r.fix, "修好角色") : null),
       el("div", { class: "row gap wrap" },
         el("span", { class: "muted sm grow" }, r.seed != null ? `種子 ${r.seed}` : ""),
+        r.flow !== "a" ? el("button", { type: "button", class: "akey sm", disabled: running || !canFix,
+          title: canFix ? "用 Qwen 2.1 照角色卡的參考圖把每一格的角色修得更像，再把表情改回原本的樣子（一格約 60～80 秒；找不齊格子就整頁一次修）。原圖留著，修好的另存一張"
+            : "先在「這頁的角色」用資產抽屜加角色（資產要有正面特寫或多視圖）",
+          onclick: () => fixRun(r.page) }, r.fix ? "再修一次" : "照資產修角色") : null,
         el("button", { type: "button", class: "minikey", title: "從這個清單拿掉（圖還在圖庫）", "aria-label": "從清單拿掉",
           onclick: () => removeRun(r.page) }, "✕"))));
   }
+}
+
+async function fixRun(page) {
+  if (!P || running) return;
+  await save();
+  status("修角色…", "amb");
+  try {
+    await api("/api/comic/fix", { json: { id: P.id, page } });
+    setRunning(true);
+    reload();
+  } catch (e) { status("待機"); toast(e.message, "err"); }
 }
 
 async function removeRun(page) {
@@ -382,10 +516,10 @@ async function removeRun(page) {
 function setRunning(on) {
   running = on;
   F("cmStop").hidden = !on;
-  for (const id of ["cmRun", "cmNew", "cmDel", "cmRename", "cmProj", "cmExample", "cmImgUse", "cmImgAuto"]) F(id).disabled = on;
+  for (const id of ["cmRun", "cmNew", "cmDel", "cmRename", "cmProj", "cmExample", "cmImgUse", "cmImgAuto", "cmLoraAdd"]) F(id).disabled = on;
   // 畫的時候改了也不會影響這一輪（提示詞已經組好送出），乾脆鎖住免得以為有生效
   for (const id of ["cmTrigger", "cmCast", "cmLight", "cmMood", "cmScript", "cmScriptGo", "cmCount"]) F(id).disabled = on;
-  for (const box of ["cmPanels", "cmLayouts"]) F(box).querySelectorAll("input, textarea, select, button").forEach((x) => (x.disabled = on));
+  for (const box of ["cmPanels", "cmLayouts", "cmChars", "cmLoras"]) F(box).querySelectorAll("input, textarea, select, button").forEach((x) => (x.disabled = on));
   if (P?.layout === "custom") renderWire();
   bench?.refresh();
   if (!on && F("cmStatus").classList.contains("amb")) status("待機");
@@ -421,8 +555,9 @@ export function onEvent(m) {
 
 // ---------------------------------------------------------------- 初始化
 export function init() {
-  // 漫畫：外觀文字和 tag 接在角色外貌後面
-  drawer.mount(F("cmAssets"), { family: () => "comic", insert: drawer.appendTo(F("cmCast")) });
+  // 漫畫：角色 → 角色卡（claim）；場景、道具、片段…的文字照舊接在外貌補充後面
+  drawer.mount(F("cmAssets"), { family: () => "comic", insert: drawer.appendTo(F("cmCast")), claim: (it, p) => it.kind === "char" && addChar(it, p) });
+  F("cmLoraAdd").onclick = () => loras.openPicker((l, trig) => addLora(l, trig), "moss");
   F("cmProj").onchange = async () => { await save(); openProject(F("cmProj").value); };
   F("cmNew").onclick = async () => {
     const title = prompt("新作品的名字", "");

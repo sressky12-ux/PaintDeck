@@ -96,11 +96,11 @@ fn media_header_matches(bytes: &[u8], ext: &str) -> bool {
 
 /// {"engine": 現在用的, "builtin": {id, name}, "workflows": [{id, name, added, info | error}]}
 pub async fn list(State(app): State<Shared>) -> ApiResult {
-    let engine = settings::load(&app.paths.settings)
-        .get("video_engine")
-        .and_then(Value::as_str)
-        .unwrap_or(video_wf::BUILTIN)
-        .to_string();
+    // 設定裡可能還留著 LTX 時代的代號（ltx23）：跟生成那邊一樣先換成現在的，不然設定頁兩個都對不上、像沒選
+    let engine = video_wf::normalize_engine(
+        settings::load(&app.paths.settings).get("video_engine").and_then(Value::as_str).unwrap_or(video_wf::BUILTIN),
+    )
+    .to_string();
     let dir = video_wf::dir(&app.paths.data);
     let workflows = blocking(move || video_wf::list(&dir)).await;
     ok(json!({"engine": engine, "builtin": {"id": video_wf::BUILTIN, "name": video_wf::BUILTIN_NAME}, "workflows": workflows}),

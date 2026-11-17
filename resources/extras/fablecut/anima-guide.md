@@ -50,7 +50,7 @@
 
 ## 生成（POST /api/generate）
 
-`anima_generate` 就是包這個 API。請求是 `{params, count}`，回 `{jobs:[{job, seed}]}`。任務在背景跑，`anima_jobs {jobs, wait:true}` 等結果。
+`anima_generate` 就是包這個 API。請求是 `{params, count}`，回 `{jobs:[{job, seed, skipped_loras?, notes?}]}`。`skipped_loras`＝家族不合被略過的 LoRA 檔名；`notes`＝開了卻不會生效的設定（白話句子，2026-11-13 起；`anima_generate` 也會原樣回 `skipped_loras`、`notes`），**有 notes 就照實轉告使用者**。任務在背景跑，`anima_jobs {jobs, wait:true}` 等結果。
 
 共用欄位：`mode`、`model`、`prompt`、`negative`、`seed`、`steps`、`cfg`、`sampler`、`scheduler`、`width`、`height`、`loras:[{name, strength}]`、`turbo_lora`（非 Turbo 的 Anima 掛加速 LoRA 的檔名，或 false）、`idea`（記在圖庫的「想法」，方便之後找）。
 MOSS 另外可給 `moss_te:"4b"`（文字編碼器改用 Qwen3.5-4B＋投影轉接器，省記憶體、畫面跟 9B 有點不同；要 `text_encoders/Qwen3.5-4B_int8_convrot.safetensors`、`moss_encoder_adapters/moss_qwen35_4b_to_9b_1600_train.safetensors` 和繪匣附的 `anima_moss_nodes` 節點，所有模式都能用）。去直條色帶：`loras` 掛 `moss\Excellent-Loras\SFT伪影修复\moss_image_sft_banding_fix_L37-41_bf16.safetensors` 強度 1.0（只對 SFT 模型有用）。
@@ -65,7 +65,7 @@ MOSS 另外可給 `moss_te:"4b"`（文字編碼器改用 Qwen3.5-4B＋投影轉�
 | upscale | 放大 | `init_image`、`upscale:{upscaler, scale, refine, denoise}` |
 | sheet | 角色設定圖（多視圖） | `sheet:{req, ref}` |
 | diff | 差分（同一張改表情、小地方） | `init_image`、`diff:{…}`，看生成頁的「生圖玩法」 |
-| detail | 修臉修手（另一個 API：POST /api/detail） | `{params:原圖參數, init_image, what:"face"\|"hand"\|"both", threshold?, denoise?, extra?}` |
+| detail | 修臉修手（另一個 API：POST /api/detail） | `{params:原圖參數, init_image, what:"face"\|"hand"\|"both", threshold?, denoise?, extra?}`；一張圖裡每張臉、每隻手都會找（每種最多 8 個，大的先修；2026-11-17 以前只會修分數最高的 1 個） |
 | rembg | 去背 | `init_image` |
 | video | 生影片（內建 MiniMax H3，或匯入的影片工作流） | `prompt`、`init_image`（可選，有就是圖生影片）、`video_seconds`（1～15）、`video_res:"480p"\|"720p"`（480p＝H3 快速、其他＝高畫質）、`h3_model`（指定本機 H3 模型檔，沒給就挑最省顯存的 w4a8／GGUF）。舊的 `video_engine:"ltx23"` 一律當 H3。這條只排本機 ComfyUI；要雲端用 `POST /api/h3/generate {gen:<這份參數>, where:"cloud", count:1}`（首幀自動換成 h3_ 素材名）。缺 H3 模型檔會說去安裝精靈勾「H3 影片（本機，選配）」 |
 
@@ -116,6 +116,10 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 **AI 改寫（不想自己寫時）**：`POST /api/pe/rewrite {text, …}` 是 SSE 串流（事件 status、reasoning、content、zh_delta、result、error），用 `anima_api` 呼叫會拿到整段串流文字，取最後的 result。改寫用本機 llama-server 的通用模型（9B／35B，設定 `pe_general`），第一次要載入幾十秒。官方 PE 改寫模型 2026-10-30 起整個拿掉（沒有 `pe_engine` 設定了；升級後開站會把舊的 PE 檔刪掉、自動補下載通用 9B，進度在 `GET /api/pe/status` 的 `retire`）。`GET /api/pe/status` 看狀態、`POST /api/pe/stop` 關掉讓出顯存。
 **中英對照（看提示詞每段的中文）**：`POST /api/tags/zh {tags:[...]}` 查 tag 對照表，回 `{zh:{原字串:中文}}`（立刻回、不用模型，查不到的不放；品質詞、分級、年代、`score_N`、`year 2025` 也認得）。對照表翻不了的句子、片語用 `POST /api/pe/translate {texts:[...], rid?}`：交給上面同一顆通用模型翻成繁中，回 `{zh:[中文或 null, …]}` 跟 texts 一一對應，一次最多 40 段、4000 字，第一次要等模型載入，`POST /api/pe/cancel {rid}` 停。
 
+**詞庫（分類點選 tag）**：`GET /api/tags/library?src=danbooru|weilin`（預設 danbooru）回 `{source, groups:[{name, subs:[{name, tags:[[插入的字, 中文說明, 使用次數?, 段落序號?], …], secs?:[段落名…]}]}]}`。**danbooru**（預設）＝Danbooru wiki 的 tag group 分類：11 大類、92 小類、約 1.5 萬個不重複 tag（使用次數 ≥ 10、一般類），小類裡照 wiki 的段落分組、段落內照使用次數排，中文說明來自對照表／WeiLin／本機模型直翻＋人工校（`tools\danbooru_taggroups.mjs`、`tools\danbooru_groups_zh.json`）。**weilin**＝11 大類（人物、服飾、表情動作、畫面、環境、場景、物品、鏡頭、漢服、魔法系、NSFW）、132 小類、約 4100 條，照搬 WeiLin-Comfyui-Tools-Prompt（MIT）轉繁體；單一 tag 已經換成空白、括號跳脫，「魔法系」「漢服」有些是整段提示詞（含權重括號，漢服有幾條帶 `<lora:…>` 寫法，繪匣不認，要另外掛 LoRA）。網頁：生成頁提示詞框右上「詞」打開抽屜，點一下加進最後點過的提示詞框（大框、分段小框、負面都行），已經在框裡的會亮，再點一下拿掉；抽屜裡的搜尋打簡體也找得到。左邊功能列「02 隨機」是生成頁的分身（`#taglib`，2026-11-17 晚從「詞庫」改名、拿掉詞庫分頁；詞庫只留在生成頁的「詞」抽屜）：左欄是「隨機產生器」（ComfyUI 外掛 Comfyui-Anima-Wardrobe-V6，GPL-3.0，作者灵冻不冻；15 段 57 欄規則抽籤、2400 多個角色、167 套服裝、782 組場景；顯示時簡轉繁，送給引擎的是原值）。隨機產生器 API：`GET /api/wardrobe/status`（`{installed, same, loaded, online, remote, repo, commit}`）、`POST /api/wardrobe/install`（只裝本機 ComfyUI，clone 固定 commit 到 `custom_nodes\Comfyui-Anima-Wardrobe-V6`，裝完要重開 ComfyUI）、`GET|POST /api/wardrobe/x/<路徑>` 原樣轉給 ComfyUI 的 `/anima-wardrobe-v6/<路徑>`（`pools`、`characters`、`scenes`、`outfit-library`、`roll`…）。抽一組：`POST /api/wardrobe/x/roll {seed, nsfw_level:"sfw|suggestive|explicit|hardcore|extreme|any", weights_json, selected_roles:"tag|tag", disabled_sections, scene_pick, pick_pool_mode, pick_pool_ids, …}` 回 `{text, cn_summary, notes, report}`；同 seed 同參數結果一模一樣（請求要是正確的 UTF-8 JSON，送壞了外掛會當成沒給 seed）。網頁上「每次生成前重抽」勾了，在隨機頁按生成會先抽一組套進提示詞。中欄借生成頁的提示詞（含 AI 改寫）、LoRA 卡匣，底下黏著生成鈕和最新一張；右欄借模型與輸入、尺寸與模式、取樣（步數、CFG、張數、種子、整套設定）、附加（高解析修復、構圖控制、自動修臉、X/Y）——同一組元素，離開隨機頁就放回生成頁，「AI 組成完整提示詞」＝把提示詞框內容當想法送 `POST /api/pe/rewrite`。AI 改寫的「用哪顆腦袋」會在 body 帶 `brain`（`cloud`／`api:<連線 id>`；不帶＝本機），API 頁對照表「AI 改寫」有指定時以對照表為準。WeiLin 的 danbooru 翻譯（只收原本對照表沒有的）也接進了 `/api/tags` 的中文搜尋和 `/api/tags/zh`：一般 tag 照收；角色的翻譯 WeiLin 錯很多（看起來是 AI 編的），每條都拿 Danbooru wiki 的別名和 Bangumi 的中文名校對過，對不上的換掉、查不到的不收（`tools\weilin_tags.mjs`、`tools\weilin_chars.mjs`）。
+
+**全形標點自動換半形**：生成頁的提示詞框（大框、分段小框、負面）在英文 tag 後面用中文輸入法打「，、：（）」，會自動換成「, : ( )」，不用切輸入法；前一個字是中文（在寫中文句子）就不動，Ctrl+Z 換回來。提示詞框右下「，→,」開關，記在瀏覽器（`aw_punctFix`，預設開）。只在網頁打字時作用，API 送進來的提示詞不改。
+
 句子翻譯用哪顆腦袋照 API 頁對照表的「中英對照」那列（`brain` 可帶 `9b`／`35b`／`cloud`／`api`／`api:<連線 id>`，沒帶＝照頁面＝設定頁的通用模型）；翻譯指示可在設定頁「自訂系統提示詞」改（編號 `translate`）。
 `GET /api/poses`：成人體位彙整（110 筆，含驗證過的 tag 和英文幾何描述），寫雙人體位先查這裡。
 **外掛寫法（使用者自備的提示詞 skill）**：`GET /api/skills`（已裝的、綁定 `bind`、可以綁的寫法 `guides`）、`GET /api/skills/{id}`（目錄 `toc`、每段 `part_list`）、`POST /api/skills/install {url}`（GitHub 網址，確認）、`POST /api/skills/bind {guide, skill}`（skill 空字串＝拿掉，確認）、`POST /api/skills/remove {id}`（搬到待刪除，確認）、`POST /api/skills/open`。綁好後助手、AI 改寫（要帶 `family`）、只寫詞寫那個模型時，會照需求挑幾段接在寫法後面；助手還能用 `guide {"name":"moss","part":N}` 讀別段。`GET /api/skills` 的 `pick.semantic`＝true 時照意思挑段（CPU 的 Qwen3-Embedding，裝「AI 改寫、生圖助手」包會下載；每段座標存在 skill 資料夾的 `.vectors.json`），false 時照關鍵字挑。
@@ -126,6 +130,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 - LoRA 清單和觸發詞：`anima_status {loras:true}`；備註：`POST /api/loras/meta`。程式附的備註（`resources\share\lora設定.json`，含 MOSS LoRA 合集每一顆的用途、觸發詞、強度範圍）開站時會補進資料庫（使用者改過的不蓋）；合集放在別的資料夾也照檔名對得上。
 - 不要的 LoRA：`POST /api/loras/delete {name}`（移到 `<資料>\待刪除\LoRA\`，不是真的刪；要確認；有任務在排隊時不給搬）。
+- 換 LoRA 預覽圖：上傳 `POST /api/loras/preview?name=<LoRA 檔名>&nsfw=1`（multipart，欄位一個圖檔；PNG／JPG／WebP，縮成長邊 640 的 JPEG 存成 `<資料>\previews\custom_<8 碼>.jpg`；`nsfw` 不給＝一般）；用圖庫的圖：`POST /api/loras/preview/set {name, id, nsfw?}`；換回原本（C 站抓的那張）：`POST /api/loras/preview/set {name, reset:true}`。原本的預覽圖記在備註的 `preview_orig`，不會被蓋掉；回傳 `{ok, meta}`。網頁：LoRA 庫卡片「換預覽圖」、圖拖到卡片上、生成結果／圖庫「設為 LoRA 預覽圖」。LoRA 庫和生成頁挑選視窗另有「☰ 列表」檢視。
 - Civitai 搜尋：`GET /api/civitai/search?query=…&base=Anima&sort=Most Downloaded&period=AllTime&nsfw=1&tag=&cursor=`；下載：`POST /api/civitai/download {modelId, versionId, base}`（要確認），進度 `GET /api/downloads`。
 - 模型總覽：`GET /api/models/inventory`；外部模型資料夾 `GET /api/models/dirs`。
 - 下載中心（C 站／魔塔 ModelScope／RunningHub，網頁的「下載中心」）：`GET /api/hub/sources`（來源、各來源的種類、站內家族、金鑰有沒有填）；搜尋 `GET /api/hub/search?source=civitai|modelscope|runninghub&kind=lora|model|vae|workflow&q=&family=anima|qwen21|moss|sdxl…&sort=&page=|cursor=&nsfw=1&tag=`（每筆有 family、usable＝生圖站內建流程畫得了、installed、cover、images＝最多 6 張樣張 {url, nsfw}、triggers、likes；魔塔另有 gens＝用它生過幾張圖、base＝作者標的底模名稱、family_guess＝魔塔沒有 Anima 標籤、看名字猜是 Anima（作者常標成 SD 1.5／SDXL）；魔塔的 `sort`＝popular（預設）|newest|recommend|stars，recommend、stars 翻頁會重複、跳過一些（魔塔本身的問題），要整批翻完用 popular 或 newest；`tag` 只有魔塔吃，是分類標籤代號，清單在 `GET /api/hub/tags?source=modelscope` → `{tags:[{tag, label, group}]}`，魔塔只有一小部分模型有標分類，配底模常常搜不到；魔塔的檔案清單另查 `GET /api/hub/files?source=modelscope&id=作者/名稱`）；下載 `POST /api/hub/download {source, id, kind, family, base, version, title, triggers, file:{name, path, size, sha256, url}}`（要確認；C 站 LoRA 進度在 ws 的 download 事件，其他在 `GET /api/models/downloads`，有 SHA256 會核對）；工作流檔 `POST /api/hub/workflow {source, id, version?}` → `{file_name, data_b64}`，再用 `POST /api/image/workflows` 匯入（回應的 `missing_models` 是這台沒有的模型）；在 RunningHub 跑 `POST /api/hub/rh_run {id, prompt?, image?, dry?}`（花 RH 幣、要確認；先用 dry:true 看懂了什麼、每秒幾個幣），停止 `POST /api/hub/rh_stop {task}`，進度是 ws 的 hubrun 事件；魔塔金鑰 `GET,POST /api/hub/modelscope {key}`（改要確認）、`POST /api/hub/modelscope/test`。
@@ -170,10 +175,12 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 4. 外觀：`POST /api/director/describe {image}`；tag：`POST /api/charsheet/tags {name}` → `{tags}`（反推後拿掉姿勢、表情、背景、人數）。
 5. 存：`POST /api/lib {kind:"char", name, data:{look_en, look_zh, tags_anima, spec?}}`，再逐張 `POST /api/assets/<id>/file {gallery_id|input, role, replace:true}`：定稿 `src`、轉身圖 `sheet`、臉部 `face`、正面特寫 `portrait`、裸體 `sheet_nude`。
 
+角色卡綁 LoRA（2026-11-16）：角色資產的 `data.loras:[{name, strength, trigger}]`（最多 4 個；LoRA 資料夾裡的相對路徑，不准 `..`、絕對路徑；強度 -3～3）。存檔沒送 `loras` 就留舊的，送空陣列＝拿掉。`/apply` 每一筆都回 `loras`；漫畫台加角色時自動掛上。
+
 角色卡（2026-10-27）＝多視圖＋正面特寫＋鎖定的設定表（＋選配 RefMod）：
 - 正面特寫：`POST /api/charsheet/prompt {kind:"portrait", desc?, family}` → 1024×1024，跟展開一樣送 Qwen 2.1 多圖參考。
 - 設定表：`POST /api/charsheet/spec {images:[input 檔名，最多 4 張], name?, sex?, desc?, desc_zh?, tags?, brain?:"9b"|"35b"}` → `{fields, unverified}`，`fields` 是 `sex age hair_style hair_color face eyes skin body marks outfit` 各一格 `{zh, en, tags:[]}`（AI 看圖填，人再逐格改）。存在 `data.spec = {fields, locked}`；`locked:true` 存檔時伺服器組出 `block_zh`／`block_en`／`block_tags` 並凍結：之後任何存檔都改不到，要改得先送 `locked:false` 解鎖再重鎖。
-- 拿去用：`POST /api/assets/<id>/apply {family}` 對鎖定角色回 `{locked:true, spec:{zh, en, tags}, text, images, refmod}`，文字就是固定段落（anima/comic 用 tags、h3 用中文、其他用英文），圖片只給 `portrait`＋`sheet`（Qwen 2.1／H3）。生成頁的資產抽屜點鎖定角色不插字，變成提示詞框上面的「鎖定角色」標籤，送出時才把固定段落接在提示詞最前面（批次每行都接、AI 改寫碰不到；Qwen 會寫 `名字（<image1><image2>）：…`）。拍攝單加鎖定角色：外觀欄用固定段落（唯讀），正面特寫＋轉身圖自動放進參考圖綁這個角色；每段 `integrated_multimodal_description:` 第一句就是所有鎖定角色的固定段落，AI 潤飾前拿掉、潤完原封不動接回。
+- 拿去用：`POST /api/assets/<id>/apply {family}` 對鎖定角色回 `{locked:true, spec:{zh, en, tags}, text, images, refmod}`，文字就是固定段落（anima 用 tags、h3 用中文、其他用英文；comic 從 2026-11-16 起也用英文，MOSS 讀句子），圖片只給 `portrait`＋`sheet`（Qwen 2.1／H3／漫畫台修角色）。生成頁的資產抽屜點鎖定角色不插字，變成提示詞框上面的「鎖定角色」標籤，送出時才把固定段落接在提示詞最前面（批次每行都接、AI 改寫碰不到；Qwen 會寫 `名字（<image1><image2>）：…`）。拍攝單加鎖定角色：外觀欄用固定段落（唯讀），正面特寫＋轉身圖自動放進參考圖綁這個角色；每段 `integrated_multimodal_description:` 第一句就是所有鎖定角色的固定段落，AI 潤飾前拿掉、潤完原封不動接回。
 - RefMod（實驗，外掛 Luisacaotica/ComfyUI-MiniMaxH3Mod，釘在審過的 commit `517e8c4`）：`GET /api/refmod/status` → `{installed, same, loaded, online}`；`POST /api/refmod/install` 用 git 裝進本機 ComfyUI 的 custom_nodes（要重開 ComfyUI）；`POST /api/assets/<id>/refmod` 用本機 ComfyUI 把角色的正面特寫（沒有就原圖）編成 RefMod（只用 H3 影片 VAE，幾秒），檔案收進資產 `data.refmod = {file, name:"paintdeck/pd_char_<id>"}`。拍攝單勾「用 RefMod 鎖臉」（`sheet.refmod:true`）時，H3 短片送 `params.refmods:[名字…]`、長片從存著的拍攝單讀，節點圖在 guider 前插 `MiniMaxH3RefModsLoader`→`MiniMaxH3RefModApply`；本機拍片前會把檔案複製到 `models\refmods`，雲端開機會裝外掛、拍片前用 ssh 上傳（網址模式不能用）。
 
 ## 漫畫台
@@ -187,6 +194,9 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 用說的排版（站內 AI 幫忙拉格子）：`POST /api/comic/layout/ai {project, ask, brain?}` → `{custom}`。`ask` 中文描述想怎麼排（例「左邊一格大特寫貫穿整頁，右邊切三格，右下疊一個小格」）；空白就照 `project.script` 的劇情排（兩個都空會回錯）。`brain` 是 `35b`（預設，排得準；第一次載入約 1 分鐘，之後一次幾秒；沒有 35B 的電腦自動用 9B）或 `9b`。只回版面、不存；要用就把 `layout:"custom"`、`custom` 存回作品（格子內容照閱讀順序對）。
 - 預覽組好的提示詞：`POST /api/comic/prompts {project}`。
 - 畫：`POST /api/comic/run {id, count?}`；停：`POST /api/comic/stop {id}`；結果在專案的 `runs`（圖庫編號）。
+- **角色卡**（2026-11-16）：作品的 `chars:[{asset, name, text, trigger, refs:[資產檔名], loras:[{name, strength, trigger}]}]`，最多 4 張。網頁從資產抽屜點角色就做好一張（`/api/assets/<id>/apply {family:"comic"}` 回外貌英文句子、正面特寫＋多視圖、資產卡綁的 LoRA）。提示詞每張卡寫一句「`名字 (觸發詞): 外貌`」，接在 `cast`（其他外貌補充）前面；每一格可以給 `who:["名字"]`（這格有誰），AI 排分鏡也會填 `who`、`what` 會用名字指人。
+- **漫畫台 LoRA**：作品的 `loras:[{name, strength, enabled}]`，畫整頁時接在「用生成頁目前的設定」帶來的 LoRA 後面，同一個 LoRA 以這裡的強度為準；不是 MOSS 的 LoRA 送出時被略過。角色卡加進來時，資產卡綁的 LoRA 自動掛上。
+- **照資產修角色**：`POST /api/comic/fix {id, page}`（page＝`runs` 裡那一張的圖庫編號）→ 背景跑，進度走 websocket type `comic`。先從整頁找格子（白色格線切開的區塊、照閱讀順序；對話框、頭髮跨過格線把兩格連起來時，會沿著格線切開），找到的格數跟版型一樣就一格一格修，只修有角色的格（`who` 勾的；沒勾就看 `what` 有沒有寫到角色名字）。**有勾角色的格走「只換頭」**（2026-11-17 起，一個或好幾個角色都行）：要 ComfyUI 有社群換頭 LoRA `qwen21\bfs_head_v1.1_qwen_2.1.safetensors`（HF Alissonerdx/BFS-Best-Face-Swap，MIT，約 260MB，自己下載放 `models\loras\qwen21\`）和繪匣附帶的漫畫小節點 `anima_comic_nodes`（開站自動同步，ComfyUI 要重開過）。流程是 SAM3 找出格子裡每一顆頭（提示詞 `head:8`，最多 8 顆；同一顆頭被拆成好幾塊的會併掉）→ 每顆頭跟每個角色卡參考圖裡的頭比長相（顏色分布 60%＋反推的長相 tag 40%：髮色、髮型、瞳色、眼鏡、角、鬍子、疤…，表情不算），每個角色挑最像、分數過 0.35 的那顆，一顆頭只給一個人；誰都不像的頭（路人）不動，某個角色找不到夠像的頭就那格不換他（進度會講）→ 整頁每一格都找完、比對完，才開始換（SAM3 跟 Qwen 不在每格之間來回換手，ComfyUI 動態 VRAM 比較不會卡死）→ 一個角色一個角色換：`AnimaHeadCrop` 把頭附近裁下來放大到約 1MP → Qwen 2.1 官方 Turbo＋BFS（作者原版 `head_swap:` 指令，`<image1>`＝頭部裁切，後面只放這個角色的參考圖）只在那顆頭的遮罩裡重畫 → `AnimaHeadStitch` 對齊顏色貼回，頭以外的像素不動；接著用反推比對這顆頭換前換後，張嘴、眨眼、閉眼這類重點表情不見了，就只對這顆頭補一次表情（掛 consistency LoRA）。整頁一次修、格子裡沒勾角色、或沒有 BFS／小節點時，照舊兩段式：① 多圖參考換頭（`<image1>`＝那一格）② 反推表情 tag 叫 Qwen 只改表情。改好的只貼回格子裡面（格線、黑框不動）；格數對不上就整頁一次換頭、不補表情。原圖留著，修好的整頁另存一張進圖庫，記在 `runs[].fix`；中間輸出搬到 `data\comic\fix\<作品>\`（`_h` 換頭、`_e` 補表情、`_a`／`_b` 兩段式），不留在圖庫。一格一個角色約 50～80 秒（RTX 3070，含補表情）；找頭、比對每格多約 10～30 秒，兩個主角都在的格時間大約加倍（實測 4 格、雙主角的一頁約 13 分鐘）。參考圖：資產同時有正面特寫和多視圖時兩張都送最像（實測只給多視圖時長相變化最小）。要角色卡有參考圖才能用。已知：SAM3 一顆頭都沒找到的格原樣留著（不會整格重抽）；路人不用建卡（實測路人跟主角的分數差很遠，例如 0.08 對 0.70），但路人跟主角髮色、髮型很像時可能換錯，把路人也建卡就會分開；主角的頭太小、被擋住或背對時可能比不到，那格就不換他；眼下的小記號（刺青、痣）在補表情時偶爾被畫掉、表情偶爾變弱（例如驚嚇變微笑，嘴還張著時反推抓不到），按「再修一次」換種子。
 
 ## 整本上色（黑白漫畫，漫畫台的「整本上色」分頁）
 
@@ -245,19 +255,21 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - `GET /api/h3/info`：39 個舊範本（每個有說明、要填的欄位和英文預設值，可以參考寫法）、模式、雲端狀態、可用模型與 LoRA、`local.selflift`／`cloud_selflift`。
 - 素材：`POST /api/h3/media {gallery_id}` 或 `{file_name, data_b64}` → `{name, kind, w, h, secs, audio}`。
 - 寫提示詞（可選）：`POST /api/h3/write {idea, mode, seconds, media:[{label, role, name?}], brain:"9b"|"35b"|"cloud"}` → `{prompt}`。素材板：`mode:"board"`（再給 `path`、`plan`）→ `{plan:{summary, style, notes, shots:[{start, camera, picture, lines:[{speaker, to, lang, text, offscreen}], sound}], soundscape, music}}`（腦袋沒照格式回時是 `{prompt}`）；分鏡要自己組成官方格式（網頁 `ui\js\h3.js` 的 `assemble()`），或你自己直接寫完整提示詞。
-- 生成：`POST /api/h3/generate {params, count, where:"cloud"|"local"|"runninghub"}` → `{task}`。params：`h3_mode, template, prompt, seconds, aspect, quality, items?, lora_mode?, first?, last?, prev?, continue_audio?, source?, src_wh?, keep_audio?, refs:{images, videos, video_audio, audios}, keys:[{image, secs}], control_type?, control_strength?, model?, steps(8), sampler("res_multistep"), scheduler("simple"), two_pass?, selflift?（SelfLift 兩段取樣：前半 0.6 倍解析度、後半原解析度，取樣器強制 euler、至少 4 步，不能跟 two_pass 一起；要裝 SelfLiftH3Sampler 節點，`/api/h3/info` 的 `local.selflift`／`cloud_selflift` 看有沒有）, speedup?（INT8 注意力＋sol-attn 稀疏注意力）, ff_chunks?（低顯存切塊：沒給＝w4a8、GGUF 自動切 8，1＝不切；節點是 ComfyUI-KJNodes 的 MiniMaxChunkFeedForward，沒裝時自動的改成不切、自己給 ≥2 會回錯誤）, seed, loras`。本機（where local）沒給 model 時挑本機最省顯存的：10Eros w4a8 → GGUF → 預設 int8；`/api/h3/info` 的 `local.pick` 是會挑到的那顆、`local.chunk` 是切塊節點在不在。進度 websocket type `h3`；完成後影片進圖庫。停：`POST /api/h3/stop {task}`。
+- 生成：`POST /api/h3/generate {params, count, where:"cloud"|"local"|"runninghub"}` → `{ok, task}`。`where` 沒給＝`cloud`（雲端沒開會回錯誤，要在本機拍一定要寫 `where:"local"`）；`count` 預設 1、最多 4（超過不報錯，只拍 4 支）。params：`h3_mode, template, prompt, seconds, aspect, quality, items?, lora_mode?, first?, last?, prev?, continue_audio?, source?, src_wh?, keep_audio?, refs:{images, videos, video_audio, audios}, keys:[{image, secs}], control_type?, control_strength?, model?, steps(8), sampler("res_multistep"), scheduler("simple"), two_pass?, selflift?（SelfLift 兩段取樣：前半 0.6 倍解析度、後半原解析度，取樣器強制 euler、至少 4 步，不能跟 two_pass 一起；要裝 SelfLiftH3Sampler 節點，`/api/h3/info` 的 `local.selflift`／`cloud_selflift` 看有沒有）, speedup?（INT8 注意力＋sol-attn 稀疏注意力）, ff_chunks?（低顯存切塊：沒給＝w4a8、GGUF 自動切 8，1＝不切；節點是 ComfyUI-KJNodes 的 MiniMaxChunkFeedForward，沒裝時自動的改成不切、自己給 ≥2 會回錯誤）, seed, loras`。本機（where local）沒給 model 時挑本機最省顯存的：10Eros w4a8 → GGUF → 預設 int8；`/api/h3/info` 的 `local.pick` 是會挑到的那顆、`local.chunk` 是切塊節點在不在。進度 websocket type `h3`；完成後影片進圖庫。停：`POST /api/h3/stop {task}`。
 - **角色的聲音**：素材板的角色圖可以寫聲音描述（例：「少女聲，偏低，性感知性」），網頁組提示詞時照官方格式寫在那個人每句台詞的 `<d>` 前面（`says in …: <d>…</d>`），不放角色定義（放那裡會被 H3 當台詞念出來）。要每支片同一把聲音：把一段聲音放進素材板當「取音色」（聲音 `use:"ref"`、`role:"voice"`、給 S1…）。
 - **聲音庫**（角色的專屬聲音存起來）：`GET /api/voices` → `{voices:[{id, name, desc, file, source, created}], tts:{ready, why?, voice_field?}}`；`POST /api/voices {name, desc, file_name, data_b64}` 存一段；`GET /api/voices/{id}/file` 拿檔案（再送 `/api/h3/media {file_name, data_b64}` 放進素材板）；`DELETE /api/voices/{id}` 搬到 `待刪除\聲音庫`；`POST /api/voices/tts {name, desc, text}` 用 TTS 工作流照描述做一段、存進聲音庫（要先 `POST /api/voices/tts_workflow {file_name, data_b64}` 匯入 ComfyUI 的 TTS 工作流：文字欄位寫 `{{text}}`、聲音描述欄位寫 `{{voice}}`、要有 SaveAudio 這類節點；還沒用真的 TTS 節點實測過）。
 - **RunningHub**（2026-10-27）：`where:"runninghub"` 把整份節點圖丟上 RunningHub 跑（不用開機器，照秒扣 RH 幣：48GB 每秒 0.4、24GB 0.2；免費帳號也有 API Key、一次一個任務）。設定：`GET /api/runninghub`、`POST /api/runninghub/config {key?, site:"ai"|"cn", instance:"plus"|"ultra"|"default", models:{我們的檔名: 那邊的檔名}, workflow_id?}`（金鑰只存不回）、`POST /api/runninghub/test` → `{coins, running}`（不花錢）。沒選模型時自動用 RunningHub 有的 `minimax_h3_hybrid_fl2va_ref2va_b25-49-int8`＋Turbo LoRA。RefMod 不能用（要用雲端顯卡）；長片要在長片存檔設 `where:"runninghub"`（見下方長片）。
 - **雲端**：`where:"cloud"` 要先開雲端機器（`GET /api/agent/cloud` 看狀態和價格，`POST /api/agent/cloud/start` 開機要確認，A6000／A40 大約每小時 US$0.59）。用完一定要提醒使用者關機（關機＝刪機，也要確認）。
 
-### 長片：一段一段接著拍（只能用雲端）
-- 一條長片＝好幾段（每段 5～15 秒，預設 10）。第 1 段用首幀（可不放）開拍，第 2 段起直接吃上一段的 AV latent 接著拍（社群 Herrgotts H3 Infinite 節點，生圖站自己帶、第一次開拍時裝到雲端）。每段拍完自動切掉重疊的開頭、定住的尾巴，用拆幀台檢查硬剪接和跳點（只標出來）；全部拍好在本機用 ffmpeg 接成一支進圖庫。
-- `GET /api/h3/chains`；`GET /api/h3/chain/{id}`（多 `est`＝還沒拍的段約要算幾秒、`running`）。
-- `POST /api/h3/chain/save {chain}`：沒 id 就新建。chain：`title, aspect, quality, look（角色外觀，英文）, scene, style, voice（寫在每句台詞前）, sound, ref（角色參考圖）, first（第 1 段首幀）, refs:[檔名…]（拍攝單的參考圖，最多 8，每段都接 qwen_reference_1..N；有它就不用 ref）, sheet:{…}（拍攝單原樣保留，≤200 KB；網頁打開這條長片時會帶回上面）, where:"runpod"|"runninghub"（在哪拍，預設 runpod；有段拍好後不能改）, segments:[{secs, text, lines:[{at, lang, text, who?}], last?（尾幀，預設不放）}]`；圖先用 `/api/h3/media` 放進 input，填回傳的 `name`。每段拍好的結果（status、files、check…）以存檔為準，送的不算；有段拍好後不能改比例、畫質；拍攝中不能存。
-- `POST /api/h3/chain/run {id, from?}`（**花錢，先問使用者**）：從第一個還沒拍好的段開始；`from`＝從第幾段（0 起算）重拍，後面的段一起作廢。雲端沒開回錯誤（不會自動開機）。`where:"runninghub"` 時不用開雲端：每段一個 RunningHub 任務，第 2 段起把上一段影片當「接著拍」（`use:"continue"`，最後 22 格畫面＋聲音），拍完切掉開頭重疊的 22 格；沒有 latent，接縫可能比雲端顯卡版硬（還沒實拍驗證）；8 秒一段約 80 RH 幣（48GB），要先填 RunningHub 金鑰、不能用 RefMod。進度 websocket `{"type":"h3chain", id, seg, state:"running|seg_done|done|error|stopped", msg}`。
+### 長片：一段一段接著拍（雲端、本機、RunningHub）
+- 一條長片＝好幾段（每段 5～15 秒，預設 10）。第 1 段用首幀（可不放）開拍，第 2 段起直接吃上一段的 AV latent 接著拍（社群 Herrgotts H3 Infinite 節點，生圖站自己帶、第一次開拍時裝好）。每段拍完自動切掉重疊的開頭、定住的尾巴，用拆幀台檢查硬剪接和跳點（只標出來）；全部拍好在本機用 ffmpeg 接成一支進圖庫。
+- **在哪拍（`where`）**：`runpod`＝雲端顯卡（預設，花錢）；`local`＝本機 ComfyUI（2026-11-13 起，不花錢；接法跟雲端一樣是 latent 接續，模型自動挑本機最省顯存的那顆、小顯存自動切塊；8GB 顯卡 864×480 大約每秒影片算 70 秒，10 秒一段約 10～12 分鐘；第一次開拍會把接續節點解到 `custom_nodes\HerrgottsH3Infinite`，回錯誤叫你重開 ComfyUI 再按一次）；`runninghub`＝RunningHub（花 RH 幣，沒有 latent，用上一段影片接）。
+- **參考圖進影片模型本體（`ref_dit`，預設 true，2026-11-13）**：Herrgott 的節點只把參考圖給文字編碼器，接續段的衣服、髮色、畫風會慢慢跑掉（實測第 2 段就長出領結、裙子變長）。開著時，繪匣附的 `AnimaH3AddRefLatents` 節點（`custom_nodes\anima_h3_nodes`，開站自動同步；雲端第一次開拍時裝）把同一批參考圖 VAE 編碼後塞進 `minimax_refs`，並在提示詞開頭自動加一句「`<Picture 1>` is a reference image, not a frame of the video…」。**只在 `<Picture N>` 編號對得上的段才送**：這段有尾幀、或是有首幀的第 1 段，就不送（首幀／尾幀會佔掉 `<Picture 1>`）。沒放任何參考圖時，第 2 段起自動拿第 1 段的首幀當參考。這段 `refs: []`＝這段不送。那台 ComfyUI 沒有這個節點時自動退回舊接法（進度訊息會講）。RunningHub 那條路不適用。每個版本的 `recipe.ref_dit` 記這段實際有沒有送。
+- `GET /api/h3/chains`；`GET /api/h3/chain/{id}`（多 `est`＝還沒拍的段約要算幾秒、`running`、`size_locked`＝有段拍好了、比例畫質不能改；程式關掉時拍到一半的段會顯示成 `stopped`）。
+- `POST /api/h3/chain/save {chain}`：沒 id 就新建。chain：`title, aspect, quality, look（角色外觀，英文）, scene, style, voice（寫在每句台詞前）, sound, ref（角色參考圖）, first（第 1 段首幀）, refs:[檔名…]（拍攝單的參考圖，最多 8，每段都接 qwen_reference_1..N；有它就不用 ref）, sheet:{…}（拍攝單原樣保留，≤200 KB；網頁打開這條長片時會帶回上面）, where:"runpod"|"local"|"runninghub"（在哪拍，預設 runpod；有段拍好後不能改）, ref_dit（見上，預設 true）, segments:[{secs, text, lines:[{at, lang, text, who?}], last?（尾幀，預設不放）}]`；圖先用 `/api/h3/media` 放進 input，填回傳的 `name`。每段拍好的結果（status、files、check…）以存檔為準，送的不算；有段拍好後不能改比例、畫質；拍攝中不能存。
+- `POST /api/h3/chain/run {id, from?}`（**雲端和 RunningHub 花錢，先問使用者；`where:"local"` 不花錢，但會佔住本機顯卡十幾分鐘到幾小時**）：從第一個還沒拍好的段開始；`from`＝從第幾段（0 起算）重拍，後面的段一起作廢。雲端沒開回錯誤（不會自動開機）。本機：ComfyUI 沒開、缺模型／文字編碼器／VAE 都在開拍前回錯誤；每段成品從 ComfyUI output 搬進長片資料夾（output 不留影片），上一段的 latent 每次從長片資料夾複製到 `output\h3chain\<id>\` 給節點讀；按停會把這個工作從 ComfyUI 佇列拿掉並中斷。`where:"runninghub"` 時不用開雲端：每段一個 RunningHub 任務，第 2 段起把上一段影片當「接著拍」（`use:"continue"`，最後 22 格畫面＋聲音），拍完切掉開頭重疊的 22 格（H3 的總格數只能是 17k＋5，所以接續段切完會比設定的秒數差幾格：10 秒約 9.9 秒；15 秒的段被 362 格上限卡住，切完約 14.2 秒）；沒有 latent，接縫可能比雲端顯卡版硬（還沒實拍驗證）；8 秒一段約 80 RH 幣（48GB），要先填 RunningHub 金鑰、不能用 RefMod。進度 websocket `{"type":"h3chain", id, seg, state:"running|seg_done|done|error|stopped", msg}`。
 - `POST /api/h3/chain/stop {id}`、`POST /api/h3/chain/join {id}`（再接一次，不花錢）、`POST /api/h3/chain/delete {id}`（搬到 `待刪除\H3長片\`）。
-- 段的影片：`GET /api/h3/chain/{id}/file/seg01_end.mp4`（`_cut`＝接片用、切掉尾巴；`_end`＝保留結尾）、`final.mp4`。每段的 `check:{sid, cuts, jumps}`：sid 是拆幀台的那一份，可以接著用拆幀台的 sheet／diff 逐格看。
+- 段的影片：`GET /api/h3/chain/{id}/file/<檔名>`，檔名看每段的 `files:{cut, end, lat}`（現在是 `take_<版本>_cut.mp4`／`_end.mp4`，舊存檔是 `seg01_cut.mp4`；`_cut`＝接片用、切掉尾巴；`_end`＝保留結尾）、`final.mp4`。每段的 `check:{sid, cuts, jumps}`：sid 是拆幀台的那一份，可以接著用拆幀台的 sheet／diff 逐格看。
 - 寫法：換場景、換姿勢寫成動作（轉身、起身、低頭擋住鏡頭），不要每段都釘不同狀態的尾幀（模型會在半路瞬移）。
 
 ## 影音工作台：剪輯台（FableCut）
@@ -402,7 +414,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 | 停掉背景改寫／排分鏡 | `POST /api/pe/cancel {rid}`（排分鏡的 rid 是 `comic-<作品編號>`） |
 | 改寫的系統提示詞 | `GET,POST /api/pe/prompts`（確認） |
 | 外掛寫法（提示詞 skill） | `GET /api/skills`、`POST /api/skills/install｜bind｜remove`（確認），見「提示詞」 |
-| LoRA | `POST /api/loras/delete`（確認）、`POST /api/loras/meta` |
+| LoRA | `POST /api/loras/delete`（確認）、`POST /api/loras/meta`、`POST /api/loras/preview`、`POST /api/loras/preview/set` |
 | 安裝精靈（有掛才有） | `GET /api/setup/status`、`POST /api/setup/check`、`POST /api/setup/run` |
 
 ## 已知的坑
@@ -417,8 +429,9 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 日期版號為 `年.月日.包次`（例如 26.1024.1、26.1024.2），狀態列仍顯示 V261024；完整版本看設定頁。26.10.24 等舊版要先手動安裝支援更新的版本一次。
 - 若改寫提示「找不到 AI 改寫用的通用模型」：到「安裝與修復」勾「AI 改寫、生圖助手」下載通用 9B（官方 PE 已經不支援）。缺讀圖檔可以 `POST /api/pe/mmproj {brain?:"9b"|"35b"}` 補下載。已有模型可加入 LLM 外部資料夾，不必重新下載；模型與讀圖檔會逐一搜尋所有 LLM 來源及子資料夾。
 
-- 參數缺了不會報錯的：txt2img 缺 width 會變 256、缺 steps 會變 0（`anima_generate` 會補，`anima_api` 直接打 /api/generate 時要自己給）。
-- LoRA 家族不合、`control` 用在非 anima、`pose_control` 用在 Anima／Qwen 2.1 以外：都不會報錯，只是沒效果。`count` 要在 1～32，超過會回 400。
+- 直接打 `/api/generate` 缺參數會回 400（`anima_generate` 會照家族補，`anima_api` 直接打時要自己給）：txt2img 要 `width`、`height`、`steps`、`cfg`；img2img、inpaint、outpaint、multiref、detail 要 `steps`、`cfg`（2026-11-13 起也擋，以前會靜默組出 0 步、CFG 0 的圖；走 `image_workflow` 工作流組時不擋，沒給就用工作流裡的值）。
+- 給了卻不會生效的設定照樣會畫，但回應的 `jobs[].notes` 會講（2026-11-13 起）：`control` 不是 Anima 的文生圖／圖生圖、`moss_control` 不是 MOSS 文生圖、`pose_control` 用在 Anima（文生圖、圖生圖）／MOSS（文生圖）／Qwen 2.1 以外、`hires` 不是文生圖／圖生圖、`layout` 不是 MOSS、Qwen 2.1 Turbo 給了 8 以外的 `steps`（Turbo 走固定排程，步數和排程器沒作用）。LoRA 家族不合看 `skipped_loras`。走匯入工作流（`wf:`）時不檢查。
+- 檔頭認得出是 SD 1.5／Flux／SD3 的模型直接打 `/api/generate` 會回 400（內建流程沒有它們的節點圖，要匯入工作流用 `wf:<代號>`）；SDXL、Krea 2 是內建的。`count` 要在 1～32，超過會回 400。
 - 同一個 ComfyUI 同時載 Anima＋Qwen 會把 32GB 記憶體吃光卡住：換家族前 `POST /api/free`（漫畫台、生成會自己處理大部分情況）。
 - 影片生成前會自動釋放顯存，第一次載入模型比較久（幾十秒到幾分鐘）。
 - AI 改寫的 llama-server 吃 5～6GB 顯存，按生成前生圖站會自動關掉它。
@@ -443,5 +456,28 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - `POST /api/director/run {id,review:true,...}`：逐鏡審片，新結果保存為候選，不自動供下游使用。`review:false` 連拍自動採用。`POST /api/director/take/select {id,index,take_id}` 只切換已有版本，沒有模型請求。每鏡 `takes` 存實際配方與結果、`selected_take` 是採用版、`pending_take` 是待審候選；切版會使連續相依的後續 current 失效，歷史保留。
 - `POST /api/director/tail/candidates {id,seg}`：取已選用影片的片尾候選，回 `video_id`、`selected_take`、候選 `frame/time/trim_out/url`。`POST /api/director/tail/select {id,seg,video_id,frame,expected_take}`：`expected_take` 必須等於候選回傳的採用版；保存一個衍生版本與裁切出點，合片實際裁切，原片保留。
 - H3 長片存檔可加 `review:true`；`POST /api/h3/chain/take/select {id,seg,take_id}` 採用版本並恢復相應 latent。後續版本必須相容上一鏡的 `source_take`；不能把任意 PNG 當作 latent 替代品。輪詢或 websocket 的 `review` 表示需要先選片。
+- 拿掉匯入的工作流（使用者同意才做）：`DELETE /api/image/workflows/{id}`（加 `?mode=inpaint` 只拿掉一個模式；指到它的「取代內建功能」一起拿掉）、`DELETE /api/video/workflows/{id}`（它是目前的影片引擎時改回內建）。
 - 影片工作流 `map.media_slots` 是 `[{key,label,kind,role,node,input,who?}]`；`kind` 為 `image/video/audio`，每次生成傳 `params.media_slots={key:input檔名}`。未提供的槽保留工作流值；素材必須是已上傳的 basename。影音用 `POST /api/video/media/upload?kind=video|audio` multipart，圖片沿用 `/api/upload`。禁止填任意本機路徑或 URL。
 - 生成、租雲端與重拍可能花費，仍按既有使用者授權規則處理。版本切換、組詞、人工選幀不會新增 AI 請求。
+
+## 混音台：小克的 mixdesk 譜檔，看得到、調得動、改得了音符（2026-11-04）
+
+導演頁的「混音台」分頁（也能放大、全螢幕；頁面本身是 `/mixdesk`）。資料全部來自小克的 mixdesk（`D:\AI\tools\mixdesk`；設定 `mixdesk_dir` 或環境變數 `ANIMA_MIXDESK` 可以改位置），**面板和小克改的是同一份 YAML 譜檔**：面板寫回時用 mixdesk 的 apply（保留註解和連動，先備份到 mixdesk 的 `.tmp\song_backups\`），小克用 `mixdesk apply` 或直接改檔，面板每 2 秒看修改時間，沒有未套用的修改就自動重新載入，有的話先問。
+
+- 播放是瀏覽器裡的預覽：載入渲染出來的推桿前分軌（`stems_pre/`），音量、聲像、靜音、獨奏、匯流排音量即時套；改了音符、樂器、效果要按「套用＋重新渲染」才聽得到（軌頭標「待渲染」）。「聽正式母帶」切到渲染好的 `mix.wav`。
+- 譜檔格式、op 清單、JSON 指令：mixdesk 的 `docs\score-format.md`「給混音台面板的 JSON 指令」。
+
+| 路由 | 做什麼 |
+|---|---|
+| `GET /api/mixdesk/status` | 找不找得到 mixdesk（`{ok, dir}`；找不到時 `error` 說怎麼設 `mixdesk_dir`） |
+| `GET /api/mixdesk/songs` | 曲子清單（mixdesk 的 `examples\`、`songs\`）：`[{path, name, dir, mtime}]` |
+| `GET /api/mixdesk/song?path=` | `mixdesk inspect`：整首的 JSON（軌、段落、音符、連動、台詞、影片、`render` 渲染狀態）＋`mtime` |
+| `GET /api/mixdesk/mtime?path=` | 譜檔修改時間（面板輪詢用，不跑 Python） |
+| `POST /api/mixdesk/new {title, tempo, time}` | 在 `songs\` 建空白譜檔，回 `{path}` |
+| `POST /api/mixdesk/apply {path, edits:{v:1, base_hash, ops}}` | 寫回譜檔；`base_hash` 對不上（載入後被改過）回 400「被改過」 |
+| `POST /api/mixdesk/render {path}` → `{job}` | 背景渲染（一次一首，排隊）；`GET /api/mixdesk/job/{id}` 看 `state`（queued／running／done／error／stopped）與 `events`（track、tts、warning、done），`POST /api/mixdesk/job/{id}/stop` 取消 |
+| `GET /api/mixdesk/file?path=` | 讀 mixdesk 資料夾裡的 wav／png／json／影片（其他位置 403） |
+| `GET /api/mixdesk/video?song=` | 這首配的影片（`video.path`；`gallery:<id>` 轉到圖庫那支） |
+| `GET /api/mixdesk/instruments` | 樂器庫（分類、名字、來源、音域、是不是鼓組） |
+| `POST /api/mixdesk/audition {instrument, notes?}` | 試聽音檔（`{path}`，有快取；`notes` 用 mixdesk 的音符語法，例如 `C4/1`、`kick/1`） |
+| `POST /api/mixdesk/to_studio {path, stems?}` | 把渲染好的配樂（和分軌）放進剪輯台素材；回 `{imported, srt}`（剪輯台沒有匯入字幕的入口，`srt` 是字幕檔路徑） |

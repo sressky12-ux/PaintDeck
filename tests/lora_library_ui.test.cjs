@@ -6,9 +6,11 @@ const vm = require('node:vm');
 
 function harness() {
   const controls = new Map();
-  for (const id of ['loraQ', 'loraFamily', 'loraCategory', 'loraTag', 'loraFav', 'loraTotal', 'loraMore', 'loraGrid']) {
+  for (const id of ['loraQ', 'loraFamily', 'loraCategory', 'loraTag', 'loraFav', 'loraTotal', 'loraMore', 'loraGrid', 'loraView']) {
+    const classes = new Set();
     controls.set('#' + id, {
-      value: '', checked: false, options: [], children: [], hidden: false, textContent: '',
+      value: '', checked: false, options: [], children: [], hidden: false, textContent: '', classes,
+      classList: { toggle(c, on) { if (on) classes.add(c); else classes.delete(c); } },
       replaceChildren(...children) { this.children = children; this.options = children; },
       append(child) { this.children.push(child); },
     });
@@ -28,10 +30,14 @@ function harness() {
   const source = fs.readFileSync(path.join(__dirname, '../ui/js/loras.js'), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   const timers = [];
-  const context = vm.createContext({ $, el, app, document, setTimeout: (f) => timers.push(f), api: async (url, opts) => { calls.push([url, opts]); }, toast() {}, openModal() {}, closeModal() {}, debounce: f => f });
+  const saved = {};
+  const store = { get: (k, d) => (k in saved ? saved[k] : d), set: (k, v) => { saved[k] = v; } };
+  let reply = null;
+  const context = vm.createContext({ $, el, app, document, store, setTimeout: (f) => timers.push(f), confirm: () => true,
+    api: async (url, opts) => { calls.push([url, opts]); return reply; }, toast() {}, openModal() {}, closeModal() {}, debounce: f => f, makeDrop() {}, pickFile: async () => null });
   function $(id) { return controls.get(id); }
-  vm.runInContext(source + '\nglobalThis.subject = { onState, renderPage, categoryOf, previewUrl, onCover };', context, { filename: 'loras.js' });
-  return { ...context.subject, app, calls, timers, get: id => controls.get('#' + id) };
+  vm.runInContext(source + '\nglobalThis.subject = { onState, renderPage, categoryOf, previewUrl, onCover, view, applyMeta, previewFromImage };', context, { filename: 'loras.js' });
+  return { ...context.subject, app, calls, timers, saved, reply: (r) => { reply = r; }, get: id => controls.get('#' + id) };
 }
 
 test('五千個 LoRA 只先建立 60 張卡片，分類與搜尋仍掃完整清單', () => {
@@ -128,4 +134,47 @@ test('程式附的封面縮圖直接顯示，抓不到的不會永遠停在「�
   for (const f of h.timers) f();
   assert.equal(loras[1].coverFailed, true);
   assert.equal(phOf('net.safetensors').kids[1].kids[0], '沒有預覽圖');
+});
+
+// 2026-11-17 網友：「给lora换预览图，或者是列表化选择」
+test('列表模式一行一個，切換鈕寫的是按下去會變成什麼', () => {
+  const h = harness();
+  h.view.page = 'list';
+  h.onState({ models: { loras: [{ name: 'a.safetensors', family: 'anima', triggers: ['tok'] }, { name: 'b.safetensors', family: 'anima' }] } });
+  const g = h.get('loraGrid');
+  assert.equal(g.children.length, 2);
+  assert.ok(g.children.every((c) => c.classes.has('lrow')));
+  assert.ok(g.classes.has('as-list'));
+  assert.equal(h.get('loraView').textContent, '▦ 卡片');
+  h.view.page = 'grid';
+  h.renderPage(true);
+  assert.ok(!g.classes.has('as-list'));
+  assert.ok(g.children.every((c) => !c.classes.has('lrow')));
+  assert.equal(h.get('loraView').textContent, '☰ 列表');
+});
+
+test('換過的預覽圖網址帶版本（同檔名也會重抓），還原後拿掉換上去的欄位', () => {
+  const h = harness();
+  const l = { name: 'a.safetensors', family: 'anima', preview: 'custom_0123abcd.jpg', preview_custom: true, preview_t: 1731800000.4, preview_orig: 'civ.jpg' };
+  h.app.state.models.loras = [l];
+  h.onState({ models: { loras: [l] } });
+  assert.equal(h.previewUrl(l), '/lora_preview/custom_0123abcd.jpg?v=1731800000');
+  h.applyMeta(l, { preview: 'civ.jpg', preview_nsfw: 2 });
+  assert.equal(l.preview, 'civ.jpg');
+  assert.equal(l.preview_custom, undefined);
+  assert.equal(l.preview_orig, undefined);
+  assert.equal(h.previewUrl(l), '/lora_preview/civ.jpg');
+});
+
+test('圖庫「設為 LoRA 預覽圖」：只用一個 LoRA 就直接送那個', async () => {
+  const h = harness();
+  const l = { name: 'a.safetensors', family: 'anima' };
+  h.onState({ models: { loras: [l, { name: 'b.safetensors', family: 'anima' }] } });
+  h.reply({ preview: 'custom_0123abcd.jpg', preview_custom: true, preview_t: 5, preview_nsfw: 1 });
+  await h.previewFromImage({ id: 42, params: { loras: [{ name: 'a.safetensors', strength: 0.8 }] } });
+  await new Promise((r) => setImmediate(r));
+  const [url, opts] = h.calls.at(-1);
+  assert.equal(url, '/api/loras/preview/set');
+  assert.deepEqual({ ...opts.json }, { name: 'a.safetensors', id: 42, nsfw: false });
+  assert.equal(h.previewUrl(l), '/lora_preview/custom_0123abcd.jpg?v=5');
 });

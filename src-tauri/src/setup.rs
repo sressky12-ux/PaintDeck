@@ -201,6 +201,10 @@ const FFMPEG: (&str, u64) = (
 const UA: &str = "Mozilla/5.0 (anima-app setup)";
 const NODE: &str = "anima_prompt_enhancer";
 const MOSS_NODES: &str = "anima_moss_nodes";
+/// 繪匣附帶的 H3 小節點（參考圖送進 DiT，長片接續段用）：resources\extras\anima_h3_nodes
+pub const H3_NODES: &str = "anima_h3_nodes";
+/// 繪匣附帶的漫畫小節點（照資產修角色：裁頭、貼回）：resources\extras\anima_comic_nodes
+pub const COMIC_NODES: &str = "anima_comic_nodes";
 
 mod reuse;
 
@@ -1709,6 +1713,8 @@ pub fn sync_bundled(comfy_dir: &Path, res: &Path) -> Vec<String> {
     }
     // 繪匣自己的 MOSS 小節點（4B 文字編碼器）：不管有沒有勾過什麼都放，沒用到也不佔資源
     jobs.push(("MOSS 小節點", extras.join(MOSS_NODES), comfyui.join("custom_nodes").join(MOSS_NODES), backup.join("custom_nodes").join(MOSS_NODES)));
+    jobs.push(("H3 小節點", extras.join(H3_NODES), comfyui.join("custom_nodes").join(H3_NODES), backup.join("custom_nodes").join(H3_NODES)));
+    jobs.push(("漫畫小節點", extras.join(COMIC_NODES), comfyui.join("custom_nodes").join(COMIC_NODES), backup.join("custom_nodes").join(COMIC_NODES)));
     jobs.push(("工作流程", extras.join("workflows"), comfyui.join("user").join("default").join("workflows"), backup.join("user").join("default").join("workflows")));
     jobs.push(("附帶 LoRA", extras.join("loras"), comfyui.join("models").join("loras"), backup.join("models").join("loras")));
     let mut done = vec![];
@@ -2913,6 +2919,8 @@ impl Setup {
         let bak = p.comfyui().join("待刪除").join(format!("繪匣更新備份_{}", chrono::Local::now().format("%Y%m%d_%H%M%S")));
         self.sync_into("node", &self.res.join("extras").join(NODE), &p.node(), &bak.join("custom_nodes").join(NODE));
         self.sync_into("moss_nodes", &self.res.join("extras").join(MOSS_NODES), &p.comfyui().join("custom_nodes").join(MOSS_NODES), &bak.join("custom_nodes").join(MOSS_NODES));
+        self.sync_into("h3_nodes", &self.res.join("extras").join(H3_NODES), &p.comfyui().join("custom_nodes").join(H3_NODES), &bak.join("custom_nodes").join(H3_NODES));
+        self.sync_into("comic_nodes", &self.res.join("extras").join(COMIC_NODES), &p.comfyui().join("custom_nodes").join(COMIC_NODES), &bak.join("custom_nodes").join(COMIC_NODES));
         self.sync_into(
             "workflows",
             &self.res.join("extras").join("workflows"),
@@ -4558,8 +4566,12 @@ mod tests {
 ");
         write(res.join("comfy_moss").join("comfy_extras").join("nodes_moss_image.py"), "class TextEncodeMOSSImageEdit(io.ComfyNode):");
         write(res.join("comfy_moss").join("說明.txt"), "readme");
+        write(res.join(COMIC_NODES).join("__init__.py"), "# comic nodes
+");
         let done = sync_bundled(&port, &d.join("res"));
-        assert_eq!(done.len(), 5, "{done:?}");
+        assert_eq!(done.len(), 6, "{done:?}");
+        assert_eq!(read(code.join("custom_nodes").join(COMIC_NODES).join("__init__.py")), "# comic nodes
+");
         // MOSS 小節點：沒裝過也放（不像 AI 改寫節點要先裝過）
         assert_eq!(read(code.join("custom_nodes").join(MOSS_NODES).join("__init__.py")), "# moss nodes
 ");

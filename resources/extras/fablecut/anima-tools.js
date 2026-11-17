@@ -384,7 +384,7 @@ async function call(name, a) {
       const { p, filled, family } = await withDefaults(a.params);
       const r = await api("POST", "/api/generate", { params: p, count: a.count || 1 });
       const ids = (r.jobs || []).map((j) => j.job);
-      const head = { family, model: p.model, filled_defaults: filled, jobs: r.jobs, skipped_loras: r.skipped || undefined };
+      const head = { family, model: p.model, filled_defaults: filled, jobs: r.jobs, skipped_loras: r.jobs?.[0]?.skipped_loras || undefined, notes: r.jobs?.[0]?.notes || undefined };
       if (a.wait === false) return json({ ...head, note: "已送出；用 anima_jobs {jobs, wait:true} 等結果" });
       const w = await waitJobs(ids, a.timeout_s || 600);
       const text = json({ ...head, ...w });

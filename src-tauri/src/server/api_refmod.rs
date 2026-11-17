@@ -76,7 +76,7 @@ pub fn asset_files(app: &Shared, names: &[String]) -> Result<Vec<(String, PathBu
     names.iter().map(|n| Ok((n.clone(), asset_file(app, n)?))).collect()
 }
 
-fn git(args: &[&str], dir: Option<&Path>) -> Result<String, String> {
+pub(super) fn git(args: &[&str], dir: Option<&Path>) -> Result<String, String> {
     let mut c = Command::new("git");
     c.args(args);
     if let Some(d) = dir {
@@ -95,8 +95,43 @@ fn git(args: &[&str], dir: Option<&Path>) -> Result<String, String> {
 }
 
 /// 已經裝的那份是不是釘的 commit（不是 git 資料夾、讀不到都算不是）
-fn installed_commit(dir: &Path) -> Option<String> {
+pub(super) fn installed_commit(dir: &Path) -> Option<String> {
     dir.join(".git").exists().then(|| git(&["rev-parse", "HEAD"], Some(dir)).ok()).flatten()
+}
+
+/// 把外掛 git clone 到 dest（ComfyUI 的 custom_nodes\<名字>），釘在 commit。回「這次真的裝了」（已經是這版＝false）。
+/// 先抓到 <名字>-installing.disabled（ComfyUI 不載 .disabled 結尾的），切好版本才改名，中途失敗不會留半套；
+/// dest 已經有別的版本（或不是 git 資料夾）就不動它，回錯誤。RefMod 和 Wardrobe（api_wardrobe.rs）共用
+pub(super) fn clone_pinned(dest: &Path, repo: &str, commit: &str, dir: &str) -> Result<bool, String> {
+    if dest.exists() {
+        return match installed_commit(dest) {
+            Some(h) if h == commit => Ok(false),
+            _ => Err(format!("{} 已經有別的版本：要換成繪匣審過的版本，先把那個資料夾移走再按一次", dest.display())),
+        };
+    }
+    let parent = dest.parent().ok_or("ComfyUI 資料夾不對")?;
+    std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
+    let tmp = parent.join(format!("{dir}-installing.disabled"));
+    if tmp.exists() {
+        std::fs::remove_dir_all(&tmp).map_err(|e| format!("上次沒裝完的暫存資料夾刪不掉：{e}"))?;
+    }
+    let tmp_s = tmp.to_string_lossy().to_string();
+    let fetched = git(&["clone", "--quiet", "--no-checkout", repo, &tmp_s], None)
+        .and_then(|_| git(&["checkout", "--quiet", "--detach", commit], Some(&tmp)))
+        .and_then(|_| git(&["rev-parse", "HEAD"], Some(&tmp)));
+    match fetched {
+        Ok(h) if h == commit => {}
+        Ok(h) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(format!("抓到的版本不對（{h}）：沒有裝"));
+        }
+        Err(e) => {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(e);
+        }
+    }
+    std::fs::rename(&tmp, dest).map_err(|e| format!("裝到 custom_nodes 失敗：{e}"))?;
+    Ok(true)
 }
 
 /// GET → {installed, same, loaded, online, repo, commit}
@@ -116,38 +151,6 @@ pub async fn install(State(app): State<Shared>) -> ApiResult {
     static INSTALLING: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
     let _g = INSTALLING.lock().await;
     let dest = node_dir(&app);
-    let r = blocking(move || -> Result<bool, String> {
-        if dest.exists() {
-            return match installed_commit(&dest) {
-                Some(h) if h == rm::COMMIT => Ok(false),
-                _ => Err(format!("{} 已經有別的版本：要換成繪匣審過的版本，先把那個資料夾移走再按一次", dest.display())),
-            };
-        }
-        let parent = dest.parent().ok_or("ComfyUI 資料夾不對")?;
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        let tmp = parent.join(format!("{}-installing.disabled", rm::DIR));
-        if tmp.exists() {
-            std::fs::remove_dir_all(&tmp).map_err(|e| format!("上次沒裝完的暫存資料夾刪不掉：{e}"))?;
-        }
-        let tmp_s = tmp.to_string_lossy().to_string();
-        let fetched = git(&["clone", "--quiet", "--no-checkout", rm::REPO, &tmp_s], None)
-            .and_then(|_| git(&["checkout", "--quiet", "--detach", rm::COMMIT], Some(&tmp)))
-            .and_then(|_| git(&["rev-parse", "HEAD"], Some(&tmp)));
-        match fetched {
-            Ok(h) if h == rm::COMMIT => {}
-            Ok(h) => {
-                let _ = std::fs::remove_dir_all(&tmp);
-                return Err(format!("抓到的版本不對（{h}）：沒有裝"));
-            }
-            Err(e) => {
-                let _ = std::fs::remove_dir_all(&tmp);
-                return Err(e);
-            }
-        }
-        std::fs::rename(&tmp, &dest).map_err(|e| format!("裝到 custom_nodes 失敗：{e}"))?;
-        Ok(true)
-    })
-    .await
-    .map_err(bad)?;
+    let r = blocking(move || clone_pinned(&dest, rm::REPO, rm::COMMIT, rm::DIR)).await.map_err(bad)?;
     ok(json!({"installed": true, "fresh": r, "restart": r || !app.comfy.object_info("MiniMaxH3RefModExtract").await.is_ok()}))
 }

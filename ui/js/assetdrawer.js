@@ -1,5 +1,6 @@
 // 資產抽屜：生成、導演分鏡、H3 影片台、漫畫、助手共用。點一個資產 → 後端照目前的模型轉換（/api/assets/{id}/apply）→ 插文字、放圖。
-// mount(box, ctx)：ctx = { family(), hint?, insert(text), images?: { base?(r), control?(r), ref?: {add(r), count(), max, has?(name), tag?(n)}, place?(it, p, toInput) }, lock?(chip) }。
+// mount(box, ctx)：ctx = { family(), hint?, insert(text), images?: { base?(r), control?(r), ref?: {add(r), count(), max, has?(name), tag?(n)}, place?(it, p, toInput) }, lock?(chip), claim?(it, p) }。
+// claim：頁面自己收下這個資產（漫畫台把角色做成角色卡），回 true 就不插字。
 // ref.tag：提示詞裡怎麼寫第 n 張（預設 <imageN>）；place：頁面自己放（H3 素材板）。
 // lock：鎖定設定表的角色不插字，交給頁面做成標籤（生成頁，見 lockedchips.js）；chip = {id, name, zh, en, tags, refs}。
 // r 是 /api/to_input 的 {name, width, height}；ref.add 回傳加入後的 1 起算編號，放不下回 null。
@@ -13,7 +14,7 @@ const HINT = {
   moss: "MOSS：只吃文字，圖不會送",
   h3: "H3：圖放進素材板（同一個角色的圖算同一個人）、音檔放聲音格，外觀和聲音寫進點子",
   agent: "助手：圖放進附圖，外觀文字寫進句子",
-  comic: "漫畫：插外觀文字和 tag",
+  comic: "漫畫：角色變成角色卡（外貌、參考圖、綁的 LoRA）；其他資產插外觀文字",
 };
 const KINDS = ["char", "scene", "frame", "outfit", "prop", "fx", "sound", "snippet"];
 
@@ -112,6 +113,7 @@ async function apply(d, it, fam) {
     const voice = `「${it.name}」聲音：${p.voice || "—"}；語言：${p.lang || "—"}`;
     text = [text, voice].filter(Boolean).join("\n");
   }
+  if (d.ctx.claim?.(it, p)) return;
   const locked = !!(p.locked && d.ctx.lock);
   if (locked) {
     d.ctx.lock({ id: it.id, name: it.name, zh: p.spec?.zh || "", en: p.spec?.en || "", tags: p.spec?.tags || "", refs: added });

@@ -137,6 +137,27 @@ pub async fn tags(
     )))
 }
 
+/// 詞庫來源 → resources\tags 底下的資料夾（不認得的當 danbooru）
+pub fn library_dir(src: Option<&str>) -> &'static str {
+    match src {
+        Some("weilin") => "weilin",
+        _ => "danbooru_groups",
+    }
+}
+
+/// GET /api/tags/library?src=danbooru|weilin：生成頁「詞」抽屜的分類詞庫。
+/// danbooru（預設）＝resources\tags\danbooru_groups\library.json（tools\danbooru_taggroups.mjs 照 Danbooru tag group 分類，tag 多帶使用次數和段落）；
+/// weilin＝resources\tags\weilin\library.json（WeiLin 詞庫照搬、轉繁體，MIT）。
+/// {source, groups: [{name, subs: [{name, secs?, tags: [[插入的字, 中文說明, 次數?, 段落?], ...]}]}]}
+pub async fn tags_library(State(app): State<Shared>, Query(q): Query<HashMap<String, String>>) -> ApiResult {
+    let dir = library_dir(q.get("src").map(String::as_str));
+    let path = app.paths.res.join("tags").join(dir).join("library.json");
+    if !path.is_file() {
+        return Err(not_found(format!("找不到詞庫檔（resources\\tags\\{dir}\\library.json）")));
+    }
+    file_response(path, Some("max-age=3600")).await
+}
+
 /// POST /api/tags/zh {"tags": [...]}：提示詞框的中英對照，查對照表（不用模型，立刻回）。
 /// 回 {"zh": {原字串: 中文}}，查不到的不放；一次最多 500 個
 pub async fn tags_zh(State(app): State<Shared>, Body(b): Body) -> ApiResult {
@@ -254,6 +275,17 @@ pub async fn lora_local_preview(State(app): State<Shared>, Query(q): Query<HashM
 }
 
 #[cfg(test)]
+mod library_tests {
+    #[test]
+    fn library_source_defaults_to_danbooru() {
+        assert_eq!(super::library_dir(None), "danbooru_groups");
+        assert_eq!(super::library_dir(Some("danbooru")), "danbooru_groups");
+        assert_eq!(super::library_dir(Some("weilin")), "weilin");
+        assert_eq!(super::library_dir(Some("../x")), "danbooru_groups");
+    }
+}
+
+#[cfg(test)]
 mod local_preview_tests {
     use super::local_lora_preview;
 
@@ -310,6 +342,55 @@ pub async fn lora_preview(State(app): State<Shared>, UrlPath(file): UrlPath<Stri
         Some("max-age=86400"),
     )
     .await
+}
+
+// ---------------------------------------------------------------- 換預覽圖（2026-11-17，純邏輯在 crate::lora_cover 的 custom_*）
+/// 縮圖、存進 previews\custom_<雜湊>.jpg、寫回 LoRA 資訊（原本的預覽圖記在 preview_orig，還原時換回）
+async fn set_custom_preview(app: &Shared, name: &str, raw: Vec<u8>, nsfw: bool) -> ApiResult {
+    lora_file(&app.paths.lora_roots(), name).map_err(not_found)?;
+    let jpg = blocking(move || crate::lora_cover::custom_thumb(&raw)).await.map_err(bad)?;
+    let file = crate::lora_cover::custom_file_name(name);
+    let previews = app.paths.previews.clone();
+    let f = file.clone();
+    blocking(move || -> std::io::Result<()> {
+        std::fs::create_dir_all(&previews)?;
+        std::fs::write(previews.join(f), jpg)
+    })
+    .await
+    .map_err(internal)?;
+    let mut meta = app.db.lora_meta()?.get(name).and_then(Value::as_object).cloned().unwrap_or_default();
+    crate::lora_cover::with_custom_preview(&mut meta, &file, if nsfw { 4 } else { 1 }, now());
+    let meta = Value::Object(meta);
+    app.db.set_lora_meta(name, &meta)?;
+    ok(meta)
+}
+
+/// POST /api/loras/preview?name=<LoRA 名稱>&nsfw=1（multipart，一張圖）：上傳一張圖當這個 LoRA 的預覽圖
+pub async fn lora_preview_upload(State(app): State<Shared>, Query(q): Query<HashMap<String, String>>, mut mp: axum::extract::Multipart) -> ApiResult {
+    let name = q.get("name").map(String::as_str).unwrap_or("").to_string();
+    let field = mp.next_field().await.map_err(|e| bad(format!("讀不到上傳的檔案：{e}")))?.ok_or_else(|| bad("沒有上傳檔案"))?;
+    let raw = field.bytes().await.map_err(|e| bad(format!("讀不到上傳的檔案：{e}")))?;
+    set_custom_preview(&app, &name, raw.to_vec(), q.get("nsfw").is_some_and(|v| v == "1" || v == "true")).await
+}
+
+/// POST /api/loras/preview/set {name, id, nsfw?}：用圖庫裡的一張圖（id）當預覽圖；{name, reset: true}：還原成原本的預覽圖
+pub async fn lora_preview_set(State(app): State<Shared>, Body(body): Body) -> ApiResult {
+    let name = body.get("name").and_then(Value::as_str).unwrap_or("").to_string();
+    if body.get("reset").and_then(Value::as_bool) == Some(true) {
+        let mut meta = app.db.lora_meta()?.get(&name).and_then(Value::as_object).cloned().ok_or_else(|| not_found("這個 LoRA 沒有換過預覽圖"))?;
+        if let Some(f) = crate::lora_cover::without_custom_preview(&mut meta) {
+            // 換上去的那張是站上自己縮出來的副本，刪掉不影響原圖
+            let _ = std::fs::remove_file(app.paths.previews.join(basename(&f)));
+        }
+        let meta = Value::Object(meta);
+        app.db.set_lora_meta(&name, &meta)?;
+        return ok(meta);
+    }
+    let id = body.get("id").and_then(Value::as_i64).ok_or_else(|| bad("缺少圖片 id"))?;
+    let rec = app.db.image(id)?.ok_or_else(|| not_found("圖庫裡找不到這張圖"))?;
+    let path = super::api_gallery::file_of(&app.paths, &rec);
+    let raw = tokio::fs::read(&path).await.map_err(|_| not_found("圖檔不見了"))?;
+    set_custom_preview(&app, &name, raw, body.get("nsfw").and_then(Value::as_bool).unwrap_or(false)).await
 }
 
 // ---------------------------------------------------------------- LoRA 封面（2026-11-07，純邏輯在 crate::lora_cover）

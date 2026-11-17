@@ -23,9 +23,11 @@ mod api_llm;
 mod api_nodes;
 mod api_hub;
 mod api_misc;
+pub mod api_mixdesk;
 mod api_pe;
 mod api_play;
 mod api_refmod;
+mod api_wardrobe;
 mod api_runninghub;
 mod api_sdapi;
 mod api_studio;
@@ -102,6 +104,8 @@ pub struct App {
     pub studio: crate::studio::Studio,
     /// H3 影片台：背景工作（停止用）
     pub h3: api_h3::H3,
+    /// 混音台：呼叫 mixdesk、渲染工作
+    pub mixdesk: Arc<crate::mixdesk::Mixdesk>,
     /// 桌面版才有：叫出主視窗（第二次開程式時，新的那個會打 /api/app/show 叫舊的出來）
     pub show_window: OnceLock<Box<dyn Fn() + Send + Sync>>,
     /// 桌面版才有：重開生圖站自己開的 ComfyUI（外部模型資料夾改了要重開才生效）。Err＝不能重開的原因
@@ -448,6 +452,7 @@ pub fn router(app: Shared) -> Router {
         // 提示詞工具、預設組、LoRA
         .route("/api/tags", get(api_misc::tags))
         .route("/api/tags/zh", post(api_misc::tags_zh))
+        .route("/api/tags/library", get(api_misc::tags_library))
         // AI（MCP）連線狀態：標題列的燈號
         .route("/api/ai/heartbeat", post(api_misc::ai_heartbeat))
         .route("/api/ai/link", get(api_misc::ai_link))
@@ -478,6 +483,9 @@ pub fn router(app: Shared) -> Router {
         .route("/api/assets/{id}/refmod", post(api_assets::make_refmod))
         .route("/api/refmod/status", get(api_refmod::status))
         .route("/api/refmod/install", post(api_refmod::install))
+        .route("/api/wardrobe/status", get(api_wardrobe::status))
+        .route("/api/wardrobe/install", post(api_wardrobe::install))
+        .route("/api/wardrobe/x/{*rest}", get(api_wardrobe::forward).post(api_wardrobe::forward))
         .route("/api/runninghub", get(api_runninghub::get))
         .route("/api/runninghub/config", post(api_runninghub::config))
         .route("/api/runninghub/test", post(api_runninghub::test))
@@ -487,6 +495,8 @@ pub fn router(app: Shared) -> Router {
         .route("/api/charsheet/spec", post(api_charsheet::spec))
         .route("/api/loras/meta", post(api_misc::lora_meta))
         .route("/api/loras/delete", post(api_misc::lora_delete))
+        .route("/api/loras/preview", post(api_misc::lora_preview_upload))
+        .route("/api/loras/preview/set", post(api_misc::lora_preview_set))
         .route("/lora_preview/{file}", get(api_misc::lora_preview))
         .route("/api/loras/local-preview", get(api_misc::lora_local_preview))
         .route("/api/loras/covers", post(api_misc::lora_covers))
@@ -547,6 +557,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/comic/project/{id}", get(api_comic::project_get))
         .route("/api/comic/run", post(api_comic::run))
         .route("/api/comic/stop", post(api_comic::stop))
+        .route("/api/comic/fix", post(api_comic::fix))
         .route("/api/comic/prompts", post(api_comic::prompts))
         .route("/api/comic/layout", post(api_comic::layout_preview))
         .route("/api/comic/layout/ai", post(api_comic::layout_ai))
@@ -604,6 +615,21 @@ pub fn router(app: Shared) -> Router {
         .route("/api/h3/media", post(api_h3::media).layer(DefaultBodyLimit::max(220 * 1024 * 1024)))
         .route("/api/h3/generate", post(api_h3::generate))
         .route("/api/h3/stop", post(api_h3::stop))
+        .route("/mixdesk", get(api_mixdesk::page))
+        .route("/api/mixdesk/status", get(api_mixdesk::status))
+        .route("/api/mixdesk/songs", get(api_mixdesk::songs))
+        .route("/api/mixdesk/song", get(api_mixdesk::song))
+        .route("/api/mixdesk/mtime", get(api_mixdesk::mtime))
+        .route("/api/mixdesk/new", post(api_mixdesk::new_song))
+        .route("/api/mixdesk/apply", post(api_mixdesk::apply))
+        .route("/api/mixdesk/render", post(api_mixdesk::render))
+        .route("/api/mixdesk/job/{id}", get(api_mixdesk::job))
+        .route("/api/mixdesk/job/{id}/stop", post(api_mixdesk::job_stop))
+        .route("/api/mixdesk/file", get(api_mixdesk::file))
+        .route("/api/mixdesk/video", get(api_mixdesk::video))
+        .route("/api/mixdesk/instruments", get(api_mixdesk::instruments))
+        .route("/api/mixdesk/audition", post(api_mixdesk::audition))
+        .route("/api/mixdesk/to_studio", post(api_mixdesk::to_studio))
         .route("/api/h3/write", post(api_h3::write))
         .route("/api/train", get(api_train::list).post(api_train::create))
         .route("/api/train/trainer", get(train_run::trainer))
@@ -803,6 +829,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
     let diagnostics = crate::diagnostics::Store::new(&paths);
     let comfy = Comfy::new(comfy_url, db.clone(), hub.clone());
     comfy.attach_diagnostics(diagnostics.clone());
+    comfy.set_local_input(&paths.input);
     comfy.start();
     let civitai = Civitai::new(
         &paths.loras,
@@ -826,6 +853,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
     ));
     let data_dir = paths.data.clone();
     let studio = crate::studio::Studio::new(&paths.res, &paths.data);
+    let mixdesk = Arc::new(crate::mixdesk::Mixdesk::new(paths.settings.clone()));
     let agent = api_agent::Agent::new(&data_dir);
     let pool = Arc::new(crate::nodes::Pool::new(comfy.clone(), db.clone(), hub.clone(), &data_dir, &paths.input, &paths.output));
     // 要比 App 早建：第一次開站會把 cloud.json 裡舊的單組外接 API 搬進 llm_profiles.json
@@ -854,6 +882,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
         brains,
         studio,
         h3: api_h3::H3::default(),
+        mixdesk,
         show_window: OnceLock::new(),
         restart_comfy: OnceLock::new(),
     });
@@ -886,7 +915,10 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
         let ix = blocking(move || {
             let mine = a.paths.data.join("tags");
             let dir = if mine.join("danbooru.csv").exists() { mine } else { a.paths.res.join("tags") };
-            TagIndex::load(&dir)
+            let mut ix = TagIndex::load(&dir);
+            // WeiLin 詞庫的 danbooru 翻譯：不管用哪份 data\tags 都接上（只補對照表沒有的 tag）
+            ix.add_zh_file(&a.paths.res.join("tags").join("weilin").join("zh_extra.json"));
+            ix
         })
         .await;
         let _ = bg.tags.set(ix);

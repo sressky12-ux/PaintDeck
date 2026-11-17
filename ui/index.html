@@ -48,18 +48,19 @@
   <div class="deck">
     <nav class="panel rail screws" id="tabs" aria-label="功能">
       <button class="pkey on" data-page="gen" data-ic="cam" type="button"><span class="n">01</span><span class="led"></span>生成</button>
-      <button class="pkey" data-page="gallery" data-ic="slides" type="button"><span class="n">02</span><span class="led"></span>圖庫</button>
-      <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫：角色、場景、道具…全站共用"><span class="n">03</span><span class="led"></span>資產庫</button>
-      <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">04</span><span class="led"></span>LoRA</button>
-      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">05</span><span class="led"></span>下載中心</button>
-      <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">06</span><span class="led"></span>導演</button>
-      <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">07</span><span class="led"></span>漫畫</button>
-      <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">08</span><span class="led"></span>助手</button>
-      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">09</span><span class="led"></span>訓練</button>
-      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">10</span><span class="led"></span>API</button>
+      <button class="pkey" data-page="taglib" data-ic="tags" type="button" title="隨機：照規則隨機組整組提示詞（角色、服裝、場景可固定），旁邊就是生成頁的提示詞、模型、LoRA、尺寸、取樣、附加和生成鈕（跟生成頁同一組）"><span class="n">02</span><span class="led"></span>隨機</button>
+      <button class="pkey" data-page="gallery" data-ic="slides" type="button"><span class="n">03</span><span class="led"></span>圖庫</button>
+      <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫：角色、場景、道具…全站共用"><span class="n">04</span><span class="led"></span>資產庫</button>
+      <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">05</span><span class="led"></span>LoRA</button>
+      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">06</span><span class="led"></span>下載中心</button>
+      <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">07</span><span class="led"></span>導演</button>
+      <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">08</span><span class="led"></span>漫畫</button>
+      <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">09</span><span class="led"></span>助手</button>
+      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">10</span><span class="led"></span>訓練</button>
+      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">11</span><span class="led"></span>API</button>
       <span class="sp"></span>
-      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">11</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
-      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">12</span><span class="led"></span>設定</button>
+      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">12</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
+      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">13</span><span class="led"></span>設定</button>
     </nav>
 
     <div class="pages">
@@ -152,6 +153,7 @@
           <select id="recentSel" class="sm recent" aria-label="最近用過的提示詞"><option value="">最近用過</option></select>
           <select id="snippetSel" class="sm" aria-label="插入片段"><option value="">＋ 插入片段</option></select>
           <button class="icon" id="promptLib" type="button" title="打開提示詞庫（整套設定和片段）" aria-label="打開提示詞庫">庫</button>
+          <button class="icon" id="tagLibBtn" type="button" aria-pressed="false" title="詞庫：分類點選 tag（人物、服飾、表情、鏡頭…），點一下加進提示詞框" aria-label="打開詞庫">詞</button>
           <button class="icon" id="promptClear" type="button" title="清空" aria-label="清空提示詞">✕</button>
         </span>
       </div>
@@ -159,9 +161,10 @@
       <div id="lkRow" class="row wrap lk-row" hidden></div>
       <div class="scr prompt-scr">
         <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="6" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
-        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
+        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="punctFixBtn" type="button" aria-pressed="true" title="英文 tag 後面用中文輸入法打的「，、：（）」自動換成半形「, : ( )」，不用切輸入法；中文句子裡的不動，Ctrl+Z 可以換回來">，→,</button><button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
         <div class="pzh" id="promptZh" hidden></div>
       </div>
+      <div class="taglib" id="tagLib" hidden></div>
       <div class="warn-line sm" id="promptWarn" hidden></div>
       <label class="check inline batch-row" title="提示詞框每一行當成一句提示詞，各送一次（每句畫「張數」那麼多張）；開著時不跑「生成時自動改寫」"><input type="checkbox" id="batchLines"> 批次：每行一句提示詞，各畫一組</label>
 
@@ -220,6 +223,7 @@
           <div class="row"><input type="text" id="peInstr" placeholder="例如：改成雨天、她手上拿一把透明傘"><button class="akey sm" id="peRefine" type="button">調整</button></div>
           <div class="chips" id="peQuick"></div>
         </div>
+        <div class="row gap"><span class="sub">用哪顆腦袋</span><select id="peBrain" class="sm" aria-label="AI 改寫用哪顆腦袋" title="本機＝下面選的通用模型；雲端＝生圖助手開的雲端機；API＝API 頁設好的連線（DeepSeek、GPT、Claude…）。API 頁「誰用哪顆腦袋」對照表裡「AI 改寫」有指定的話，以對照表為準"><option value="">本機（下面選的那顆）</option><option value="cloud">雲端（生圖助手的雲端機）</option></select></div>
         <div class="row gap"><span class="sub">用哪顆模型</span><select id="peGeneral" class="sm" aria-label="AI 改寫用哪顆通用模型" title="跟設定頁的「通用模型」是同一個設定：生圖助手、導演台分段也跟著換"><option value="auto">自動（有 35B 就用 35B）</option><option value="35b">35B（較聰明、吃記憶體）</option><option value="9b">9B（較快、省記憶體）</option></select></div>
         <div class="muted sm"><span id="peModelNote">模型：通用模型 Qwen3.5-9B／Qwen3.6-35B（跟生圖助手同一顆）</span>。改寫時會暫時占用顯存，按「生成」前會自動釋放。</div>
         <div class="warnbox sm" id="peRetire" hidden></div>
@@ -458,6 +462,7 @@
       <button class="akey" data-act="tagger" data-ic="rewind" type="button">反推</button>
       <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
       <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
+      <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
       <span class="grow"></span>
       <button class="akey" data-act="fav" type="button">☆ 收藏</button>
       <a class="akey" data-act="download" data-ic="floppy" download>下載</a>
@@ -481,6 +486,28 @@
     <span class="lbl center-lbl">幻燈片匣</span>
     <div class="strip slides" id="strip"></div>
   </aside>
+</main>
+
+<!-- ======================= 詞庫（生成頁分身） ======================= -->
+<!-- 隨機頁（#taglib，生成頁的分身）：左＝隨機產生器（wardrobe.js）；中＝借來的提示詞（含 AI 改寫）、LoRA 卡匣，底下黏著生成鈕＋最新一張；
+     右＝借來的模型與輸入、尺寸與模式、取樣（步數、CFG、張數、種子、整套設定）、附加（高解析修復、構圖控制、自動修臉、X/Y）。borrow.js 搬過來、離開這頁就還回去 -->
+<main id="page-taglib" class="page">
+  <div class="tlp">
+    <section class="panel screws tlp-lib" aria-label="隨機產生器"><div class="wd" id="tlWardrobe"></div></section>
+    <div class="tlp-right">
+      <section class="panel screws tlp-mid" aria-label="提示詞與生成">
+        <div class="tlp-top row gap wrap">
+          <button class="akey sm go" id="tlCompose" type="button" title="把提示詞框裡的 tag 交給 AI 改寫，照現在用的畫圖模型寫成完整的提示詞（Anima＝tag＋英文句、Qwen／MOSS＝英文段落）；結果在下面的 AI 改寫區，按「套用」才進提示詞">AI 組成完整提示詞</button>
+        </div>
+        <div class="tlp-borrow" id="tlBorrowMid"></div>
+        <div class="tlp-gen">
+          <button class="tlp-last" id="tlLast" type="button" title="最新一張成品：點了回生成頁看大圖" aria-label="最新一張成品，點了回生成頁看大圖" hidden><img alt=""></button>
+          <div class="tlp-genrow" id="tlBorrowGen"></div>
+        </div>
+      </section>
+      <aside class="panel screws tlp-side" aria-label="模型與參數"><div class="tlp-borrow" id="tlBorrowSide"></div></aside>
+    </div>
+  </div>
 </main>
 
 <!-- ======================= 圖庫 ======================= -->
@@ -591,6 +618,9 @@
           </div>
           <span class="sub">音檔（選填，給 H3 釘聲音用）</span>
           <div class="row gap wrap"><span class="as-audio" id="asAudio"></span><button class="akey sm" id="asAudioUp" type="button">＋ 音檔</button><button class="akey sm" id="asAudioDel" type="button">拿掉</button></div>
+          <span class="sub">綁定的 LoRA（選填；漫畫台加這個角色時自動掛上，觸發詞跟著外貌一起寫進提示詞）</span>
+          <div class="lora-stack" id="asLoras"></div>
+          <div class="row gap"><button class="akey sm" id="asLoraAdd" type="button">＋ 綁 LoRA</button></div>
         </div>
 
         <div id="asSceneBox" hidden>
@@ -619,6 +649,7 @@
     <label class="check inline"><input type="checkbox" id="loraFav"> 只看收藏</label>
     <span class="vfd g" id="loraTotal"></span>
     <span class="grow"></span>
+    <button class="akey sm" id="loraView" type="button" title="改成一行一個的列表">☰ 列表</button>
     <button class="akey sm" id="loraLearn" type="button" data-ic="chip">讓助手認識 LoRA</button>
     <button class="akey sm" id="loraRefresh" type="button" data-ic="loop">重新整理清單</button>
   </div>
@@ -671,6 +702,7 @@
       <button data-t="edit" data-ic="tape" type="button" role="tab" title="剪片、配樂、字幕、轉場、調色（開源的 FableCut）">剪輯台</button>
       <button data-t="frames" data-ic="slides" type="button" role="tab" title="影片拆成一張張，修掉壞掉的幀再接回去">拆幀台</button>
       <button data-t="video" data-ic="rec" type="button" role="tab" title="影片：拍攝單＋H3（1 段＝短片，好幾段＝長片）">影片</button>
+      <button data-t="mixdesk" data-ic="faders" type="button" role="tab" title="混音台：看小克寫的曲子在動、調推桿、改音符、配影片（要先裝 mixdesk）">混音台</button>
     </div>
     <span class="grow"></span>
     <button class="akey sm" id="stAiOpen" data-ic="chip" type="button" title="讓 Claude、Codex 這類 AI 操作整個生圖站（也能剪片、修幀）">給 AI 操作…</button>
@@ -773,6 +805,20 @@
       </div>
       <iframe id="stFrame" title="剪輯台" hidden allow="clipboard-read; clipboard-write; fullscreen"></iframe>
       <button class="minikey red st-unfull" id="stUnfull" data-ic="min" type="button" aria-label="縮回來" title="縮回來" hidden></button>
+    </div>
+  </section>
+
+  <!-- 混音台：小克的 mixdesk 譜檔 → 時間軸＋調音台＋鋼琴捲軸＋影片（ui/mixdesk.html、js/mixdesk/；後端 src-tauri\src\mixdesk.rs、server\api_mixdesk.rs） -->
+  <section class="panel lib screws st" data-tab="mixdesk" hidden>
+    <div class="toolbar">
+      <span class="vfd g dir-status" role="status">混音台：看小克寫的曲子在動、調推桿、改音符、對著影片配樂</span>
+      <span class="grow"></span>
+      <button class="akey sm" id="mdFull" type="button" title="混音台放大到整個視窗（右下角的紅色按鈕縮回來）">放大</button>
+      <button class="akey sm" id="mdFs" type="button" title="蓋滿整個螢幕（按 Esc 退出）">全螢幕</button>
+    </div>
+    <div class="st-body" id="mdBody">
+      <iframe id="mdFrame" title="混音台" allow="fullscreen"></iframe>
+      <button class="minikey red st-unfull" id="mdUnfull" data-ic="min" type="button" aria-label="縮回來" title="縮回來" hidden></button>
     </div>
   </section>
 
@@ -1028,7 +1074,7 @@
           <div class="grid2">
             <div><span class="sub">比例</span><select id="hcAspect" autocomplete="off"><option value="9:16">9:16 直</option><option value="16:9">16:9 橫</option><option value="1:1">1:1 方</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9 寬銀幕</option></select></div>
             <div><span class="sub">畫質</span><select id="hcQuality" autocomplete="off"><option value="fast">快</option><option value="std">標準</option><option value="high">高</option></select></div>
-            <div><span class="sub">在哪拍</span><select id="hcWhere" autocomplete="off" title="雲端顯卡：直接接上一段的 latent，接縫最順，要先開機。RunningHub：一段一個任務，上一段最後約 0.9 秒的畫面和聲音當下一段的開頭，不用開機、照秒扣 RH 幣"><option value="runpod">雲端顯卡（接 latent）</option><option value="runninghub">RunningHub（接著上一支拍）</option></select></div>
+            <div><span class="sub">在哪拍</span><select id="hcWhere" autocomplete="off" title="雲端顯卡：直接接上一段的 latent，接縫最順，要先開機。本機：同一套 latent 接續，用這台電腦的顯卡，不花錢但慢（8GB 顯卡 10 秒一段約 12 分鐘）。RunningHub：一段一個任務，上一段最後約 0.9 秒的畫面和聲音當下一段的開頭，不用開機、照秒扣 RH 幣"><option value="runpod">雲端顯卡（接 latent）</option><option value="local">本機（接 latent，不花錢）</option><option value="runninghub">RunningHub（接著上一支拍）</option></select></div>
           </div>
           <div class="muted sm" id="hcSizeNote"></div>
         </section>
@@ -1099,8 +1145,10 @@
         <label>整頁共用</label>
         <span class="sub">畫風觸發詞（可空；有掛畫風 LoRA 才需要）</span>
         <input type="text" id="cmTrigger" placeholder="例：jgdxstyle">
-        <span class="sub">角色外貌（英文句子，每個角色完整寫一次）</span>
+        <span class="sub">這頁的角色（資產抽屜點角色加進來；名字會寫進提示詞，每一格可以勾「這格有誰」）</span>
+        <div class="cm-chars" id="cmChars"></div>
         <div id="cmAssets" class="adr-slot"></div>
+        <span class="sub">其他外貌補充（英文句子；沒有角色卡的角色、動物、道具寫這裡）</span>
         <textarea id="cmCast" rows="3" spellcheck="false" placeholder="例：A tall woman in her late twenties with long pink hair and yellow eyes; a young man with short black hair."></textarea>
         <span class="sub">光線（英文一句，可空）</span>
         <input type="text" id="cmLight" placeholder="例：Warm lamplight on sweaty skin in a dark bedroom.">
@@ -1129,6 +1177,9 @@
           <button class="akey sm" id="cmImgUse" type="button">用生成頁目前的設定</button>
           <button class="akey sm" id="cmImgAuto" type="button">改回自動</button>
         </div>
+        <span class="sub">LoRA（畫整頁用；角色卡綁的 LoRA 會自動掛上來，跟生成頁帶來的疊在一起，同一個以這裡為準）</span>
+        <div class="lora-stack" id="cmLoras"></div>
+        <div class="row gap"><button class="akey sm" id="cmLoraAdd" type="button">＋ 加 LoRA</button></div>
       </section>
       <section class="box">
         <details class="dir-pr" id="cmPreview">
@@ -1700,6 +1751,7 @@
         <button class="akey sm" data-act="tagger" data-ic="rewind" type="button">反推</button>
         <button class="akey sm" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
         <button class="akey sm" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
+        <button class="akey sm" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
         <button class="akey sm" data-act="fav" title="F" type="button">☆ 收藏</button>
         <button class="akey sm" data-act="copy" title="C" type="button">複製提示詞</button>
         <button class="akey sm" data-act="copyall" type="button">複製全部參數</button>
@@ -1745,9 +1797,25 @@
 
 <div class="modal" id="loraPicker" hidden>
   <div class="dialog wide">
-    <div class="row between"><b>選擇 LoRA 卡匣</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
-    <div class="row gap"><input type="search" id="lpQ" placeholder="搜尋…" aria-label="搜尋 LoRA"><label class="check inline"><input type="checkbox" id="lpTrig" checked> 自動加入觸發詞</label></div>
+    <div class="row between"><b id="lpTitle">選擇 LoRA 卡匣</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="row gap"><input type="search" id="lpQ" placeholder="搜尋…" aria-label="搜尋 LoRA"><label class="check inline"><input type="checkbox" id="lpTrig" checked> 自動加入觸發詞</label><span class="grow"></span><button class="akey sm" id="lpView" type="button">☰ 列表</button></div>
     <div class="cards compact" id="lpGrid"></div>
+  </div>
+</div>
+
+<div class="modal" id="loraPrev" hidden>
+  <div class="dialog">
+    <div class="row between"><b id="lpvTitle">換預覽圖</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="lpv-drop" id="lpvDrop" tabindex="0">
+      <div class="card lpv-card"><div class="ph" id="lpvPh"></div></div>
+      <div class="lpv-how">
+        <div>把圖拖進這一塊、按 Ctrl+V 貼上剪貼簿的圖，或</div>
+        <button class="akey sm" id="lpvPick" type="button">選圖片檔…</button>
+        <label class="check inline"><input type="checkbox" id="lpvNsfw"> 這張是成人圖（設定開了「模糊成人預覽圖」時會模糊）</label>
+        <div class="muted sm">換上去的圖會縮小另存一份，原圖不動。生成結果和圖庫也可以按「設為 LoRA 預覽圖」。</div>
+        <button class="akey sm" id="lpvReset" type="button" hidden>還原原本的預覽圖</button>
+      </div>
+    </div>
   </div>
 </div>
 

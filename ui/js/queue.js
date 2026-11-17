@@ -15,10 +15,10 @@ const STATUS = { queued: "排隊中", running: "執行中", done: "完成", erro
 export function init() {
   F("queueInfo").onclick = toggle;
   F("jobsClose").onclick = () => (F("jobsDrawer").hidden = true);
-  F("jobsClear").onclick = async () => { await api("/api/jobs/clear", { json: {} }); refresh(); };
+  F("jobsClear").onclick = async () => { try { await api("/api/jobs/clear", { json: {} }); } catch (e) { toast("清不掉：" + e.message, "err"); } refresh(); };
   F("jobsStopAll").onclick = async () => {
     if (!confirm("清空佇列並停止目前這張？")) return;
-    await api("/api/clear_queue", { json: {} });
+    try { await api("/api/clear_queue", { json: {} }); } catch (e) { return toast("全停失敗：" + e.message, "err"); }
     (await import("./gen.js")).S.pending.clear();
     refresh();
   };

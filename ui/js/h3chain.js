@@ -14,6 +14,7 @@ let chain = null;       // 正在看的那條（/api/h3/chain/{id}）
 let cloud = null;       // /api/agent/cloud
 let rhub = null;        // /api/runninghub（長片選 RunningHub 拍時看金鑰）
 let saveTimer = null;
+let dirty = false;      // 有還沒存的修改（0.8 秒的計時器還沒到）
 let lastMsg = "";
 let openRevision = 0;
 let listRevision = 0, saveRevision = 0, editRevision = 0;
@@ -54,8 +55,11 @@ async function loadList(want) {
 }
 
 async function open(id) {
+  // 還有沒存的字：先存再換（換片、別條長片拍好一段觸發的重讀，都會走到這裡）
+  if (dirty && chain?.id && !running()) await save();
   const ticket = ++openRevision;
   clearTimeout(saveTimer);
+  dirty = false;
   if (!id) { chain = null; return paint(); }
   try { const loaded = await api(`/api/h3/chain/${id}`); if (ticket !== openRevision) return; chain = loaded; }
   catch (e) { if(ticket !== openRevision) return; chain = null; toast(e.message, "err"); }
@@ -93,6 +97,7 @@ export async function applySheet({ sheet, prompts, first = null, refs = [], segR
 /** 欄位改了：0.8 秒後存（拍攝中不能存） */
 function changed() {
   editRevision++;
+  dirty = true;
   clearTimeout(saveTimer);
   saveTimer = setTimeout(save, 800);
 }
@@ -100,6 +105,7 @@ function changed() {
 async function save() {
   clearTimeout(saveTimer);
   if (!chain || running()) return false;
+  dirty = false;
   const owner = chain, revision = openRevision, edit = editRevision, ticket = ++saveRevision;
   try {
     const r = await api("/api/h3/chain/save", { json: { chain: structuredClone(owner) } });
@@ -107,23 +113,25 @@ async function save() {
     if (!chain.id) return loadList(r.id);
     // 不整個換掉：畫面上的段落卡還拿著原本的物件，換掉之後再打的字會改到舊物件
     for (const k of ["id", "est", "running", "size", "updated"]) chain[k] = r[k];
-    let resultsChanged = false;
+    let resultsChanged = false, undone = 0;
     for (let i = 0; i < (r.segments || []).length; i++) {
       const local = owner.segments[i], saved = r.segments[i];
       if (!local) continue;
+      if (local.status === "done" && saved.status !== "done") undone++;
       for (const k of ["status", "error", "seed", "took", "head", "frames", "handover", "files", "check", "takes", "selected_take", "pending_take"]) {
         if (JSON.stringify(local[k] ?? null) !== JSON.stringify(saved[k] ?? null)) resultsChanged = true;
         local[k] = structuredClone(saved[k] ?? null);
       }
     }
     owner.final = structuredClone(r.final ?? null);
+    if (undone) toast(`這次修改會影響畫面：拍好的 ${undone} 段變回「要重拍」。舊版本都還在，到那一段的「拍攝版本」按「採用這版」可以選回來`, "err");
     if (resultsChanged) paintSegs();
     paintRun();
     const o = [...F("hcList").options].find((x) => x.value === r.id);
     if (o) o.textContent = `${r.title}（${r.segments.filter((x) => x.status === "done").length}／${r.segments.length} 段）`;
     paintEst();  // 段落卡不重畫：正在打字的框會失去游標
     return true;
-  } catch (e) { if (current(owner, revision)) toast(e.message, "err"); return false; }
+  } catch (e) { dirty = true; if (current(owner, revision)) toast(e.message, "err"); return false; }
 }
 
 async function create() {
@@ -166,6 +174,18 @@ function paint() {
   }
   mode.checked = chain?.review === true;
   mode.disabled = !chain || running();
+  let dit = F("hcRefDit");
+  if (!dit) {
+    const input = el("input", { type: "checkbox", id: "hcRefDit" });
+    const row = el("label", { class: "check film-review-mode", title: "接續段沒有首幀可看，角色的衣服、髮色會一段一段跑掉。開著時參考圖（沒放參考圖就用第 1 段的首幀）會同時送進影片模型本體，每一步都看得到原圖，每段大約慢 5%。這段有尾幀時不送" },
+      input, "參考圖送進影片模型本體：接續段守住角色的衣服、髮色、畫風");
+    F("hcSegs").before(row);
+    input.onchange = () => { if (chain) { chain.ref_dit = input.checked; changed(); } };
+    dit = input;
+  }
+  dit.checked = chain?.ref_dit !== false;
+  dit.disabled = !chain || running();
+  dit.parentElement.hidden = chain?.where === "runninghub";
   paintSegs();
   paintCloud();
   paintRun();
@@ -272,7 +292,7 @@ function takesEl(s, i) {
     !running() ? btn("重拍這鏡並審片",()=>{
       // 跟「從這段重拍」一樣要先講：會再花一次錢，後面拍好的段也要重新接（2026-11-10 以前這顆按了就直接開拍）
       const after = chain.segments.slice(i+1).filter(x=>x.status==="done").length;
-      if (!confirm(`重拍第 ${i + 1} 段並審片？${after ? `後面拍好的 ${after} 段要重新接續（舊版本都會保留）。` : ""}會再花一次${chain.where === "runninghub" ? " RunningHub 的幣" : "雲端的錢"}。`)) return;
+      if (!confirm(`重拍第 ${i + 1} 段並審片？${after ? `後面拍好的 ${after} 段要重新接續（舊版本都會保留）。` : ""}${chain.where === "local" ? "本機拍，不花錢。" : `會再花一次${chain.where === "runninghub" ? " RunningHub 的幣" : "雲端的錢"}。`}`)) return;
       chain.review=true;run(i);
     },"akey sm") : null);
 }
@@ -322,18 +342,26 @@ function paintEst() {
   const rate = (rhub?.rates || []).find((r) => r.instance === rhub?.instance)?.coins_per_sec ?? 0.4;
   F("hcEst").textContent = !todo.length ? "全部拍好了"
     : chain.where === "runninghub" ? `還有 ${todo.length} 段、${secs} 秒影片，RunningHub 大約要算 ${mins(chain.est)}，約 ${Math.round(chain.est * rate)} RH 幣（實際照秒算）`
+    : chain.where === "local" ? `還有 ${todo.length} 段、${secs} 秒影片，本機大約要算 ${mins(chain.est)}（照 8GB 顯卡估，不花錢；拍的時候顯卡和記憶體會被佔滿）`
     : `還有 ${todo.length} 段、${secs} 秒影片，雲端大約要算 ${mins(chain.est)}（第一次載入模型再加約 15 分鐘）${price}`;
   const sz = chain.size ? `畫面 ${chain.size[0]}×${chain.size[1]}（第 1 段拍好後固定）` : "畫面大小在第 1 段開拍時決定：有首幀就照首幀的比例";
   F("hcSizeNote").textContent = sz;
 }
 
 function paintCloud() {
+  if (F("hcRefDit")) F("hcRefDit").parentElement.hidden = chain?.where === "runninghub";
   if (chain?.where === "runninghub") {
     F("hcCloud").textContent = !rhub ? "讀不到 RunningHub 設定" : rhub.has_key
       ? "用 RunningHub 拍：不用開雲端；每段一個任務，上一段最後約 0.9 秒的畫面和聲音當下一段的開頭（RefMod 不能用）"
       : "還沒填 RunningHub 的 API Key：到「H3 影片」分頁「在哪跑 → RunningHub」填";
     F("hcGoCloud").hidden = !!rhub?.has_key;
     F("hcGoCloud").textContent = "到「H3 影片」分頁填金鑰";
+    paintEst();
+    return;
+  }
+  if (chain?.where === "local") {
+    F("hcCloud").textContent = "用這台電腦拍：不用開雲端。跟雲端同一套 latent 接續；第一次會自動裝接續節點（裝完要重開 ComfyUI）";
+    F("hcGoCloud").hidden = true;
     paintEst();
     return;
   }
@@ -351,10 +379,12 @@ function paintRun() {
   const r = running();
   F("hcRun").disabled = !chain || r || chain.segments.some(s=>s.pending_take);
   if (F("hcReviewMode")) F("hcReviewMode").disabled = !chain || r;
+  if (F("hcRefDit")) F("hcRefDit").disabled = !chain || r;
   F("hcStop").disabled = !r;
   F("hcJoin").disabled = !chain || r || !chain.segments.every((s) => s.status === "done");
   F("hcAddSeg").disabled = !chain || r || chain.segments.length >= 30;
   for (const id of ["hcAspect", "hcQuality", "hcWhere"]) F(id).disabled = !chain || r || sizeLocked();
+  for (const id of ["hcTitle", "hcLook", "hcScene", "hcStyle", "hcVoice", "hcSound"]) F(id).disabled = !chain || r;
   const fin = chain?.final;
   const ck = fin?.check;
   const hits = ck?.seam_hits || [];
@@ -394,7 +424,8 @@ async function run(from) {
 
 function rerun(i) {
   const after = chain.segments.length - i - 1;
-  if (!confirm(`第 ${i + 1} 段${after ? `和後面 ${after} 段` : ""}全部重拍？（後面的段是接這段拍的，拍好的會作廢；會花雲端的錢）`)) return;
+  const cost = chain.where === "local" ? "本機拍，不花錢" : chain.where === "runninghub" ? "會花 RunningHub 的幣" : "會花雲端的錢";
+  if (!confirm(`第 ${i + 1} 段${after ? `和後面 ${after} 段` : ""}全部重拍？（後面的段是接這段拍的，拍好的會作廢；${cost}）`)) return;
   run(i);
 }
 
@@ -455,7 +486,10 @@ export function init() {
     paintSegs();
     changed();
   };
-  F("hcRun").onclick = () => run();
+  F("hcRun").onclick = () => {
+    if (chain && chain.where !== "local" && !confirm(`開拍會花${chain.where === "runninghub" ? " RunningHub 的幣" : "雲端的錢"}。\n${F("hcEst").textContent}\n要開拍嗎？`)) return;
+    run();
+  };
   F("hcStop").onclick = stop;
   F("hcJoin").onclick = join;
   F("hcGoCloud").onclick = async () => (await import("./studio.js")).openTab("h3");

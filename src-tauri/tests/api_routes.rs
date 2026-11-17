@@ -749,3 +749,83 @@ async fn charsheet_routes() {
     let (_, v) = post(&base, &format!("/api/assets/{id}/file"), json!({"input": "a.png", "role": "face"})).await;
     assert_eq!(v["data"]["images"][1]["role"], "face", "{v}");
 }
+
+
+// ---------------------------------------------------------------- 混音台
+async fn get_json(base: &str, path: &str) -> (u16, Value) {
+    let r = reqwest::get(format!("{base}{path}")).await.unwrap();
+    let code = r.status().as_u16();
+    (code, r.json().await.unwrap_or(Value::Null))
+}
+
+/// 測試站的設定檔裡寫 mixdesk_dir（不碰環境變數：測試平行跑）
+async fn mixdesk_station(name: &str, dir: &std::path::Path) -> String {
+    let root = std::env::temp_dir().join("anima_route_test").join(name);
+    let _ = std::fs::remove_dir_all(&root);
+    std::fs::create_dir_all(root.join("data")).unwrap();
+    std::fs::write(root.join("data").join("settings.json"), serde_json::to_string(&json!({"mixdesk_dir": dir})).unwrap()).unwrap();
+    station_keep(name).await
+}
+
+#[tokio::test]
+async fn mixdesk_missing_is_friendly() {
+    let base = mixdesk_station("mixdesk_missing", &std::env::temp_dir().join("沒有這個mixdesk")).await;
+    let (code, v) = get_json(&base, "/api/mixdesk/status").await;
+    assert_eq!(code, 200);
+    assert_eq!(v["ok"], false);
+    assert!(v["error"].as_str().unwrap().contains("找不到 mixdesk"), "{v}");
+    let (code, v) = get_json(&base, "/api/mixdesk/songs").await;
+    assert_eq!(code, 400);
+    assert!(v["error"].as_str().unwrap().contains("mixdesk_dir"), "{v}");
+}
+
+#[tokio::test]
+async fn mixdesk_file_outside_is_403() {
+    let base = mixdesk_station("mixdesk_403", &std::env::temp_dir().join("anima_route_test")).await;
+    let r = reqwest::get(format!("{base}/api/mixdesk/file?path=C:%5CWindows%5Cwin.ini")).await.unwrap();
+    assert_eq!(r.status().as_u16(), 403);
+}
+
+#[tokio::test]
+async fn mixdesk_page_served() {
+    let base = station("mixdesk_page").await;
+    let r = reqwest::get(format!("{base}/mixdesk")).await.unwrap();
+    assert_eq!(r.status().as_u16(), 200);
+    assert!(r.headers()["content-type"].to_str().unwrap().starts_with("text/html"));
+}
+
+#[tokio::test]
+async fn mixdesk_inspect_and_apply_roundtrip() {
+    // 要真的 mixdesk（這台電腦才有）；沒有就跳過
+    let dir = std::path::PathBuf::from(r"D:\AI\tools\mixdesk");
+    if !dir.join(".venv").join("Scripts").join("mixdesk.exe").is_file() {
+        return;
+    }
+    let songs = dir.join("songs").join("_route_test");
+    let _ = std::fs::remove_dir_all(&songs);
+    std::fs::create_dir_all(&songs).unwrap();
+    let song = songs.join("小克 測試.yaml");
+    std::fs::copy(dir.join("examples").join("tiny.yaml"), &song).unwrap();
+    let base = mixdesk_station("mixdesk_roundtrip", &dir).await;
+    let q = format!("/api/mixdesk/song?path={}", urlenc(song.to_str().unwrap()));
+    let (code, v) = get_json(&base, &q).await;
+    assert_eq!(code, 200, "{v}");
+    assert_eq!(v["tracks"][0]["volume_db"], json!(-3.0));
+    let edits = json!({"v": 1, "base_hash": v["hash"], "ops": [{"op": "track.set", "track": "piano", "volume_db": -7.5}]});
+    let (code, r) = post(&base, "/api/mixdesk/apply", json!({"path": song, "edits": edits})).await;
+    assert_eq!(code, 200, "{r}");
+    let (_, v2) = get_json(&base, &q).await;
+    assert_eq!(v2["tracks"][0]["volume_db"], json!(-7.5));
+    let (code, r) = post(&base, "/api/mixdesk/apply", json!({"path": song, "edits": edits})).await;
+    assert_eq!(code, 400);
+    assert!(r["error"].as_str().unwrap().contains("被改過"), "{r}");
+    let (_, list) = get_json(&base, "/api/mixdesk/songs").await;
+    assert!(list["songs"].as_array().unwrap().iter().any(|s| s["name"] == "小克 測試"), "{list}");
+    let _ = std::fs::remove_dir_all(&songs);
+}
+
+fn urlenc(s: &str) -> String {
+    s.bytes()
+        .map(|b| if b.is_ascii_alphanumeric() || b"-_.~".contains(&b) { (b as char).to_string() } else { format!("%{b:02X}") })
+        .collect()
+}

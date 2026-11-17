@@ -1,4 +1,4 @@
-//! H3 長片 API（2026-10-23）：導演頁「長片」分頁。一條長片好幾段，雲端一段一段拍，第 2 段起吃上一段的 AV latent 接著拍。
+//! H3 長片 API（2026-10-23）：導演頁「長片」分頁。一條長片好幾段，雲端或本機（2026-11-13 起）一段一段拍，第 2 段起吃上一段的 AV latent 接著拍。
 //! 存檔格式、提示詞、節點圖在 crate::h3chain；雲端送圖、上傳下載在 api_cloud.rs；檢查跳點用拆幀台（studio::Frames）。
 //!
 //! - GET  /api/h3/chains：清單
@@ -75,6 +75,10 @@ pub async fn get(State(app): State<Shared>, UrlPath(id): UrlPath<String>) -> Api
         let before = c.clone();
         let shape = c["size"].clone();
         for seg in c["segments"].as_array_mut().into_iter().flatten() {
+            if seg["status"] == "running" {
+                seg["status"] = json!("stopped");
+                seg["error"] = json!("上次拍到一半就中斷了（程式關掉或當掉）：再按一次開拍");
+            }
             takes::ensure_legacy(seg, hc::RESULT_KEYS);
             let selected = tx(&seg["selected_take"]);
             for take in seg["takes"].as_array_mut().into_iter().flatten() {
@@ -165,10 +169,17 @@ fn begin(app: &Shared, id: &str) -> Result<CancellationToken, ApiError> {
 }
 
 fn spawn(app: &Shared, id: &str, token: CancellationToken, work: impl std::future::Future<Output = Result<(), String>> + Send + 'static) {
+    struct Unlist(Shared, String);
+    impl Drop for Unlist {
+        fn drop(&mut self) {
+            self.0.h3.take(&task_of(&self.1));
+        }
+    }
     let (a, id) = (app.clone(), id.to_string());
     crate::diagnostics::spawn(async move {
+        let unlist = Unlist(a.clone(), id.clone());
         let r = work.await;
-        a.h3.take(&task_of(&id));
+        drop(unlist);
         match r {
             Ok(()) => {
                 let pending = store(&a).get(&id).is_some_and(|c| c["segments"].as_array().is_some_and(|ss| ss.iter().any(|s| s["pending_take"].is_string())));
@@ -191,8 +202,11 @@ pub async fn run(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         if !crate::refmod::names_of(&c).map_err(bad)?.is_empty() {
             return Err(bad("RunningHub 上沒有生圖站的 RefMod：拍攝單取消「用 RefMod 鎖臉」，或改用雲端顯卡拍"));
         }
+    } else if hc::on_local(&c) {
+        local_opts(&app).await.map_err(bad)?;
+        super::api_refmod::ensure_local(&app, &crate::refmod::names_of(&c).map_err(bad)?).await.map_err(bad)?;
     } else {
-        let packs = app.agent.cloud.live_packs().ok_or_else(|| bad("雲端還沒開好：到「H3 影片」分頁按「開雲端」，等燈號變綠（或把這條長片改成用 RunningHub 拍）"))?;
+        let packs = app.agent.cloud.live_packs().ok_or_else(|| bad("雲端還沒開好：到「H3 影片」分頁按「開雲端」，等燈號變綠（或把這條長片的「在哪拍」改成本機、RunningHub）"))?;
         if !packs.h3 {
             return Err(bad("雲端這台沒裝 H3 影片包：關機後到雲端設定勾「H3 影片」再開"));
         }
@@ -236,7 +250,7 @@ pub async fn run(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         return Err(internal(e));
     }
     drop(guard);
-    if !hc::on_runninghub(&c) {
+    if !hc::on_runninghub(&c) && !hc::on_local(&c) {
         app.agent.cloud.touch();
     }
     emit(&app, &id, None, "running", "開拍");
@@ -321,6 +335,9 @@ async fn run_seg(app: &Shared, id: &str, i: usize, token: &CancellationToken) ->
     if store(app).get(id).is_some_and(|c| hc::on_runninghub(&c)) {
         return run_seg_rh(app, id, i, token).await;
     }
+    if store(app).get(id).is_some_and(|c| hc::on_local(&c)) {
+        return run_seg_local(app, id, i, token).await;
+    }
     let n = i + 1;
     update_seg(app, id, i, |s| {
         s["status"] = json!("running");
@@ -330,6 +347,10 @@ async fn run_seg(app: &Shared, id: &str, i: usize, token: &CancellationToken) ->
     let status = |m: String| emit(app, id, Some(i), "running", format!("第 {n} 段：{m}"));
     status("準備…".into());
     super::api_cloud::ensure_chain_nodes(app, &status).await?;
+    // 裝節點要一兩分鐘、中途停不下來：裝完先看有沒有按過停，別接著上傳素材、開拍
+    if token.is_cancelled() {
+        return Err("已停止".into());
+    }
     let c = store(app).get(id).ok_or("長片不見了")?;
     if c["size"].is_null() {
         let size = pick_size(app, &c);
@@ -358,9 +379,19 @@ async fn run_seg(app: &Shared, id: &str, i: usize, token: &CancellationToken) ->
     let seed = seg["seed"].as_i64().unwrap_or_else(super::api_director::random_seed);
     update_seg(app, id, i, |s| s["seed"] = json!(seed)).await?;
     let c = store(app).get(id).ok_or("長片不見了")?;
-    let g = hc::seg_graph(&c, i, seed)?;
+    // 參考圖也送進 DiT：雲端要有繪匣的小節點、圖要還在（接續段拿第 1 段首幀當參考，首幀被清掉就照舊只給文字編碼器）
+    let dit_files = hc::dit_refs(&c, i);
+    let opts = hc::GraphOpts { ref_node: dit_files.iter().all(|f| app.paths.input.join(f).is_file()) && super::api_cloud::chain_ref_node_ready(app).await, ..Default::default() };
+    for f in dit_files.iter().filter(|_| opts.ref_node) {
+        super::api_cloud::upload_input(app, &app.paths.input.join(f)).await?;
+    }
+    if !dit_files.is_empty() && !opts.ref_node {
+        status("這台雲端沒有參考圖節點（或參考圖檔不見了）：這段參考圖只給文字編碼器".into());
+    }
+    let g = hc::seg_graph_with(&c, i, seed, &opts)?;
     let recipe = json!({"engine":"h3", "seed":seed, "graph":g, "size":c["size"], "aspect":c["aspect"], "quality":c["quality"],
-        "prompt":hc::seg_prompt(&c,i), "sheet":c["sheet"], "first":c["first"], "refs":if seg["refs"].is_array() { seg["refs"].clone() } else { c["refs"].clone() }, "segment":{"secs":seg["secs"],"text":seg["text"],"lines":seg["lines"],"last":seg["last"],"entry":seg["entry"],"exit":seg["exit"],"inherit_entry":seg["inherit_entry"]}});
+        "ref_dit":opts.ref_node && !dit_files.is_empty(),
+        "prompt":hc::seg_prompt_with(&c, i, if opts.ref_node { dit_files.len() } else { 0 }), "sheet":c["sheet"], "first":c["first"], "refs":if seg["refs"].is_array() { seg["refs"].clone() } else { c["refs"].clone() }, "segment":{"secs":seg["secs"],"text":seg["text"],"lines":seg["lines"],"last":seg["last"],"entry":seg["entry"],"exit":seg["exit"],"inherit_entry":seg["inherit_entry"]}});
     let source_take = i.checked_sub(1).map(|prev| tx(&c["segments"][prev]["selected_take"]));
     let review = c["review"] == true;
     let t0 = std::time::Instant::now();
@@ -377,6 +408,201 @@ async fn run_seg(app: &Shared, id: &str, i: usize, token: &CancellationToken) ->
     let lat = hc::latent_name(n);
     super::api_cloud::fetch_output(app, &sub, &lat, &dir.join(&lat)).await?;
     super::api_cloud::mark_output(app, &sub, &lat);
+    files["lat"] = json!(lat);
+    let texts = preview_texts(&entry);
+    let took = t0.elapsed().as_secs();
+    status("用拆幀台檢查跳點…".into());
+    let check = check_video(app, format!("H3 長片 {id} 第 {n} 段"), &dir.join(format!("seg{n:02}_end.mp4"))).await;
+    let result = json!({"status":"done", "error":null, "seed":seed, "took":took, "files":files, "handover":texts.join("\n"),
+        "head":parse_num(&texts, r"head context (\d+)").unwrap_or(0), "frames":parse_num(&texts, r"(\d+) frames \|").unwrap_or(0), "check":check});
+    let _g = LOCK.lock().await;
+    let mut c = store(app).get(id).ok_or("長片不見了")?;
+    let seg = &mut c["segments"][i];
+    let new_take = takes::record(seg, recipe, result, source_take.as_deref());
+    ht::preserve(seg, &dir)?;
+    if review {
+        seg["status"] = json!(if seg["selected_take"].is_null() { "review" } else { "done" });
+    } else {
+        ht::select(&mut c, &dir, i, &new_take)?;
+    }
+    store(app).save(&c)?;
+    Ok(())
+}
+
+/// 本機 ComfyUI 拍長片要的東西：連得上、有接續節點、有 H3 主模型。回傳這台的節點圖選項
+/// （主模型挑最省顯存的、小顯存模型自動切塊、有沒有參考圖節點）
+async fn local_opts(app: &Shared) -> Result<hc::GraphOpts, String> {
+    if !app.comfy.live().online {
+        return Err("本機的 ComfyUI 沒有連線：先把 ComfyUI 開起來，或把「在哪拍」改成雲端".into());
+    }
+    if app.comfy.object_info("H3ContinuousStartV14").await.is_err() {
+        return Err(install_local_chain_nodes(app).await?);
+    }
+    let models = super::api_h3::local_models(app).await;
+    let model = super::api_h3::pick_local_model(&models)
+        .or_else(|| models.iter().find(|m| super::basename(m) == crate::h3::MODEL).cloned())
+        .or_else(|| models.iter().find(|m| super::basename(m).to_lowercase().contains("10eros")).cloned())
+        .ok_or("本機沒有長片能用的 H3 主模型（10Eros）：到下載中心或安裝精靈裝「H3 影片」，或把「在哪拍」改成雲端")?;
+    super::api_h3::check_local_files(app, &model).await?;
+    let chunks = (crate::h3::low_vram_model(&model) && super::api_h3::local_chunk_node(app).await).then_some(8);
+    Ok(hc::GraphOpts { model, chunks, ref_node: app.comfy.object_info(hc::REF_NODE).await.is_ok(), latent_in: None })
+}
+
+/// 本機 ComfyUI 沒有接續節點：把程式附帶的那份（resources\extras\h3_infinite.tar.gz，跟雲端裝的同一份）解到 custom_nodes。
+/// 回傳要顯示給使用者的話（裝好了要重開 ComfyUI 才載得到，所以這次還是不能拍）
+async fn install_local_chain_nodes(app: &Shared) -> Result<String, String> {
+    let tgz = app.paths.res.join("extras").join("h3_infinite.tar.gz");
+    let nodes = app.paths.comfy_root.join("custom_nodes");
+    let dest = nodes.join("HerrgottsH3Infinite");
+    if dest.join("__init__.py").is_file() {
+        return Ok("長片的接續節點已經在 custom_nodes 裡，但 ComfyUI 還沒載入：重開 ComfyUI 再按一次開拍".into());
+    }
+    if !tgz.is_file() {
+        return Err(format!("找不到 {}：重新安裝繪匣", tgz.display()));
+    }
+    blocking(move || -> Result<(), String> {
+        // 先解到 .disabled 結尾的暫存資料夾（ComfyUI 不載），解完才改名，中途失敗不會留半套
+        let tmp = nodes.join("HerrgottsH3Infinite-installing.disabled");
+        let _ = std::fs::remove_dir_all(&tmp);
+        std::fs::create_dir_all(&tmp).map_err(|e| format!("建立 {} 失敗：{e}", tmp.display()))?;
+        let mut c = std::process::Command::new("tar");
+        c.arg("-xzf").arg(&tgz).arg("-C").arg(&tmp).arg("--strip-components=1");
+        #[cfg(windows)]
+        {
+            use std::os::windows::process::CommandExt;
+            c.creation_flags(0x08000000);
+        }
+        let out = c.output().map_err(|e| format!("叫不到 tar（Windows 10 以上內建）：{e}"))?;
+        if !out.status.success() || !tmp.join("__init__.py").is_file() {
+            let _ = std::fs::remove_dir_all(&tmp);
+            return Err(format!("接續節點解不開：{}", String::from_utf8_lossy(&out.stderr).trim()));
+        }
+        std::fs::rename(&tmp, &dest).map_err(|e| format!("裝到 custom_nodes 失敗：{e}"))
+    })
+    .await?;
+    Ok("第一次在本機拍長片：接續節點已經裝好，重開 ComfyUI 再按一次開拍".into())
+}
+
+/// 送一張節點圖到本機 ComfyUI、等它跑完，回 history 那一筆。停止＝從佇列拿掉＋中斷（只中斷這一筆）
+async fn run_local_raw(app: &Shared, nodes: serde_json::Map<String, Value>, token: &CancellationToken, on_status: &(dyn Fn(String) + Send + Sync)) -> Result<Value, String> {
+    let pid = app.comfy.submit(&Value::Object(nodes), &json!({})).await.map_err(|e| e.0)?;
+    on_status("排隊中…".into());
+    let t0 = std::time::Instant::now();
+    let (mut miss, mut said) = (0u32, u64::MAX);
+    loop {
+        tokio::select! {
+            _ = token.cancelled() => {
+                let _ = app.comfy.post("/queue", &json!({"delete": [pid]})).await;
+                let _ = app.comfy.post("/interrupt", &json!({"prompt_id": pid})).await;
+                return Err("已停止".into());
+            }
+            _ = tokio::time::sleep(std::time::Duration::from_secs(3)) => {}
+        }
+        let secs = t0.elapsed().as_secs();
+        if said != secs / 10 {
+            said = secs / 10;
+            on_status(format!("本機生成中…已 {secs} 秒"));
+        }
+        match app.comfy.get(&format!("/history/{pid}")).await {
+            Ok(h) => {
+                miss = 0;
+                let Some(entry) = h.get(&pid) else { continue };
+                if entry["status"]["status_str"] != "success" {
+                    return Err(format!("本機生成失敗：{}", super::api_cloud::exec_error(entry)));
+                }
+                return Ok(entry.clone());
+            }
+            // ComfyUI 算到很忙的時候偶爾不回應：連續 5 分鐘都連不到才放棄
+            Err(e) => {
+                miss += 1;
+                if miss > 100 {
+                    return Err(format!("本機 ComfyUI 連不上了：{}", e.0));
+                }
+            }
+        }
+    }
+}
+
+/// 本機版的一段：跟雲端同一張節點圖（Herrgott latent 接續），差在不用上傳下載——素材本來就在 ComfyUI 的 input，
+/// 成品（影片和 latent）從 ComfyUI 的 output\h3chain\<id>\ 搬進長片資料夾；下一段開拍時再把上一段的 latent 用不重複的檔名放回去
+async fn run_seg_local(app: &Shared, id: &str, i: usize, token: &CancellationToken) -> Result<(), String> {
+    let n = i + 1;
+    update_seg(app, id, i, |s| {
+        s["status"] = json!("running");
+        s["error"] = Value::Null;
+    })
+    .await?;
+    let status = |m: String| emit(app, id, Some(i), "running", format!("第 {n} 段：{m}"));
+    status("準備…".into());
+    let mut opts = local_opts(app).await?;
+    let c = store(app).get(id).ok_or("長片不見了")?;
+    let dit_files = hc::dit_refs(&c, i);
+    if !dit_files.is_empty() && !(opts.ref_node && dit_files.iter().all(|f| app.paths.input.join(f).is_file())) {
+        opts.ref_node = false;
+        status("本機 ComfyUI 還沒載入繪匣的參考圖節點（重開 ComfyUI 就有），或參考圖檔不見了：這段參考圖只給文字編碼器".into());
+    }
+    if c["size"].is_null() {
+        let size = pick_size(app, &c);
+        update(app, id, |c| c["size"] = json!(size)).await?;
+    }
+    super::api_refmod::ensure_local(app, &crate::refmod::names_of(&c)?).await?;
+    let sub = hc::remote_dir(id);
+    let dir = store(app).seg_dir(id);
+    let out_dir = sub.split('/').fold(app.paths.output.clone(), |p, part| p.join(part));
+    std::fs::create_dir_all(&out_dir).map_err(|e| format!("建立 {} 失敗：{e}", out_dir.display()))?;
+    if i > 0 {
+        // 上一段選用的版本可能換過：每次都拿長片資料夾裡那份 latent 給 ComfyUI 讀。
+        // 檔名帶來源檔的時間和大小，內容換了就是新檔名：ComfyUI 讀過的檔在 Windows 上覆寫不了（見 GraphOpts::latent_in）
+        let local = dir.join(hc::latent_name(i));
+        let meta = std::fs::metadata(&local).map_err(|_| format!("第 {i} 段的接續資料不見了：從第 {i} 段重拍"))?;
+        let stamp = meta.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).map(|d| d.as_millis()).unwrap_or(0);
+        let name = format!("prev_{i:05}_{stamp}_{}.safetensors", meta.len());
+        // 以前放的用不到了；還被 ComfyUI 佔著的刪不掉就留著，下次再清
+        for old in std::fs::read_dir(&out_dir).into_iter().flatten().flatten() {
+            let n = old.file_name().to_string_lossy().into_owned();
+            if n.starts_with("prev_") && n != name {
+                let _ = std::fs::remove_file(old.path());
+            }
+        }
+        let placed = out_dir.join(&name);
+        if std::fs::metadata(&placed).map(|m| m.len()).ok() != Some(meta.len()) {
+            std::fs::copy(&local, &placed).map_err(|e| format!("準備上一段的接續資料失敗：{e}"))?;
+        }
+        opts.latent_in = Some(format!("{sub}/{name}"));
+    }
+    let seg = &c["segments"][i];
+    let seed = seg["seed"].as_i64().unwrap_or_else(super::api_director::random_seed);
+    update_seg(app, id, i, |s| s["seed"] = json!(seed)).await?;
+    let c = store(app).get(id).ok_or("長片不見了")?;
+    let g = hc::seg_graph_with(&c, i, seed, &opts)?;
+    let dit = if opts.ref_node { dit_files.len() } else { 0 };
+    let recipe = json!({"engine":"h3", "where":"local", "model":opts.model, "ref_dit":dit > 0, "seed":seed, "graph":g, "size":c["size"], "aspect":c["aspect"], "quality":c["quality"],
+        "prompt":hc::seg_prompt_with(&c, i, dit), "sheet":c["sheet"], "first":c["first"], "refs":if seg["refs"].is_array() { seg["refs"].clone() } else { c["refs"].clone() }, "segment":{"secs":seg["secs"],"text":seg["text"],"lines":seg["lines"],"last":seg["last"],"entry":seg["entry"],"exit":seg["exit"],"inherit_entry":seg["inherit_entry"]}});
+    let source_take = i.checked_sub(1).map(|prev| tx(&c["segments"][prev]["selected_take"]));
+    let review = c["review"] == true;
+    // H3 主模型＋文字編碼器很大：前一個任務不是 H3 就先清掉它留下的模型（同一條長片連拍不清，省掉重新載入）
+    app.pe.release_for_generation().await;
+    let was_h3 = std::mem::replace(&mut *app.last_family.lock().unwrap_or_else(|e| e.into_inner()), "h3".into()) == "h3";
+    if !was_h3 {
+        let _ = app.comfy.post("/free", &json!({"unload_models": true, "free_memory": true})).await;
+    }
+    let t0 = std::time::Instant::now();
+    let entry = run_local_raw(app, g, token, &status).await?;
+    status("收成品…".into());
+    let mut files = json!({});
+    for tag in ["cut", "end"] {
+        let prefix = format!("seg{n:02}_{tag}");
+        let made = pick_output_file(&entry, &sub, &prefix).ok_or_else(|| format!("本機沒有產生 {prefix} 的影片"))?;
+        let local = format!("{prefix}.mp4");
+        let src = out_dir.join(&made);
+        std::fs::copy(&src, dir.join(&local)).map_err(|e| format!("搬 {made} 失敗：{e}"))?;
+        let _ = std::fs::remove_file(&src);
+        files[tag] = json!(local);
+    }
+    let lat = hc::latent_name(n);
+    std::fs::copy(out_dir.join(&lat), dir.join(&lat)).map_err(|e| format!("搬 {lat} 失敗：{e}"))?;
+    // output 那份不留：下一段讀的是另外放的 prev_ 檔，這個固定檔名沒人讀過，下次重拍才覆寫得了
+    let _ = std::fs::remove_file(out_dir.join(&lat));
     files["lat"] = json!(lat);
     let texts = preview_texts(&entry);
     let took = t0.elapsed().as_secs();

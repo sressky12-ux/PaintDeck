@@ -2,7 +2,7 @@
 import { $, $$, el, api, toast, debounce, store, uploadFile, pickFile, makeDrop, openModal, closeModal, modeName, isVideo, IMAGE_ONLY_ACTS, VIDEO_ONLY_ACTS, fmtSecs } from "./util.js";
 import { mediaSlotsControl } from "./video-slots.js";
 import { app } from "./state.js";
-import { attachAutocomplete } from "./autocomplete.js";
+import { attachAutocomplete, punctFixOn } from "./autocomplete.js";
 import * as mask from "./mask.js";
 import * as loras from "./loras.js";
 import * as tagger from "./tagger.js";
@@ -10,6 +10,8 @@ import * as refs from "./refs.js";
 import * as pe from "./pe.js";
 import * as promptx from "./promptx.js";
 import * as promptsec from "./promptsec.js";
+import * as taglib from "./taglib.js";
+import * as wardrobe from "./wardrobe.js";
 import * as library from "./library.js";
 import { pickFromGallery, openLightboxRecord } from "./gallery.js";
 import * as deck from "./deck.js";
@@ -68,6 +70,8 @@ export const S = {
 };
 
 const F = (id) => $("#" + id);
+// 生成頁或它的分身「詞庫」頁（借了生成頁的面板）：貼圖、Ctrl+Enter 在這兩頁都算
+const onGenPage = () => app.page === "gen" || app.page === "taglib";
 const num = (id) => parseFloat(F(id).value);
 // 模型家族由伺服器看檔頭判斷（anima／qwen21／moss）；LoRA 只能用在同家族的模型上
 // 內建畫得出來的模型家族（families.rs 的 BUILTIN）；SDXL、Flux、SD1.5 這些靠匯入的工作流組
@@ -136,6 +140,12 @@ export function init() {
   promptx.init({ prompt: F("prompt"), negative: F("negative"), family: () => fam(), save: () => save() });
   watchPromptValue(F("prompt"), debounce(renderTrig, 150));
   promptsec.init({ prompt: F("prompt"), wrap: F("prompt").parentElement, mount: F("promptSecs"), toggle: F("promptSecBtn"), batch: F("batchLines"), save: () => save() });
+  // 全形標點自動換半形（autocomplete.js 的 fixPunct）：開關
+  const pf = F("punctFixBtn");
+  const pfShow = () => { pf.classList.toggle("on", punctFixOn()); pf.setAttribute("aria-pressed", String(punctFixOn())); };
+  pf.onclick = () => { store.set("punctFix", !punctFixOn()); pfShow(); toast(punctFixOn() ? "英文 tag 後面的全形標點會自動換成半形" : "全形標點不再自動換"); };
+  pfShow();
+  taglib.init({ box: F("tagLib"), btn: F("tagLibBtn"), main: F("prompt"), watch: [F("promptSecs"), F("negative").parentElement] });
 
   // 滑桿數值顯示
   const outs = [["denoise", "denoiseOut"], ["ipGrow", "ipGrowOut"], ["ipBlur", "ipBlurOut"], ["ipPad", "ipPadOut"], ["upDenoise", "upDenoiseOut"],
@@ -201,7 +211,7 @@ export function init() {
   F("initTagger").onclick = () => S.init && tagger.open({ name: S.init.name }, applyTags, fam(), triggerWords);
   F("initParams").onclick = () => S.init?.params && applyParams(S.init.params, false);
   document.addEventListener("paste", async (e) => {
-    if (app.page !== "gen" || !$("#imModal").hidden) return; // 讀圖片參數的視窗開著：貼給它（imgmeta.js）
+    if (!onGenPage() || !$("#imModal").hidden || !$("#loraPrev").hidden) return; // 讀圖片參數、換 LoRA 預覽圖的視窗開著：貼給它們
     const files = [...(e.clipboardData?.files || [])].filter((x) => x.type.startsWith("image/"));
     if (!files.length) return;
     e.preventDefault();
@@ -260,14 +270,14 @@ export function init() {
 
   // 生成
   F("genBtn").onclick = generate;
-  F("stopBtn").onclick = () => api("/api/interrupt", { json: {} });
+  F("stopBtn").onclick = async () => { try { await api("/api/interrupt", { json: {} }); } catch (e) { toast("停止失敗：" + e.message, "err"); } };
   F("clearBtn").onclick = async () => {
     try { await api("/api/clear_queue", { json: {} }); } catch (e) { return toast("全停失敗：" + e.message, "err"); }
     S.pending.clear(); S.running = null; F("liveBadge").hidden = true; renderStrip();
   };
   document.addEventListener("keydown", (e) => {
     // 有浮層開著（提示詞庫、反推、影片、遮罩…）時不要在背景偷偷生成
-    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && app.page === "gen" && !document.querySelector(".modal:not([hidden])")) { e.preventDefault(); generate(); }
+    if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && onGenPage() && !document.querySelector(".modal:not([hidden])")) { e.preventDefault(); generate(); }
   });
 
   // 預覽圖動作
@@ -277,8 +287,9 @@ export function init() {
     if (b && S.current && b.dataset.act !== "download") imageAction(b.dataset.act, S.current, b);
   });
 
-  F("page-gen").addEventListener("input", debounce(save, 400));
-  F("page-gen").addEventListener("change", debounce(save, 100));
+  // 隨機頁借走生成頁面板時，面板裡的改動冒泡到隨機頁：兩頁都要聽（borrow.js）
+  const saveSoon = debounce(save, 400), saveNow = debounce(save, 100);
+  for (const pg of [F("page-gen"), F("page-taglib")]) { pg.addEventListener("input", saveSoon); pg.addEventListener("change", saveNow); }
   restore();
   seedRecent();
 
@@ -339,7 +350,7 @@ export function onState(st) {
 
 // 模型選單依家族分組；認不出家族的模型（例如別的架構）不列出，免得選了跑不動
 function fillModels(m) {
-  const sel = F("model"), want = sel.value || store.get("form", {}).model || "anima-turbo-v1.1.safetensors";
+  const sel = F("model"), had = sel.value, want = had || store.get("form", {}).model || "anima-turbo-v1.1.safetensors";
   const fams = m.unet_family || {};
   sel.innerHTML = "";
   // 只列內建畫得出來的家族（families.rs 也認得 SDXL、Flux…，但 graphs.rs 畫不了，選了一定失敗）
@@ -353,6 +364,12 @@ function fillModels(m) {
   const flows = m.image_workflows || [];
   if (flows.length) sel.append(el("optgroup", { label: "⚙ 生圖工作流" }, ...flows.map((w) => el("option", { value: w.id, title: (w.modes || []).map((m) => modeName[m] || m).join("、") }, "⚙ " + w.name))));
   if ([...sel.options].some((o) => o.value === want)) sel.value = want;
+  else if (had && sel.options.length) {
+    // 畫面上選的模型從清單消失了（檔案移走、改名、外部資料夾拿掉）：選單會自己跳到第一個，
+    // 但程式改 value 不會觸發 onchange，步數／CFG／負面詞還是上一顆的。照換模型的流程走一次，並講一聲
+    modelDefaults(); familySwitch(); save();
+    toast(`原本選的模型「${had.replace(/\.safetensors$/, "")}」不在清單裡了，改用「${sel.selectedOptions[0]?.textContent || sel.value}」，步數和 CFG 換成它的預設`, "err");
+  }
   // ComfyUI 連上了、卻一個認得的模型都沒有（多半是安裝精靈跳過了下載）：給一個回到下載畫面的入口
   F("noModels").hidden = !(app.state?.online && Array.isArray(m.unets)) || sel.options.length > 0;
   // 只有 SDXL、Flux 這類內建畫不了的模型（老手）：選單裡不列，告訴他可以把自己的工作流匯進來用。
@@ -1252,7 +1269,7 @@ function applyForm(f) {
   if (f.sheetRef !== undefined) { S.sheetRef = f.sheetRef; showSheetRef(); }
   if (f.layout !== undefined) { lay.set(f.layout); layCount(); }
   if (f.locked !== undefined) { S.locked = Array.isArray(f.locked) ? f.locked : []; renderLocked(); }
-  for (const o of $$("output", F("page-gen"))) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
+  for (const o of $$("#page-gen output, #page-taglib output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
   F("upRefineRow").hidden = !F("upRefine").checked;
   F("stripRefineRow").hidden = !F("stripRefine").checked;
   F("ipPadRow").hidden = F("ipArea").value !== "masked";
@@ -1301,7 +1318,8 @@ export function applyParams(p, withMode = true) {
   set("prompt", p.prompt); set("negative", p.negative); set("steps", p.steps); set("cfg", p.cfg);
   set("sampler", p.sampler); set("scheduler", p.scheduler); set("seed", p.seed);
   if (p.width && p.height && p.mode !== "upscale") { set("width", p.width); set("height", p.height); }
-  if (p.model && [...F("model").options].some((o) => o.value === p.model)) F("model").value = p.model;
+  const modelMissing = p.model && ![...F("model").options].some((o) => o.value === p.model);
+  if (p.model && !modelMissing) F("model").value = p.model;
   // 工作流組做的圖：「工作流參數」面板改過的值也帶回來
   if (p.wf_overrides && (p.model || "").startsWith("wf:")) wfpanel.setOverrides(p.model.slice(3), p.mode || "txt2img", p.wf_overrides);
   F("turboLora").value = p.turbo_lora === true ? defTurbo() : (p.turbo_lora || "");
@@ -1309,6 +1327,20 @@ export function applyParams(p, withMode = true) {
   S.loras = (p.loras || []).map((l) => ({ ...l, enabled: true }));
   if (p.hires) { F("hiresOn").checked = !!p.hires.enabled; set("hiresScale", p.hires.scale); set("hiresDenoise", p.hires.denoise); }
   if (p.denoise != null) set("denoise", p.denoise);
+  // 局部重繪、放大、多圖參考、構圖控制的細項也照那張圖還原（以前只還原重繪幅度：遮罩擴張／柔化／內距回到表單預設，重畫範圍跟原圖不一樣）
+  if (p.inpaint && typeof p.inpaint === "object") {
+    set("ipMethod", p.inpaint.method); set("ipArea", p.inpaint.area); set("ipGrow", p.inpaint.grow); set("ipBlur", p.inpaint.blur); set("ipPad", p.inpaint.padding);
+    F("ipPadRow").hidden = F("ipArea").value !== "masked";
+  }
+  if (p.upscale && typeof p.upscale === "object") {
+    set("upModel", p.upscale.upscaler); set("upScale", p.upscale.scale); set("upDenoise", p.upscale.denoise);
+    if (p.upscale.refine != null) F("upRefine").checked = !!p.upscale.refine;
+  }
+  if (p.ref_pixels) set("refPixels", p.ref_pixels);
+  if (p.control && !Array.isArray(p.control) && p.control.enabled) {
+    set("ctrlType", p.control.type); set("ctrlPre", p.control.preprocess); set("ctrlStr", p.control.strength); set("ctrlEnd", p.control.end);
+    if (p.control.invert != null) F("ctrlInvert").checked = !!p.control.invert;
+  }
   if (p.strip) {
     set("stripTarget", p.strip.target); set("stripKeep", p.strip.keep); set("stripDenoise", p.strip.refine_denoise);
     set("stripExtra", p.strip.extra); set("stripTags", p.strip.tags);
@@ -1320,13 +1352,14 @@ export function applyParams(p, withMode = true) {
   lay.set(p.layout || []); layCount();  // 重用參數＝重現那張圖：沒有框的圖會把框清掉
   if (p.layout?.length) F("layBox").open = true;
   renderLoras(); modelHint();
-  for (const o of $$("output", F("page-gen"))) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
+  for (const o of $$("#page-gen output, #page-taglib output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
   if (p.mode === "multiref" && p.refs) refs.set(p.refs.map((r) => ({ name: r.image, width: r.width, height: r.height, role: r.role || "person" })));
   // 文生圖、ComfyUI 匯入的、沒標模式的 → 文生圖；其餘（圖生圖、局部重繪、放大、一鍵脫衣、四視圖、多圖參考）照原模式還原（輸入圖要自己再放一次）
   if (withMode) setMode(["img2img", "inpaint", "outpaint", "upscale", "strip", "sheet", "multiref"].includes(p.mode) ? p.mode : "txt2img");
   pe.restore(p);
   save();
-  toast("已套用參數（種子也一併帶入，要換構圖請按「隨機」）", "ok");
+  if (modelMissing) toast(`已套用參數，但模型「${String(p.model).replace(/\.safetensors$/, "")}」不在這台電腦：維持目前的模型，步數和 CFG 是那顆模型的，可能不合`, "err");
+  else toast("已套用參數（種子也一併帶入，要換構圖請按「隨機」）", "ok");
 }
 
 // ---------------------------------------------------------------- 提示詞庫的整套設定
@@ -1382,14 +1415,22 @@ function paramsToForm(p) {
 // ---------------------------------------------------------------- 生成
 async function generate() {
   refreshGenNode();  // 排隊數隨時在變：按生成前先更新一次（不用等）
-  if (!app.state) await app.refreshState();  // 剛打開網頁、狀態還沒讀到
+  if (F("genBtn").disabled) return;  // 連按兩下：第一下還在等狀態、等 AI 改寫
+  if (!app.state) {  // 剛打開網頁、狀態還沒讀到
+    F("genBtn").disabled = true;
+    try { await app.refreshState(); } finally { F("genBtn").disabled = false; }
+  }
   if (!app.state?.online) return toast("ComfyUI 沒有連線：點狀態列的系統狀態，按「重開 ComfyUI」", "err");
   if (F("genBtn").disabled) return;
   F("genBtn").disabled = true;
   let ok;
   // 一鍵脫衣、四視圖不用提示詞框，也就不跑 AI 改寫；「每行一句」（批次）也不跑（改寫會把整框換成一段）
   const batch = F("batchLines").checked && !F("promptBox").hidden;
-  try { ok = S.mode === "strip" || S.mode === "sheet" || batch || await pe.beforeGenerate(); } finally { F("genBtn").disabled = false; }
+  try {
+    // 隨機頁的隨機產生器勾了「每次生成前重抽」：先抽一組套進提示詞，再照常跑 AI 改寫（只在隨機頁按生成時）
+    if (app.page === "taglib" && S.mode !== "strip" && S.mode !== "sheet" && !batch) await wardrobe.beforeGenerate();
+    ok = S.mode === "strip" || S.mode === "sheet" || batch || await pe.beforeGenerate();
+  } finally { F("genBtn").disabled = false; }
   if (!ok) return;
   const p = collectParams();
   if (fam() === "custom") {
@@ -1448,6 +1489,8 @@ async function generate() {
       sent++;
       renderStrip();
       if (r.jobs[0]?.skipped_loras?.length && sent === 1) skippedToast(r.jobs[0].skipped_loras);
+      // 開了卻不會生效的設定（後端 ignored_notes）：照樣會畫，但要講
+      if (r.jobs[0]?.notes?.length && sent === 1) toast(r.jobs[0].notes.join("\n"), "err");
     }
     promptx.remember(p.prompt, p.model);
     if (batch) toast(`批次：${lines.length} 句 × ${count} 張，已排進佇列`, "ok");
@@ -1467,6 +1510,9 @@ function skippedToast(names) {
 }
 
 export function onStart(job) {
+  // 自己的任務正在跑時，別頁（助手、導演台、漫畫台，或另一台工作節點）的任務開始不要蓋掉它：
+  // 蓋掉的話自己那張畫完時對不上，「生成中」收不掉。自己的任務可能比送出的回應早一步開始，所以沒在跑自己的就照記
+  if (!S.pending.has(job) && S.pending.has(S.running)) return;
   S.running = job;
   if (S.pending.has(job)) { F("liveBadge").hidden = false; F("liveStep").textContent = ""; }
 }
@@ -1585,6 +1631,8 @@ export async function imageAction(act, rec, btn, quiet = false) {
       toast("已放進剪輯台的素材區（導演 → 剪輯台，左上 Project）", "ok");
     } else if (act === "asset") {
       (await import("./assets.js")).saveFromGallery(rec);
+    } else if (act === "lorapreview") {
+      (await import("./loras.js")).previewFromImage(rec);
     } else if (act === "frames") {
       const studio = await import("./studio.js");
       studio.openFrames(rec);

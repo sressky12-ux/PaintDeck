@@ -185,8 +185,8 @@ async function save() {
 const STATUS = { running: ["生成中", "amb"], done: ["已採用", "g"], review: ["待審片", "amb"], todo: ["待生成", ""], error: ["失敗", "r"], stopped: ["已停止", "amb"] };
 
 function thumbOf(seg) {
-  if (seg.frame_id) return `/thumb/${seg.frame_id}`;
   if (seg.frame_lock) return `/input/${encodeURIComponent(seg.frame_lock)}`;
+  if (seg.frame_id) return `/thumb/${seg.frame_id}`;
   if (seg.frame_image) return `/input/${encodeURIComponent(seg.frame_image)}`;
   return null;
 }
@@ -227,7 +227,8 @@ function segCard(seg, i) {
   enginePick.value = seg.engine || "";
   enginePick.onchange = () => { seg.engine = enginePick.value; saveSoon(); renderSegs(); };
   const seconds = el("input", { type: "number", min: "0.1", max: "120", step: "0.1", value: seg.seconds ?? P.settings?.seconds ?? 5, disabled: running, "aria-label": `第 ${i + 1} 鏡秒數`, style: "width:90px" });
-  seconds.onchange = () => { const n = Number(seconds.value); if (n > 0 && Number.isFinite(n)) { seg.seconds = n; saveSoon(); } };
+  // 打了 0、負數、清空：欄位改回實際會用的秒數（以前欄位留著錯的值，實際卻照舊的秒數拍）
+  seconds.onchange = () => { const n = Number(seconds.value); if (n > 0 && Number.isFinite(n)) { seg.seconds = n; saveSoon(); } else seconds.value = seg.seconds ?? P.settings?.seconds ?? 5; };
   const slots = mediaSlotsControl({ engine: videoChoices.find((v) => v.id === engine), values: seg.media_slots || {},
     isCurrent: () => !running && P?.segments?.[i] === seg && (seg.engine || P.settings?.video_engine || defaultVideoEngine) === engine,
     onchange: (values) => { seg.media_slots = values; saveSoon(); } });
@@ -561,7 +562,9 @@ export function init() {
   F("dirConcat").onclick = async () => {
     try { await api("/api/director/concat", { json: { id: P.id } }); status("接成長片中…", "amb"); await reload(); } catch (e) { toast(e.message, "err"); }
   };
-  F("dirStop").onclick = async () => { await api("/api/director/stop", { json: { id: P.id } }); status("停止中…", "amb"); };
+  F("dirStop").onclick = async () => {
+    try { await api("/api/director/stop", { json: { id: P.id } }); status("停止中…", "amb"); } catch (e) { toast("停止失敗：" + e.message, "err"); }
+  };
   initChars();
 }
 

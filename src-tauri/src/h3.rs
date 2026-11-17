@@ -270,8 +270,11 @@ fn board_plan(p: &Value) -> R<Plan> {
     if pl.lora_mode == "live" {
         pl.max_size = true;
     }
-    let pinned = |t: f64| images.iter().filter(|(_, x)| *x == Some(t)).count();
-    if pinned(0.0) > 1 || pinned(-1.0) > 1 {
+    // 同一格只能釘一張：照 AddGuide「四捨五入成第幾格」比（-1＝最後一格）。以前只擋第 0 秒和最後一格，
+    // 兩張都釘在 2.5 秒會各接一顆 AddGuide 指向同一格
+    let mut slots: Vec<i64> = images.iter().filter_map(|(_, t)| *t).map(|t| if t == -1.0 { -1 } else { (t * FPS as f64).round() as i64 }).collect();
+    slots.sort_unstable();
+    if slots.windows(2).any(|w| w[0] == w[1]) {
         return err("同一個時間點只能釘一張圖");
     }
     if images.iter().filter(|(_, t)| t.is_some()).count() > 6 {
@@ -280,7 +283,7 @@ fn board_plan(p: &Value) -> R<Plan> {
     if pl.audio_pins.len() > MAX_AUDIOS {
         return err(format!("原封不動放進去的聲音最多 {MAX_AUDIOS} 段"));
     }
-    if !pl.prev.is_empty() && pinned(0.0) > 0 {
+    if !pl.prev.is_empty() && slots.contains(&0) {
         return err("「接著上一支拍」的開頭已經是上一支的畫面：第 0 秒不能再釘圖");
     }
     // 有參考素材、或釘在首尾以外的圖 → 參考路：所有圖照順序當參考，釘的再用 AddGuide 釘住
@@ -499,8 +502,9 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                    "min_tokens": 12288, "extra_tokens": 256, "sink_conditioning": "exact_kv_and_rows", "verbose": false}),
         );
     }
-    if let (Some(v), a) = (num(p, "shift_video"), num(p, "shift_audio")) {
-        model = g.add("MiniMaxH3SigmaShift", json!({"model": model, "shift_video": v, "shift_audio": a.unwrap_or(3.0)}));
+    let (sv, sa) = (num(p, "shift_video"), num(p, "shift_audio"));
+    if sv.is_some() || sa.is_some() {
+        model = g.add("MiniMaxH3SigmaShift", json!({"model": model, "shift_video": sv.unwrap_or(12.0), "shift_audio": sa.unwrap_or(3.0)}));
     }
     // 顯存小的卡：feedforward 切塊算，峰值顯存變低、結果一樣（MiniMaxChunkFeedForward，節點在 ComfyUI-KJNodes，不是內建）。
     // GGUF、w4a8 本來就是給小顯存用的：沒指定就切 8（3070 8GB 實測過）；ff_chunks 1＝不切
@@ -986,6 +990,9 @@ mod tests {
         assert!(e(json!([{"kind": "video", "name": "a.mp4", "use": "continue"}, {"kind": "video", "name": "b.mp4", "use": "guide"}])).contains("只能放一段"));
         assert!(e(json!([{"kind": "video", "name": "a.mp4", "use": "continue"}, {"kind": "image", "name": "a.png", "use": "anchor", "secs": 0}])).contains("第 0 秒"));
         assert!(e(json!([{"kind": "image", "name": "a.png", "use": "anchor", "secs": 0}, {"kind": "image", "name": "b.png", "use": "anchor", "secs": 0}])).contains("同一個時間點"));
+        // 中間的時間點也算；差不到一格（2.5 秒和 2.51 秒都是第 60 格）也算同一格
+        assert!(e(json!([{"kind": "image", "name": "a.png", "use": "anchor", "secs": 2.5}, {"kind": "image", "name": "b.png", "use": "anchor", "secs": 2.51}])).contains("同一個時間點"));
+        assert!(build(&board(json!([{"kind": "image", "name": "a.png", "use": "anchor", "secs": 2.5}, {"kind": "image", "name": "b.png", "use": "anchor", "secs": 3.0}])), &dir(), 0).is_ok());
         assert!(e(json!([{"kind": "video", "name": "src.mp4", "use": "guide", "lora": "swap"}])).contains("角色圖"));
         assert!(e(json!([{"kind": "image", "name": "a.png", "use": "anchor", "secs": 30}])).contains("超出"));
         assert!(e(json!([{"kind": "audio", "name": "a.wav", "use": "ref"}])).contains("不能單獨"));

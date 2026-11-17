@@ -2376,6 +2376,16 @@ fn chain_nodes_cmd(dir: &str) -> String {
     )
 }
 
+/// 雲端 ComfyUI 有沒有繪匣的參考圖節點（h3chain::REF_NODE）；沒有就照舊只把參考圖給文字編碼器
+pub async fn chain_ref_node_ready(app: &Shared) -> bool {
+    let cloud = &app.agent.cloud;
+    let Some(ep) = cloud.endpoints() else {
+        return false;
+    };
+    let n = crate::h3chain::REF_NODE;
+    get_json(cloud, &ep, &format!("/object_info/{n}")).await.is_some_and(|v| v.get(n).is_some())
+}
+
 /// 雲端 ComfyUI 有沒有長片的節點
 async fn chain_nodes_ready(cloud: &Cloud) -> bool {
     let Some(ep) = cloud.endpoints() else {
@@ -2389,18 +2399,41 @@ async fn chain_nodes_ready(cloud: &Cloud) -> bool {
 pub async fn ensure_chain_nodes(app: &Shared, on_status: &(dyn Fn(String) + Send + Sync)) -> Result<(), String> {
     let cloud = &app.agent.cloud;
     cloud.endpoints().ok_or("雲端斷線了：到「雲端」那裡看狀態")?;
-    if chain_nodes_ready(cloud).await {
+    let have_chain = chain_nodes_ready(cloud).await;
+    let ref_node = app.paths.res.join("extras").join(crate::setup::H3_NODES).join("__init__.py");
+    let need_ref = ref_node.is_file() && !chain_ref_node_ready(app).await;
+    if have_chain && !need_ref {
         return Ok(());
     }
-    let pod = cloud.st().pod.clone().ok_or("長片目前只能用雲端（要能 ssh 的雲端主機）")?;
+    let pod = match cloud.st().pod.clone() {
+        Some(p) => p,
+        // 接續節點已經有、只是少了參考圖節點：沒有 ssh 補不上去就算了，那一輪參考圖照舊只給文字編碼器
+        None if have_chain => return Ok(()),
+        None => return Err("這台雲端沒有 ssh，裝不了長片的接續節點：改用能 ssh 的雲端主機，或把「在哪拍」改成本機".into()),
+    };
     let tgz = app.paths.res.join("extras").join("h3_infinite.tar.gz");
     if !tgz.is_file() {
         return Err(format!("找不到 {}：重新安裝生圖站", tgz.display()));
     }
     let d = pod.dir.clone();
-    on_status("第一次拍長片：把接續用的節點裝到雲端…".into());
-    cloud.ssh(&pod, &format!("cat > '{d}/h3_infinite.tgz'"), Some(&tgz), Duration::from_secs(120)).await?;
-    cloud.ssh(&pod, &chain_nodes_cmd(&d), None, Duration::from_secs(60)).await?;
+    if !have_chain {
+        on_status("第一次拍長片：把接續用的節點裝到雲端…".into());
+        cloud.ssh(&pod, &format!("cat > '{d}/h3_infinite.tgz'"), Some(&tgz), Duration::from_secs(120)).await?;
+        cloud.ssh(&pod, &chain_nodes_cmd(&d), None, Duration::from_secs(60)).await?;
+    }
+    // 繪匣自己的參考圖節點（只有一個檔）；放不上去不擋拍片，那一輪參考圖照舊只給文字編碼器
+    if need_ref {
+        if have_chain {
+            on_status("把參考圖節點裝到雲端…".into());
+        }
+        let n = format!("{d}/ComfyUI/custom_nodes/{}", crate::setup::H3_NODES);
+        if let Err(e) = cloud.ssh(&pod, &format!("mkdir -p '{n}' && cat > '{n}/__init__.py'"), Some(&ref_node), Duration::from_secs(60)).await {
+            eprintln!("[長片] 參考圖節點放不上雲端：{e}");
+            if have_chain {
+                return Ok(());
+            }
+        }
+    }
     on_status("重新啟動雲端 ComfyUI（約 1 分鐘）…".into());
     cloud
         .ssh(&pod, &format!("cd '{d}' && (setsid nohup bash '{d}/run.sh' < /dev/null > run.log 2>&1 &) && echo started"), None, Duration::from_secs(60))
@@ -2418,7 +2451,7 @@ pub async fn ensure_chain_nodes(app: &Shared, on_status: &(dyn Fn(String) + Send
 }
 
 /// ComfyUI history 裡的錯誤訊息（execution_error 那一筆）
-fn exec_error(entry: &Value) -> String {
+pub(super) fn exec_error(entry: &Value) -> String {
     let msgs = entry["status"]["messages"].as_array().cloned().unwrap_or_default();
     if let Some(m) = msgs.iter().find(|m| m[0] == "execution_error") {
         let d = &m[1];
