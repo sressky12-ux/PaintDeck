@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/css/app.css">
 <link rel="stylesheet" href="/static/css/play.css">
 <link rel="stylesheet" href="/static/css/motion.css">
+<link rel="stylesheet" href="/static/css/fontscale.css">
 <!-- three.js（軟糖小熊用，放在本機 vendor	hree，等圖時才載入） -->
 <script type="importmap">
 { "imports": { "three": "/static/vendor/three/three.module.min.js", "three/addons/": "/static/vendor/three/addons/" } }
@@ -1470,6 +1471,41 @@
       <label for="setLang" translate="no">介面語言／界面语言／Language</label>
       <select id="setLang" translate="no"><option value="zh-TW">繁體中文</option><option value="zh-CN">简体中文</option><option value="en">English</option></select>
       <div class="muted sm">只換介面上的字，切換時頁面會重新整理一下。你寫的提示詞、圖庫和對話內容不會被改；教學手冊維持繁體中文。</div>
+    </section>
+    <section class="box" id="fontScaleBox">
+      <label for="fsUiRange">介面與提示詞字號</label>
+      <div class="muted sm">分層放大介面文字與提示詞框（拖動即時預覽，不需重新整理）。預設鎖定左側功能欄與頂列外框，避免擠亂版面。</div>
+      <div class="row wrap gap">
+        <span class="sub inline">快捷檔位</span>
+        <div class="fs-presets" id="fsPresets">
+          <button type="button" class="chip" data-preset="compact">緊湊 90%</button>
+          <button type="button" class="chip" data-preset="default">原版 100%</button>
+          <button type="button" class="chip" data-preset="comfort">舒適 115%</button>
+          <button type="button" class="chip" data-preset="large">護眼大字 130%</button>
+        </div>
+      </div>
+      <div class="fs-sliders">
+        <div class="fs-ctrl">
+          <div class="fader-row"><span class="name">介面正文與小字</span><output class="vfd" id="fsUiOut" for="fsUiRange" translate="no"></output></div>
+          <input id="fsUiRange" type="range" min="0.85" max="1.45" step="0.05" value="1" aria-label="介面正文與小字">
+          <div class="muted sm">設定說明、按鈕、選單、詞庫標籤與視窗</div>
+        </div>
+        <div class="fs-ctrl">
+          <div class="fader-row"><span class="name">提示詞輸入框</span><output class="vfd" id="fsPromptOut" for="fsPromptRange" translate="no"></output></div>
+          <input id="fsPromptRange" type="range" min="0.85" max="1.6" step="0.05" value="1" aria-label="提示詞輸入框">
+          <div class="muted sm">正／負面提示詞與高亮底板同步對齊不偏移</div>
+        </div>
+      </div>
+      <label class="check"><input type="checkbox" id="fsFrameBoost"> <span>高分屏外框同步微擴<small>勾選後依比例略微加寬左側欄，讓功能鍵與面板標題也溫和放大一圈（大螢幕適用）</small></span></label>
+      <div class="fs-preview">
+        <span class="sub">即時預覽</span>
+        <div class="sm">這裡是介面正文與說明小字：設定、按鈕、卡片都會照這個大小跟著變。</div>
+        <div class="scr fs-preview-scr"><div class="fs-preview-code" translate="no">1girl, solo, (masterpiece:1.2), soft lighting, detailed eyes</div></div>
+      </div>
+      <div class="fs-actions">
+        <button class="akey sm" id="fsReset" type="button">恢復原版</button>
+        <span class="muted sm fs-status" id="fsStatus" role="status"></span>
+      </div>
     </section>
     <section class="box" id="dockBox">
       <label>版面</label>
