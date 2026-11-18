@@ -1,0 +1,384 @@
+/* 分層字號調節（ui/js/fontscale.js）：只在 html.fs-on 啟用時接管字號，預設鎖定外側邊欄與頂列防止撐破版面。 */
+
+/* ---------- 1. 一般介面正文、說明與元件（--fs-ui） ---------- */
+html.fs-on body {
+  font-size: calc(13px * var(--fs-ui, 1));
+}
+
+html.fs-on .ag-msg,
+html.fs-on .ag-input textarea {
+  font-size: calc(13.5px * var(--fs-ui, 1));
+}
+
+html.fs-on .box > label:first-child,
+html.fs-on .akey,
+html.fs-on .cart-well select,
+html.fs-on .ac,
+html.fs-on .pe-zh,
+html.fs-on .tg-cap textarea,
+html.fs-on .card .t,
+html.fs-on .popover,
+html.fs-on .toast,
+html.fs-on .win .empty,
+html.fs-on .llm-routes,
+html.fs-on .llm-keys,
+html.fs-on .play-menu button,
+html.fs-on .dock-menu button,
+html.fs-on .dir-status,
+html.fs-on .dir-st,
+html.fs-on .cm-panel-hd b,
+html.fs-on .ag-status,
+html.fs-on .ag-empty,
+html.fs-on .ag-prompt,
+html.fs-on .ag-confirm,
+html.fs-on .ag-rec,
+html.fs-on .lay-modal .lay-words,
+html.fs-on .tr-warn {
+  font-size: calc(13px * var(--fs-ui, 1));
+}
+
+html.fs-on .boot-hint,
+html.fs-on .boot-note,
+html.fs-on .meta .v,
+html.fs-on .h3-voice,
+html.fs-on .h3-job,
+html.fs-on .cs-spec-row > b,
+html.fs-on .cs-spec-block,
+html.fs-on .cl-item,
+html.fs-on .ag-tool,
+html.fs-on .ag-check,
+html.fs-on .ag-prompt pre {
+  font-size: calc(12.5px * var(--fs-ui, 1));
+}
+
+html.fs-on .sm,
+html.fs-on .sub,
+html.fs-on .muted.sm,
+html.fs-on .warnbox.sm,
+html.fs-on .akey.sm,
+html.fs-on select.sm,
+html.fs-on .btn,
+html.fs-on .chip,
+html.fs-on .fader-row .name,
+html.fs-on .notice,
+html.fs-on .drop-hint,
+html.fs-on .lbl .act,
+html.fs-on .ac i,
+html.fs-on .pzh,
+html.fs-on .pzh-toggle,
+html.fs-on .pzh-btn,
+html.fs-on .pzh-t,
+html.fs-on .pzh-s,
+html.fs-on .pzh-t b,
+html.fs-on .pzh-s b,
+html.fs-on #negDetails .foot,
+html.fs-on .taglib,
+html.fs-on .tl-tab,
+html.fs-on .tl-chip,
+html.fs-on .wd,
+html.fs-on .pe-status,
+html.fs-on .pe-diff,
+html.fs-on .pe-think pre,
+html.fs-on .lora-item .nm,
+html.fs-on .lora-item input[type=number],
+html.fs-on .knob .k,
+html.fs-on .card .ph,
+html.fs-on .card .trig,
+html.fs-on .card .btn,
+html.fs-on .ft .btn,
+html.fs-on .md-path,
+html.fs-on .md-job,
+html.fs-on .wf-nh,
+html.fs-on .wf-msg,
+html.fs-on .wf-how b,
+html.fs-on .wf-chip,
+html.fs-on .wf-fh,
+html.fs-on .wf-fm,
+html.fs-on .wf-feat select,
+html.fs-on .h3-count,
+html.fs-on .h3-item-hd,
+html.fs-on .h3-item-hd b,
+html.fs-on .h3-item label.check,
+html.fs-on .h3-prev,
+html.fs-on .h3-line label.check,
+html.fs-on .llm-f,
+html.fs-on .llm-routes th,
+html.fs-on .llm-param,
+html.fs-on .nodes-f,
+html.fs-on .meta,
+html.fs-on .im-grid,
+html.fs-on .im-grid pre,
+html.fs-on .job-prompt,
+html.fs-on .job-err,
+html.fs-on .sk-toc,
+html.fs-on .batch-row,
+html.fs-on .op-grid label,
+html.fs-on .film-take pre,
+html.fs-on .sub-toolbar select,
+html.fs-on .dir-pr summary,
+html.fs-on .cb-pr > summary,
+html.fs-on .cm-who .chip,
+html.fs-on .cl-tip,
+html.fs-on .ag-msg .who small,
+html.fs-on .ag-tool .t small,
+html.fs-on .ag-tool summary,
+html.fs-on .ag-tool pre,
+html.fs-on .ag-prompt .neg,
+html.fs-on .ag-base-lora,
+html.fs-on .ag-lora .nm,
+html.fs-on .ag-lora .ds,
+html.fs-on .card .agent-desc,
+html.fs-on .ag-strip-empty,
+html.fs-on .rocker.ag-brain button,
+html.fs-on .sh-est,
+html.fs-on .sh-issues,
+html.fs-on .dir-lay > summary,
+html.fs-on .lay-modal .lay-tag,
+html.fs-on .tr-chip,
+html.fs-on .tr-vid,
+html.fs-on .tr-f {
+  font-size: calc(12px * var(--fs-ui, 1));
+}
+
+html.fs-on label.check small,
+html.fs-on .ac small,
+html.fs-on .tl-chip small,
+html.fs-on .tl-sec,
+html.fs-on .wd-card small,
+html.fs-on .lora-note,
+html.fs-on .card .st,
+html.fs-on .card .ph .ph-note,
+html.fs-on .wf-hint,
+html.fs-on .h3-chip,
+html.fs-on .h3-ruler,
+html.fs-on .h3-st,
+html.fs-on .llm-tag,
+html.fs-on .tg-result .chip .zh,
+html.fs-on .drop.has .drop-hint,
+html.fs-on .ref-role,
+html.fs-on .pick-note,
+html.fs-on .gallery .g .cap,
+html.fs-on .op-preview .op-info,
+html.fs-on .vm-pin,
+html.fs-on .cs-spec-hd,
+html.fs-on .tr-flag,
+html.fs-on .tr-img-bar button {
+  font-size: calc(11px * var(--fs-ui, 1));
+}
+
+html.fs-on .badge-s,
+html.fs-on .card .badge,
+html.fs-on .meta .badge,
+html.fs-on .job .badge,
+html.fs-on .lora-item .badge,
+html.fs-on .lora-card-meta .chip,
+html.fs-on .wf-tag,
+html.fs-on .wf-pg,
+html.fs-on .ag-kind {
+  font-size: calc(10.5px * var(--fs-ui, 1));
+}
+
+html.fs-on .dialog > .row.between > b {
+  font-size: calc(16px * var(--fs-ui, 1));
+}
+
+html.fs-on .lb-side > .row.between > b {
+  font-size: calc(14px * var(--fs-ui, 1));
+}
+
+html.fs-on .card:not(.lrow) .ph .ph-name {
+  font-size: calc(15px * var(--fs-ui, 1));
+}
+
+html.fs-on .boot-vfd .zh {
+  font-size: clamp(13px, calc(14px * var(--fs-ui, 1)), 18px);
+}
+
+/* ---------- 2. 提示詞框與高亮底板同步鎖步（--fs-prompt） ---------- */
+html.fs-on .scr textarea,
+html.fs-on .scr input,
+html.fs-on .hl-wrap textarea,
+html.fs-on .hl,
+html.fs-on #negative,
+html.fs-on #promptSecs textarea,
+html.fs-on details.pe textarea,
+html.fs-on details.pe input[type=text],
+html.fs-on #cbSheet {
+  font-size: calc(13px * var(--fs-prompt, 1));
+}
+
+html.fs-on .hl-wrap textarea,
+html.fs-on .hl {
+  line-height: 1.6;
+}
+
+html.fs-on .wd-text,
+html.fs-on #h3Prompt,
+html.fs-on .llm-block textarea,
+html.fs-on #setPrText,
+html.fs-on .dir-pr textarea,
+html.fs-on .cm-panel textarea,
+html.fs-on .cm-char-bd textarea,
+html.fs-on .sh-ta,
+html.fs-on .tr-log {
+  font-size: calc(12px * var(--fs-prompt, 1));
+}
+
+html.fs-on .cb-page textarea {
+  font-size: calc(11.5px * var(--fs-prompt, 1));
+}
+
+html.fs-on .psec-key {
+  font-size: clamp(12px, calc(12px * var(--fs-prompt, 1)), 18px);
+}
+
+/* ---------- 3. 防破版微調 ---------- */
+html.fs-on .lora-item {
+  grid-template-columns: 26px minmax(0, 1fr) minmax(68px, 84px) minmax(54px, 4.4em) 22px 22px;
+}
+
+html.fs-on .settings {
+  max-width: min(100%, calc(780px * var(--fs-panel, 1)));
+}
+
+html.fs-on .dialog:not(.wide) {
+  width: min(calc(560px * var(--fs-panel, 1)), 100%);
+}
+
+html.fs-on .lb-body {
+  grid-template-columns: 1fr min(44vw, calc(360px * var(--fs-panel, 1)));
+}
+
+html.fs-on .dock-panel .label-row {
+  flex-wrap: wrap;
+}
+
+/* ---------- 4. 可選：高分屏外框同步微擴（html.fs-frame） ---------- */
+html.fs-frame .deck {
+  grid-template-columns: calc(76px * var(--fs-frame, 1)) 1fr;
+}
+
+@media (max-width: 900px) {
+  html.fs-frame .deck {
+    grid-template-columns: 1fr;
+  }
+}
+
+html.fs-frame .pkey {
+  font-size: calc(11.5px * var(--fs-frame, 1));
+}
+
+html.fs-frame .lbl,
+html.fs-frame .dock-head,
+html.fs-frame .dock-tab,
+html.fs-frame .dock-btn,
+html.fs-frame .dock-tag,
+html.fs-frame .dock-rail {
+  font-size: calc(11px * var(--fs-frame, 1));
+}
+
+html.fs-frame .piano button {
+  font-size: calc(11.5px * var(--fs-frame, 1));
+  padding-left: 2px;
+  padding-right: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+html.fs-frame .readout {
+  font-size: calc(19px * var(--fs-frame, 1));
+}
+
+html.fs-frame .status {
+  font-size: calc(18px * var(--fs-frame, 1));
+}
+
+html.fs-frame .readout .zh,
+html.fs-frame .status .zh {
+  font-size: calc(12.5px * var(--fs-frame, 1));
+}
+
+html.fs-frame .top .rocker button,
+html.fs-frame .top .chip-status.ai .st {
+  font-size: calc(11px * var(--fs-top, 1));
+}
+
+html.fs-frame .top .assist-btn {
+  font-size: calc(16px * var(--fs-top, 1));
+}
+
+html.fs-frame .top .chip-status.ai {
+  font-size: calc(15px * var(--fs-top, 1));
+}
+
+/* ---------- 5. 設定頁字號面板 ---------- */
+.fs-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fs-presets .chip {
+  padding: 5px 11px 4px;
+  font-weight: 600;
+}
+
+.fs-sliders {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px 14px;
+}
+
+@media (max-width: 700px) {
+  .fs-sliders {
+    grid-template-columns: 1fr;
+  }
+}
+
+.fs-ctrl {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: var(--case-2);
+  box-shadow: inset 0 1px 2px var(--groove);
+}
+
+.fs-ctrl .vfd {
+  font-size: 16px;
+  min-width: 96px;
+}
+
+.fs-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 6px;
+  background: var(--case-2);
+  box-shadow: inset 0 1px 2px var(--groove);
+}
+
+.fs-preview-scr {
+  margin: 0;
+  padding: 7px 10px;
+}
+
+.fs-preview-code {
+  margin: 0;
+  font: calc(13px * var(--fs-prompt, 1))/1.6 var(--f-data);
+  color: var(--ph-green);
+  word-break: break-word;
+}
+
+.fs-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.fs-status {
+  margin-left: auto;
+  color: var(--ok);
+}
