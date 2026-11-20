@@ -7,6 +7,7 @@ const path = require('node:path');
 const vm = require('node:vm');
 
 const SRC = fs.readFileSync(path.join(__dirname, '../ui/js/train.js'), 'utf8');
+const UTIL = fs.readFileSync(path.join(__dirname, '../ui/js/util.js'), 'utf8').replace(/^export /gm, '');
 
 function grab(head) {
   const i = SRC.indexOf(head);
@@ -71,6 +72,67 @@ test('花錢的地方沒確認不送', () => {
   assert.equal(b.model, 'x.safetensors');
   assert.equal('confirm' in b, false);
   assert.equal('junk' in b, false);
+});
+
+function localStep(vram, confirm) {
+  const elements = [], requests = [];
+  const api = vm.runInNewContext(UTIL + '\napi;', {
+    document: { addEventListener() {} }, AbortController, setTimeout, clearTimeout,
+    fetch(path, opts) {
+      requests.push({ path, method: opts.method, body: JSON.parse(opts.body) });
+      return { ok: true, json: async () => null };
+    },
+  });
+  const page = {
+    S: { target: 'local', vram, trainer: { installed: true } },
+    cur: () => ({ id: 't0123456789ab', family: 'anima' }),
+    fam: () => ({ label: 'Anima', min_vram_gb: 10 }),
+    busyKind: () => '', TARGETS: [], box: () => {}, note: () => {}, trainerBox: () => {},
+    el(tag, attrs, ...kids) {
+      const node = { tag, attrs, kids };
+      elements.push(node);
+      return node;
+    },
+    confirm, api,
+  };
+  vm.runInNewContext(
+    ['export function needsConfirm(', 'export function startBody(', 'async function call(', 'async function startTrain(', 'function step5(']
+      .map(grab).join('\n') + '\nstep5();', page,
+  );
+  const button = elements.find((n) => n.tag === 'button' && n.kids.includes('開始訓練'));
+  const warning = elements.find((n) => n.attrs.class === 'tr-warn');
+  return { button: button.attrs, warning: warning?.kids[0], requests };
+}
+
+test('顯存足夠或在原有 0.5GB 容許範圍，直接開始且不送 force', async () => {
+  for (const vram of [10, 9.5]) {
+    const { button, warning, requests } = localStep(vram, () => assert.fail('不應要求確認'));
+    assert.equal(button.disabled, false);
+    assert.equal(warning, undefined);
+    await button.onclick();
+    assert.deepEqual(requests, [{ path: '/api/train/t0123456789ab/start', method: 'POST', body: { target: 'local' } }]);
+  }
+});
+
+test('顯存少 2GB 仍可按，取消不送，確認才送 force', async () => {
+  let accept = false;
+  const prompts = [];
+  const { button, warning, requests } = localStep(8, (msg) => { prompts.push(msg); return accept; });
+  assert.equal(button.disabled, false);
+  assert.match(warning, /8GB.*10GB.*Anima 1550 步.*4～5 小時.*顯卡會被占滿/);
+  await button.onclick();
+  assert.equal(requests.length, 0);
+  accept = true;
+  await button.onclick();
+  assert.equal(prompts.length, 2);
+  for (const msg of prompts) assert.ok(msg.includes(warning));
+  assert.deepEqual(requests, [{ path: '/api/train/t0123456789ab/start', method: 'POST', body: { target: 'local', force: true } }]);
+});
+
+test('顯存少超過 2GB 會停用本機開始按鈕', () => {
+  const { button, warning } = localStep(7.9);
+  assert.equal(button.disabled, true);
+  assert.match(warning, /改用雲端顯卡或 C 站/);
 });
 
 test('進度事件只更新有帶的欄位', () => {

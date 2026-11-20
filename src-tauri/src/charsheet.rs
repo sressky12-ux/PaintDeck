@@ -4,18 +4,22 @@
 //! 生圖本身走既有 /api/generate（txt2img／multiref／sheet），存檔走資產庫 API。
 //! 2026-10-24 實測（D:\AI\小克工作區\測試區\charsheet\run.py，官方 Turbo 8 步）：兩個測試角色、兩個種子，結果見設計第 8 節。
 
-/// 全身轉身圖的輸出尺寸（橫的，五個全身一排）
+/// 全身轉身圖的輸出尺寸（橫的：左邊一欄正臉＋側臉特寫，右邊正／側／背三個全身）
 pub const TURN_W: u32 = 1664;
 pub const TURN_H: u32 = 928;
 /// 臉部特寫表的輸出尺寸（三欄兩列）
 pub const FACE_W: u32 = 1344;
 pub const FACE_H: u32 = 1344;
 
-const TURN: &str = "A professional character turnaround reference sheet of {who}. Five full-body views of the same character stand side by side \
-in one row on a plain light gray background, from left to right: front view, three-quarter front view, side view in profile, \
-three-quarter back view, and back view. Every view shows the whole body from head to feet at exactly the same height and scale, \
-feet on the same ground line, standing in a relaxed A-pose with the arms slightly away from the body. The face, hairstyle, \
-body proportions, outfit, colors and accessories match <image1> exactly in every view. Even flat studio lighting, no text.";
+// 2026-11-20 使用者要「左邊臉部特寫、右邊三個全身」的版面（原本五個全身一排，臉太小）；
+// 實測 Qwen 2.1 Turbo 8 步兩個種子都照版面畫（小克工作區 scratchpad sheet\v1_*.png）
+const TURN: &str = "A professional character reference sheet of {who}, on one plain light gray background, divided into two parts. \
+The left third of the image is one column with two head-and-shoulders close-ups stacked vertically: the top close-up shows the face \
+in front view looking at the camera, the bottom close-up shows the face in side profile view. The right two thirds of the image show \
+three full-body views of the same character standing side by side: front view, side view in profile, and back view. Each full-body view \
+shows the whole body from the top of the head to the feet at exactly the same height and scale, feet on the same ground line, standing \
+straight with the arms relaxed at the sides and a calm neutral expression. The face, eye color, hairstyle, body proportions, outfit, \
+colors and accessories match <image1> exactly in every view. Even flat studio lighting, no text, no labels.";
 const FACE: &str = "A character expression sheet of {who}, head and shoulders only: six portraits arranged in a grid of three columns and two rows \
 on a plain light gray background. Top row, all with a calm neutral expression: front view, three-quarter view, side profile view. \
 Bottom row, all front view: a happy smile, an angry frown, a shy blush. The face, eye color, hairstyle, hair color and accessories \
@@ -108,6 +112,7 @@ mod tests {
     fn prompt_kinds() {
         let (p, w, h) = prompt("turnaround", "a girl with orange hair", "anima").unwrap();
         assert!(p.contains("<image1>") && p.contains("a girl with orange hair") && p.contains("Anime illustration"));
+        assert!(p.contains("head-and-shoulders close-ups") && p.contains("three full-body views"), "左臉部特寫＋右三全身");
         assert_eq!((w, h), (TURN_W, TURN_H));
         let (p, w, h) = prompt("face", "", "qwen21").unwrap();
         assert!(p.contains("<image1>") && !p.contains("Anime illustration"));

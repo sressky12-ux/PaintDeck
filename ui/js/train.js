@@ -385,10 +385,10 @@ function trainerBox() {
     (t.log || []).length ? el("pre", { class: "tr-log", id: "trInstallLog" }, t.log.join("\n")) : el("pre", { class: "tr-log", id: "trInstallLog", hidden: true }));
 }
 
-async function startTrain(target, opts, paidText) {
+async function startTrain(target, opts, confirmText) {
   const p = cur();
-  const confirmed = needsConfirm(target) ? confirm(paidText) : true;
-  const body = startBody(target, opts, confirmed);
+  if (confirmText && !confirm(confirmText)) return;
+  const body = startBody(target, opts, !!confirmText);
   if (!body) return;
   const r = await call(`/api/train/${p.id}/start`, body);
   if (!r) return;
@@ -407,16 +407,19 @@ function step5() {
   let detail;
   if (S.target === "local") {
     const enough = !S.vram || S.vram + 0.5 >= f.min_vram_gb;
+    const force = !enough && S.vram + 2 >= f.min_vram_gb;
+    const warning = force ? `這台 ${S.vram}GB 顯存，比煉 ${f.label} 建議的 ${f.min_vram_gb}GB 少。還是可以煉，但會很慢（8GB 實測 Anima 1550 步約 4～5 小時），訓練時顯卡會被占滿。` : "";
     const sdxl = p.family === "sdxl" ? Object.entries((app.state && app.state.models && app.state.models.unet_family) || {}).filter(([, fm]) => fm === "sdxl").map(([n]) => n) : [];
     const model = p.family === "sdxl" ? el("select", {}, el("option", { value: "" }, "SDXL 官方底模（第一次會下載約 7GB）"), ...sdxl.map((n) => el("option", { value: n }, n))) : null;
     if (model && sdxl.length) model.value = sdxl[0];
     detail = box("本機顯卡",
       enough ? note(`這台 ${S.vram || "?"}GB 顯存，煉 ${f.label} 至少要 ${f.min_vram_gb}GB：可以。訓練的時候顯卡會被占滿，先不要生圖。`)
-        : el("div", { class: "tr-warn" }, `這台 ${S.vram}GB 顯存不夠煉 ${f.label}（至少 ${f.min_vram_gb}GB）。改用雲端顯卡或 C 站。`),
+        : el("div", { class: "tr-warn" }, warning || `這台 ${S.vram}GB 顯存不夠煉 ${f.label}（至少 ${f.min_vram_gb}GB）。改用雲端顯卡或 C 站。`),
       f.gate ? el("div", { class: "tr-warn" }, `這個底模要先到 Hugging Face 按同意才能下載：${f.gate}`) : null,
       model ? el("label", { class: "tr-f" }, "底模", model) : note(`底模：${f.base}（第一次會自動下載）`),
       trainerBox(),
-      el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || !enough || !(S.trainer && S.trainer.installed), onclick: () => startTrain("local", { model: model ? model.value : "" }) }, "開始訓練")));
+      el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || (!enough && !force) || !(S.trainer && S.trainer.installed),
+        onclick: () => startTrain("local", { model: model ? model.value : "", force: force || undefined }, force ? `${warning}\n\n確定要開始本機訓練嗎？` : "") }, "開始訓練")));
   } else if (S.target === "cloud") {
     const sub = keys([["runpod", "租 RunPod"], ["remote", "我自己的訓練機"]], S.cloud, (c) => { S.cloud = c; render(); });
     if (S.cloud === "runpod") {

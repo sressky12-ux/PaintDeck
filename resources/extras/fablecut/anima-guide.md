@@ -170,7 +170,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 網頁：生成頁四視圖模式「＋ 做新角色設定圖」、資產庫角色「做設定圖」、導演台角色設定卡、圖片動作「做設定圖」都開同一個視窗（`ui\js\charsheet.js`）。流程照下面自己做也可以：
 1. 定稿（一張全身正面站好的角色圖）：有圖就 `POST /api/to_input {id}`；只有文字就 `POST /api/charsheet/prompt {kind:"pose", family}` 拿補字，接在描述後面用 txt2img 畫（832×1216）。
-2. 展開：`POST /api/charsheet/prompt {kind:"turnaround"|"face", desc?, family}` → `{prompt, width, height}`（轉身圖 1664×928、臉部特寫表 1344×1344）；用 `mode:"multiref"`、`refs:[{image: 定稿的 input 檔名}]`、`size_mode:"fixed"` 送 Qwen 2.1（官方 Turbo 8 步、CFG 1、euler／simple）。`<image1>` 就是定稿。
+2. 展開：`POST /api/charsheet/prompt {kind:"turnaround"|"face", desc?, family}` → `{prompt, width, height}`（轉身圖 1664×928：左邊一欄正臉＋側臉特寫、右邊正／側／背三個全身，2026-11-20 起；臉部特寫表 1344×1344）；用 `mode:"multiref"`、`refs:[{image: 定稿的 input 檔名}]`、`size_mode:"fixed"` 送 Qwen 2.1（官方 Turbo 8 步、CFG 1、euler／simple）。`<image1>` 就是定稿。
 3. 裸體版（選填）：轉身圖用 `mode:"sheet"`、`sheet:{req: 四視圖編輯的全裸句}`。
 4. 外觀：`POST /api/director/describe {image}`；tag：`POST /api/charsheet/tags {name}` → `{tags}`（反推後拿掉姿勢、表情、背景、人數）。
 5. 存：`POST /api/lib {kind:"char", name, data:{look_en, look_zh, tags_anima, spec?}}`，再逐張 `POST /api/assets/<id>/file {gallery_id|input, role, replace:true}`：定稿 `src`、轉身圖 `sheet`、臉部 `face`、正面特寫 `portrait`、裸體 `sheet_nude`。

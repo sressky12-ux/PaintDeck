@@ -140,7 +140,11 @@ fn say(app: &Shared, line: impl Into<String>) {
 }
 
 /// 跑一個指令，把它印的每一行轉給網頁
-async fn run_logged(app: &Shared, mut cmd: tokio::process::Command) -> Result<(), String> {
+async fn run_logged(app: &Shared, cmd: tokio::process::Command) -> Result<(), String> {
+    run_logged_with_error(app, cmd, None).await
+}
+
+async fn run_logged_with_error(app: &Shared, mut cmd: tokio::process::Command, exit_error: Option<(i32, &str)>) -> Result<(), String> {
     quiet(&mut cmd);
     cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
     let mut child = cmd.spawn().map_err(|e| format!("開不了：{e}"))?;
@@ -162,6 +166,8 @@ async fn run_logged(app: &Shared, mut cmd: tokio::process::Command) -> Result<()
     let _ = tokio::join!(a, b);
     if st.success() {
         Ok(())
+    } else if let Some((_, msg)) = exit_error.filter(|(code, _)| st.code() == Some(*code)) {
+        Err(msg.to_string())
     } else {
         Err(format!("指令失敗（代碼 {}），往上看最後幾行訊息", st.code().unwrap_or(-1)))
     }
@@ -213,7 +219,9 @@ async fn install_run(app: &Shared) -> Result<(), String> {
     }
     say(app, "安裝訓練環境（PyTorch 和相依套件，約 6～8GB，要十幾分鐘到半小時）…");
     let mut cmd = tokio::process::Command::new(&py);
-    cmd.args(["-m", "manager", "install"]).current_dir(&kit).env("PYTHONUNBUFFERED", "1").env("PYTHONIOENCODING", "utf-8");
+    // 不用 `-m manager`：ComfyUI 附的 python_embeded 有 ._pth 檔，sys.path 不含目前資料夾，-m 會找不到 manager
+    // （2026-11-20 實際踩到）。直接跑 manager/__main__.py，它自己會把 ai-toolkit 根目錄插進 sys.path
+    cmd.arg(kit.join("manager").join("__main__.py")).arg("install").current_dir(&kit).env("PYTHONUNBUFFERED", "1").env("PYTHONIOENCODING", "utf-8");
     run_logged(app, cmd).await?;
     let vpy = venv_python(&kit).ok_or("安裝跑完了，但找不到訓練器的 Python（.venv）")?;
     // 安裝管理器會在環境裡寫一支 sitecustomize.py（掛 ffmpeg 的路徑）。安裝路徑有中文時它用系統編碼寫，
@@ -223,8 +231,8 @@ async fn install_run(app: &Shared) -> Result<(), String> {
     run_logged(app, cmd).await?;
     say(app, "檢查 PyTorch 看不看得到顯卡…");
     let mut cmd = tokio::process::Command::new(&vpy);
-    cmd.args(["-c", "import torch; print('torch', torch.__version__, 'cuda', torch.cuda.is_available())"]).current_dir(&kit);
-    run_logged(app, cmd).await?;
+    cmd.args(["-c", "import sys, torch; cuda = torch.cuda.is_available(); print('torch', torch.__version__, 'cuda', cuda); sys.exit(0 if cuda else 3)"]).current_dir(&kit);
+    run_logged_with_error(app, cmd, Some((3, "PyTorch 看不到 NVIDIA 顯卡（torch.cuda.is_available() 是 False）：先更新 NVIDIA 驅動，再按一次「安裝訓練器」"))).await?;
     crate::director::write_atomic(&dir.join("installed.json"), &json!({"commit": train::TOOLKIT_COMMIT, "at": chrono::Utc::now().timestamp()})).map_err(|e| e.to_string())?;
     say(app, "訓練器裝好了");
     Ok(())
