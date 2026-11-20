@@ -12,6 +12,8 @@ ORT_URL="https://github.com/microsoft/onnxruntime/releases/download/v1.30.0/onnx
 ORT_TGZ_SHA="a5ed5a3cac51fbb2e90da632ae43d19212faaa20e76484e62bcb7c23ddb3b3fd"
 ORT_INNER="onnxruntime-linux-x64-1.30.0/lib/libonnxruntime.so.1.30.0"
 ORT_SHA="245a6f8c38127551057a1cd1ffd59f0a186a227ade4f3492dea2494eb565542e"
+# 備援：官方抓不到時用（PaintDeck 的 Release deps-onnxruntime-1.30.0，檔案就是上面那個 .so，從 26.1117.4 的 deb 取出、雜湊相同）
+ORT_BACKUP_URL="https://github.com/sressky12-ux/PaintDeck/releases/download/deps-onnxruntime-1.30.0/libonnxruntime.so"
 ORT_OUT="$DEST/onnxruntime/libonnxruntime.so"
 
 sha() { sha256sum "$1" | cut -d' ' -f1; }
@@ -24,20 +26,27 @@ fi
 
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
-curl -sSLf --retry 3 -o "$work/ort.tgz" "$ORT_URL"
-got="$(sha "$work/ort.tgz")"
-if [ "$got" != "$ORT_TGZ_SHA" ]; then
-  echo "SHA-256 不對：$ORT_URL" >&2
-  echo "  應該是 $ORT_TGZ_SHA" >&2
-  echo "  下載到 $got" >&2
-  exit 1
+if curl -sSLf --retry 3 -o "$work/ort.tgz" "$ORT_URL"; then
+  got="$(sha "$work/ort.tgz")"
+  if [ "$got" != "$ORT_TGZ_SHA" ]; then
+    echo "SHA-256 不對：$ORT_URL" >&2
+    echo "  應該是 $ORT_TGZ_SHA" >&2
+    echo "  下載到 $got" >&2
+    exit 1
+  fi
+  tar -xzf "$work/ort.tgz" -C "$work" "$ORT_INNER"
+  so="$work/$ORT_INNER"
+else
+  # 2026-11-21 起官方網址回 404（整個 microsoft/onnxruntime repo 都找不到）：改抓 PaintDeck 自己放的同一個檔，下面一樣比對雜湊
+  echo "  官方網址抓不到，改用備援：$ORT_BACKUP_URL" >&2
+  so="$work/libonnxruntime.so"
+  curl -sSLf --retry 3 -o "$so" "$ORT_BACKUP_URL"
 fi
-tar -xzf "$work/ort.tgz" -C "$work" "$ORT_INNER"
-got="$(sha "$work/$ORT_INNER")"
+got="$(sha "$so")"
 if [ "$got" != "$ORT_SHA" ]; then
-  echo "SHA-256 不對：$ORT_INNER（應該是 $ORT_SHA，取出來是 $got）" >&2
+  echo "SHA-256 不對：libonnxruntime.so（應該是 $ORT_SHA，拿到的是 $got）" >&2
   exit 1
 fi
 mkdir -p "$(dirname "$ORT_OUT")"
-mv "$work/$ORT_INNER" "$ORT_OUT"
+mv "$so" "$ORT_OUT"
 echo "  好了：$ORT_OUT"
