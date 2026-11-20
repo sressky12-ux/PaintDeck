@@ -604,9 +604,200 @@ pub fn check(sheet: &Value, prompts: &[String], r: &Rules) -> Vec<Value> {
             }
             prev_to = Some(prev_to.map_or(to, |p| p.max(to)));
         }
+        if h3 {
+            out.extend(text_rules(i, prompt, None));
+        }
     }
     out.sort_by_key(|x| (x["seg"].as_u64().unwrap_or(0), x["rule"].as_u64().unwrap_or(0)));
+    with_basis(out)
+}
+
+// ---------------------------------------------------------------- 單段提示詞健檢（2026-11-19）
+// 第 9～14 條參考 Phasyn Studio 的 H3 提示詞規則表（apps/frontend/.../prompt/advisor/catalog.ts），
+// 依據對過 MiniMax 官方寫作指南（skill h3-prompt-writing 的 references/base-en.txt、ref-en.txt）。
+// 拍攝單的 check() 和 H3 頁自己寫的提示詞（check_prompt）共用。
+
+/// 每條規則的依據：official＝官方 H3 寫作指南、code＝繪匣或模型程式的實際行為、experience＝我們實拍的經驗
+pub fn basis_of(rule: u64) -> &'static str {
+    match rule {
+        4 | 7 | 8 | 9 | 12 => "code",
+        10 | 11 | 13 | 14 => "official",
+        _ => "experience",
+    }
+}
+
+fn with_basis(mut out: Vec<Value>) -> Vec<Value> {
+    for x in &mut out {
+        let b = basis_of(x["rule"].as_u64().unwrap_or(0));
+        x["basis"] = json!(b);
+    }
     out
+}
+
+/// 官方欄位：三欄（T2VA／I2VA／FL2VA／L2VA）與六段（Ref2VA）
+const BASE_FIELDS: [&str; 3] = ["integrated_multimodal_description", "overall_soundscape", "non_diegetic_music"];
+const REF_FIELDS: [&str; 6] = ["subject_definitions", "summary", "retention_analysis", "detailed_description", "overall_soundscape", "non_diegetic_music"];
+
+fn field_re() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new(r"(?mi)^[ \t]*(integrated_multimodal_description|subject_definitions|summary|retention_analysis|detailed_description|overall_soundscape|non_diegetic_music)[ \t]*[:：]").unwrap()
+    })
+}
+
+/// 找出提示詞裡的官方欄位：(小寫名稱, 原文名稱, 標題開始位置, 內容) 照出現順序
+fn fields(prompt: &str) -> Vec<(String, String, usize, String)> {
+    let hits: Vec<(String, String, usize, usize)> = field_re()
+        .captures_iter(prompt)
+        .map(|c| {
+            let m = c.get(0).unwrap();
+            let name = c.get(1).unwrap().as_str();
+            (name.to_lowercase(), name.to_string(), m.start(), m.end())
+        })
+        .collect();
+    hits.iter()
+        .enumerate()
+        .map(|(k, (low, raw, start, end))| {
+            let stop = hits.get(k + 1).map_or(prompt.len(), |n| n.2);
+            (low.clone(), raw.clone(), *start, prompt[*end..stop].trim().to_string())
+        })
+        .collect()
+}
+
+fn issue_note(seg: usize, rule: u64, level: &str, word: &str, msg: &str) -> Value {
+    json!({"seg": seg, "rule": rule, "level": level, "word": word, "msg": msg})
+}
+
+/// 只看提示詞本身就能判斷的規則（第 9～14 條）。refs＝H3 頁實際送出的素材數（圖、影片、聲音）；
+/// 拍攝單傳 None（參考圖編號由第 7 條管、說話者編號由拍攝單自己組）
+pub fn text_rules(seg: usize, prompt: &str, refs: Option<(usize, usize, usize)>) -> Vec<Value> {
+    let mut out = Vec::new();
+    // 第 9 條：格式。提示詞原樣送進 H3，Markdown 符號、範本沒刪的 TODO 都會被當成內容
+    if prompt.trim().is_empty() {
+        out.push(issue_note(seg, 9, "error", "", "提示詞是空的"));
+        return out;
+    }
+    static MD: OnceLock<Regex> = OnceLock::new();
+    let md = MD.get_or_init(|| Regex::new(r"(?m)^[ \t]{0,3}#{1,6}[ \t]|\*\*|__|`").unwrap());
+    if let Some(m) = md.find(prompt) {
+        out.push(issue_note(seg, 9, "warn", m.as_str().trim(), "有 Markdown 符號（# 標題、粗體、反引號）：H3 會照字收進去，拿掉比較乾淨"));
+    }
+    static TODO: OnceLock<Regex> = OnceLock::new();
+    let todo = TODO.get_or_init(|| Regex::new(r"(?i)\[\s*todo[^\]]*\]|\btodo\s*[:：]|\{\{[^}]*\}\}").unwrap());
+    if let Some(m) = todo.find(prompt) {
+        out.push(issue_note(seg, 9, "error", m.as_str(), "範本留下的空格還沒填"));
+    }
+
+    // 第 10 條：官方欄位。有寫官方欄位才檢查（自由寫的一段話不管）
+    let fs = fields(prompt);
+    let has = |n: &str| fs.iter().any(|f| f.0 == n);
+    let is_ref = has("subject_definitions") || has("retention_analysis") || has("detailed_description");
+    let is_base = has("integrated_multimodal_description");
+    if is_ref || is_base {
+        let want: &[&str] = if is_ref { &REF_FIELDS } else { &BASE_FIELDS };
+        if is_ref && is_base {
+            out.push(issue_note(seg, 10, "warn", "integrated_multimodal_description", "參考素材模式（六段）的正文欄位叫 detailed_description，不要再寫 integrated_multimodal_description"));
+        }
+        for f in &fs {
+            if f.1 != f.0 {
+                out.push(issue_note(seg, 10, "warn", &f.1, "欄位名稱要照官方寫法全小寫"));
+            }
+        }
+        for w in want {
+            match fs.iter().filter(|f| f.0 == *w).count() {
+                0 => out.push(issue_note(seg, 10, "warn", w, "少了這個官方欄位")),
+                1 => {}
+                _ => out.push(issue_note(seg, 10, "warn", w, "這個欄位寫了不只一次")),
+            }
+        }
+        for f in fs.iter().filter(|f| want.contains(&f.0.as_str())) {
+            if f.3.is_empty() {
+                out.push(issue_note(seg, 10, "warn", &f.1, "這個欄位沒有內容（沒有背景音樂就寫 N/A）"));
+            }
+        }
+        let order: Vec<usize> = fs.iter().filter_map(|f| want.iter().position(|w| *w == f.0)).collect();
+        if order.windows(2).any(|p| p[1] < p[0]) {
+            out.push(issue_note(seg, 10, "warn", "", &format!("欄位順序跟官方不同，官方是：{}", want.join(" → "))));
+        }
+        // 第 13 條：聲音欄位
+        let body = |n: &str| fs.iter().find(|f| f.0 == n).map(|f| f.3.as_str()).unwrap_or("");
+        let na = |t: &str| t.trim().trim_end_matches(['.', '。']).eq_ignore_ascii_case("n/a");
+        let low = prompt.to_lowercase();
+        let silent = ["silence", "silent", "no sound", "靜音", "無聲", "没有声音", "沒有聲音"].iter().any(|w| low.contains(w));
+        if has("overall_soundscape") && na(body("overall_soundscape")) && !silent {
+            out.push(issue_note(seg, 13, "warn", "overall_soundscape: N/A", "官方只在要求全片靜音時才寫 N/A；有環境音、動作聲就寫出來"));
+        }
+        let main = (if is_ref { body("detailed_description") } else { body("integrated_multimodal_description") }).to_lowercase();
+        let music = ["background music", "bgm", "soundtrack", "背景音樂", "背景音乐", "配樂", "配乐"].iter().find(|w| main.contains(*w));
+        if let (true, Some(w)) = (has("non_diegetic_music") && na(body("non_diegetic_music")), music) {
+            out.push(issue_note(seg, 13, "warn", w, "正文提到背景音樂，但 non_diegetic_music 寫 N/A；觀眾才聽得到的配樂要寫在 non_diegetic_music"));
+        }
+        for n in ["overall_soundscape", "non_diegetic_music"] {
+            if body(n).contains("<d>") {
+                out.push(issue_note(seg, 13, "warn", n, "台詞 <d> 要寫在正文裡，不要放進聲音欄位"));
+            }
+        }
+    }
+
+    // 第 11 條：台詞
+    let (open, close) = (prompt.matches("<d>").count(), prompt.matches("</d>").count());
+    if open != close {
+        out.push(issue_note(seg, 11, "error", &format!("<d>×{open}／</d>×{close}"), "台詞的 <d> 和 </d> 沒有成對"));
+    }
+    for m in dialogue_re().find_iter(prompt) {
+        let inner = m.as_str()[3..m.as_str().len() - 4].trim_start();
+        let tagged = inner.starts_with('[') && inner.find(']').is_some_and(|k| k > 1);
+        if !tagged {
+            let word: String = m.as_str().chars().take(24).collect();
+            out.push(issue_note(seg, 11, "warn", &word, "台詞開頭要寫語言標籤，例如 <d>[Chinese] …</d>"));
+        }
+    }
+    static SPEAKER: OnceLock<Regex> = OnceLock::new();
+    let speaker = SPEAKER.get_or_init(|| Regex::new(r"[(（]\s*S\d+").unwrap());
+    if refs.is_some() && open > 0 && !speaker.is_match(prompt) {
+        out.push(issue_note(seg, 11, "warn", "(S1)", "有台詞，但沒寫說話者編號 (S1)、(S2)：多人時容易配錯嘴"));
+    }
+
+    // 第 12、14 條：素材標籤（只有 H3 頁知道實際送了幾個素材）
+    if let Some((img, vid, aud)) = refs {
+        for tag in crate::h3::missing_refs(prompt, img, vid, aud) {
+            out.push(issue_note(seg, 12, "error", &tag, "提示詞提到這個素材，但素材板上沒有（送出會被擋下）"));
+        }
+        for (kind, n) in [("Picture", img), ("Video", vid)] {
+            for k in 1..=n {
+                let re = Regex::new(&format!(r"\b{kind} {k}\b")).unwrap();
+                if !re.is_match(prompt) {
+                    out.push(issue_note(seg, 14, "warn", &format!("<{kind} {k}>"), "這個素材會送出，但提示詞沒提到它：模型不知道要拿它做什麼"));
+                }
+            }
+        }
+    }
+    out
+}
+
+/// H3 頁自己寫的提示詞（沒有拍攝單）：第 1～3 條字表＋第 9～14 條
+pub fn check_prompt(prompt: &str, refs: (usize, usize, usize), r: &Rules) -> Vec<Value> {
+    let low = prompt.to_lowercase();
+    let mut out = Vec::new();
+    for w in hits(&low, &r.mood) {
+        out.push(issue_note(0, 1, "warn", w, "情緒形容詞 H3 演不出來，換成看得到的動作或表情"));
+    }
+    let mut plain = dialogue_re().replace_all(&low, " ").into_owned();
+    for f in [CONT_ZH, CONT_EN, REF_TAIL_ZH, REF_TAIL_EN].iter().map(|f| f.to_lowercase()).chain(r.prevent_skip.iter().cloned()) {
+        plain = plain.replace(&f, " ");
+    }
+    for w in hits(&plain, &r.prevent) {
+        out.push(issue_note(0, 2, "warn", w, "寫「不要什麼」常常反而被演出來，改寫成要它做的事"));
+    }
+    if let Some(m) = r.prevent_re.iter().find_map(|re| re.find(&plain)) {
+        out.push(issue_note(0, 2, "warn", m.as_str(), "寫「不要什麼」常常反而被演出來，改寫成要它做的事"));
+    }
+    for w in hits(&low, &r.danger) {
+        out.push(issue_note(0, 3, "warn", w, "這個字容易讓畫面多出不想要的東西（危險字清單）"));
+    }
+    out.extend(text_rules(0, prompt, Some(refs)));
+    out.sort_by_key(|x| x["rule"].as_u64().unwrap_or(0));
+    with_basis(out)
 }
 
 /// 開拍預估：每張卡 {gpu, secs, usd}。secs = 開機 + Σ 每 10 秒要算的秒數 × 段長 / 10
@@ -931,6 +1122,86 @@ mod tests {
         assert!(back["refs"]["items"][0]["file"].is_null() && back["refs"]["items"][0]["asset_id"] == 5, "{back}");
         // 沒檔名的參考圖不寫進提示詞
         assert!(!compose(&back, 0, "zh").contains("<Picture"));
+    }
+
+    fn rule_ids(v: &[Value]) -> Vec<u64> {
+        v.iter().map(|x| x["rule"].as_u64().unwrap()).collect()
+    }
+
+    #[test]
+    fn composed_sheet_prompts_trip_no_text_rules() {
+        // 拍攝單自己組的提示詞（中英）不能被第 9～14 條誤報，不然每次送出都跳對話框
+        let sheet = json!({
+            "cast": [{"name": "小克", "look_zh": "橘色長髮", "look_en": "long orange hair", "voice": "soft", "lang": "Chinese"}],
+            "first": {"file": "f.png"}, "style": "日系動畫", "scene": {"text": "咖啡廳"},
+            "segments": [{"secs": 10, "beats": [{"from": 1.0, "to": 4.0, "action": "她右手拿起杯子", "who": "S1", "lang": "ja", "line": "いただきます"}]}, {"secs": 10, "beats": []}]
+        });
+        let s = normalize(&sheet).unwrap();
+        for lang in ["zh", "en"] {
+            let prompts: Vec<String> = (0..2).map(|i| compose(&s, i, lang)).collect();
+            let issues = check(&s, &prompts, &rules(&[]));
+            assert!(!issues.iter().any(|x| x["rule"].as_u64().unwrap() >= 9), "{lang}: {issues:?}");
+            assert!(issues.iter().all(|x| x["basis"].is_string()));
+        }
+    }
+
+    #[test]
+    fn text_rules_format_and_fields() {
+        assert_eq!(rule_ids(&text_rules(0, "  ", None)), [9]);
+        let md = text_rules(0, "## Shot\n**她轉身**", None);
+        assert!(md.iter().any(|x| x["rule"] == 9 && x["level"] == "warn"), "{md:?}");
+        assert!(text_rules(0, "A girl waves. [TODO: 寫動作]", None).iter().any(|x| x["rule"] == 9 && x["level"] == "error"));
+        // 自由寫的一段話不檢查欄位
+        assert!(text_rules(0, "A girl waves at the camera.", None).is_empty());
+        let good = "integrated_multimodal_description: [Shot 1] A girl waves.\n\noverall_soundscape: Light rain.\n\nnon_diegetic_music: N/A";
+        assert!(text_rules(0, good, None).is_empty(), "{:?}", text_rules(0, good, None));
+        let missing = text_rules(0, "integrated_multimodal_description: A girl waves.", None);
+        assert_eq!(missing.iter().filter(|x| x["rule"] == 10).count(), 2, "少兩欄：{missing:?}");
+        let order = "overall_soundscape: Rain.\nintegrated_multimodal_description: A girl waves.\nnon_diegetic_music: N/A";
+        assert!(text_rules(0, order, None).iter().any(|x| x["rule"] == 10 && x["msg"].as_str().unwrap().contains("順序")));
+        let dup_empty = "integrated_multimodal_description: A.\nintegrated_multimodal_description: B.\noverall_soundscape:\nnon_diegetic_music: N/A";
+        let d = text_rules(0, dup_empty, None);
+        assert!(d.iter().any(|x| x["msg"].as_str().unwrap().contains("不只一次")) && d.iter().any(|x| x["msg"].as_str().unwrap().contains("沒有內容")), "{d:?}");
+        let case = text_rules(0, "Integrated_Multimodal_Description: A.\noverall_soundscape: Rain.\nnon_diegetic_music: N/A", None);
+        assert!(case.iter().any(|x| x["msg"].as_str().unwrap().contains("全小寫")), "{case:?}");
+        let mixed = "subject_definitions: <Picture 1> is a woman.\nsummary: [Ref2VA] x\nretention_analysis: x\nintegrated_multimodal_description: x\noverall_soundscape: Rain.\nnon_diegetic_music: N/A";
+        let m = text_rules(0, mixed, None);
+        assert!(m.iter().any(|x| x["word"] == "integrated_multimodal_description"), "{m:?}");
+        assert!(m.iter().any(|x| x["word"] == "detailed_description"), "Ref2VA 少正文：{m:?}");
+    }
+
+    #[test]
+    fn text_rules_dialogue_and_sound() {
+        assert!(text_rules(0, "She (S1) says: <d>[English] Hi", None).iter().any(|x| x["rule"] == 11 && x["level"] == "error"));
+        let no_tag = text_rules(0, "She (S1) says: <d>Hi</d>", None);
+        assert!(no_tag.iter().any(|x| x["rule"] == 11 && x["msg"].as_str().unwrap().contains("語言標籤")), "{no_tag:?}");
+        assert!(text_rules(0, "小克（S1）說：<d>[Chinese] 嗨</d>", None).is_empty());
+        // 說話者編號只有 H3 頁自己寫的才檢查（拍攝單沒角色時會寫「這個角色說」）
+        assert!(text_rules(0, "She says: <d>[English] Hi</d>", None).is_empty());
+        assert!(text_rules(0, "She says: <d>[English] Hi</d>", Some((0, 0, 0))).iter().any(|x| x["word"] == "(S1)"));
+        let na = "integrated_multimodal_description: A girl waves.\noverall_soundscape: N/A\nnon_diegetic_music: N/A";
+        assert!(text_rules(0, na, None).iter().any(|x| x["rule"] == 13), "N/A 又沒要求靜音");
+        let silent = "integrated_multimodal_description: A completely silent film; a girl waves.\noverall_soundscape: N/A\nnon_diegetic_music: N/A";
+        assert!(!text_rules(0, silent, None).iter().any(|x| x["rule"] == 13));
+        let bgm = "integrated_multimodal_description: A girl dances to background music.\noverall_soundscape: Footsteps.\nnon_diegetic_music: N/A";
+        assert!(text_rules(0, bgm, None).iter().any(|x| x["rule"] == 13 && x["word"] == "background music"));
+        let d_in_sound = "integrated_multimodal_description: A girl waves.\noverall_soundscape: She (S1) says <d>[English] hi</d>\nnon_diegetic_music: N/A";
+        assert!(text_rules(0, d_in_sound, None).iter().any(|x| x["rule"] == 13 && x["word"] == "overall_soundscape"));
+    }
+
+    #[test]
+    fn check_prompt_counts_labels_and_tags_basis() {
+        let r = rules(&[]);
+        let out = check_prompt("<Picture 1> and <Picture 3> wave.", (2, 0, 0), &r);
+        assert!(out.iter().any(|x| x["rule"] == 12 && x["word"] == "<Picture 3>" && x["basis"] == "code"), "{out:?}");
+        assert!(out.iter().any(|x| x["rule"] == 14 && x["word"] == "<Picture 2>" && x["basis"] == "official"), "{out:?}");
+        // Picture 10 不算提到 Picture 1；FL2VA 對齊句的「Picture 2」沒有角括號也算
+        let ten = check_prompt("Picture 10 here. How the reference pictures align — Picture 2 (from Shot 2).", (2, 0, 0), &r);
+        assert!(ten.iter().any(|x| x["rule"] == 14 && x["word"] == "<Picture 1>") && !ten.iter().any(|x| x["word"] == "<Picture 2>"), "{ten:?}");
+        // 字表規則也有，依據是經驗
+        let mood = check_prompt("A sultry girl waves.", (0, 0, 0), &r);
+        assert!(mood.iter().any(|x| x["rule"] == 1 && x["basis"] == "experience"), "{mood:?}");
+        assert!(check_prompt("A girl waves at the camera.", (0, 0, 0), &r).is_empty());
     }
 
     #[test]

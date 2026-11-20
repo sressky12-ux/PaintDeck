@@ -3,7 +3,7 @@ import { $, $$, api as baseApi, store, fmtBytes, debounce } from "./util.js";
 import { setIc, appIcon } from "./deck.js";
 import * as i18n from "./i18n.js";
 import { mountNet } from "./net.js";
-import { reuseDefaults, locationRequest, samePath } from "./setup-reuse.js";
+import { reuseDefaults, locationRequest, samePath, cleanPath, addScanDir, scanRequest } from "./setup-reuse.js";
 
 // 介面語言：設定頁選過簡中／英文，精靈也照著翻（先翻原始畫面，之後長出來的字由 i18n.js 的監看器接手）
 await i18n.init();
@@ -524,6 +524,7 @@ function renderModels() {
   const lit = ids.length ? ["basic", "full", "none", "anima"].find((k) => sets[k].sort().join() === now) : null;
   $$("#packQuick [data-set]").forEach((b) => b.classList.toggle("on", b.dataset.set === lit));
   diskWarn();
+  renderPlan();
 }
 
 // 低配提醒：顯存 8GB 以下或記憶體 16GB 以下（後端 setup.rs lite_view）。不擋，只是預設只裝動漫，並提醒會很慢
@@ -569,17 +570,61 @@ $$("#packQuick [data-set]").forEach((b) => (b.onclick = () => {
 }));
 
 // 掃描這台電腦已有的模型（model_dirs.rs）：勾選的資料夾加進外部模型清單，再檢查一次「還缺幾個」
-// 第一次進到這頁就自動掃（不用自己按）；之後要再掃按按鈕
-let scanTimer = null, scanned = false, scanRunning = false;
+// 第一次進到這頁就自動掃（不用自己按）；之後要再掃按按鈕。
+// 掃描範圍（2026-11-20 網友回報：「它把我整部電腦在掃描要花很久，而我知道我的模型都放在哪」）：整台電腦，或只掃指定的資料夾。
+// 選了什麼記在這台電腦（store），下次開精靈照用；選「只掃指定的資料夾」但還沒加資料夾時不自動掃
+let scanTimer = null, scanned = false, scanRunning = false, scanAll = false;
+let mdScope = store.get("setup_md_scope", "all") === "dirs" ? "dirs" : "all";
+const savedDirs = store.get("setup_md_dirs", []);
+let mdDirs = (Array.isArray(savedDirs) ? savedDirs : []).filter((x) => typeof x === "string").reduce(addScanDir, []);
 function autoScan() {
-  if (!scanned) F("mdScan").onclick();
+  renderScope();
+  if (!scanned) { if (mdScope === "all" || mdDirs.length) F("mdScan").onclick(); }
   else if (scanRunning) pollScan(); // 掃到一半跑去上一頁又回來：接著顯示進度
+}
+function saveScope() { store.set("setup_md_scope", mdScope); store.set("setup_md_dirs", mdDirs); }
+function renderScope() {
+  $$('input[name="mdScope"]').forEach((r) => (r.checked = r.value === mdScope));
+  F("mdDirsBox").hidden = mdScope !== "dirs";
+  F("mdDirList").innerHTML = mdDirs.length ? mdDirs.map((d, i) => `<div class="md-row"><span class="md-path" translate="no">${esc(d)}</span><button class="akey sm" type="button" data-rm="${i}">移除</button></div>`).join("")
+    : `<div class="muted sm">還沒加資料夾。</div>`;
+  $$("#mdDirList [data-rm]").forEach((b) => (b.onclick = () => { mdDirs = mdDirs.filter((_, i) => i !== +b.dataset.rm); saveScope(); renderScope(); }));
+  F("mdScan").textContent = mdScope === "dirs" ? "掃描指定的資料夾" : "重新掃描這台電腦已有的模型";
+}
+function addDir(raw) {
+  mdDirs = addScanDir(mdDirs, raw);
+  saveScope(); renderScope();
+}
+$$('input[name="mdScope"]').forEach((r) => (r.onchange = () => {
+  mdScope = r.value; saveScope(); renderScope();
+  if (mdScope === "dirs" && scanRunning && scanAll) stopScan(); // 改成只掃指定的資料夾：正在掃整台電腦的那次不用等它掃完
+}));
+F("mdDirAdd").onclick = () => { if (cleanPath(F("mdDirPath").value)) { addDir(F("mdDirPath").value); F("mdDirPath").value = ""; } };
+F("mdDirPath").onkeydown = (e) => { if (e.key === "Enter") F("mdDirAdd").onclick(); };
+F("mdDirPick").onclick = async () => {
+  let r;
+  try { r = await api("/api/setup/pick_folder", { json: { title: i18n.tr("選要掃描的資料夾"), start: cleanPath(F("mdDirPath").value) || mdDirs.at(-1) || "" }, timeout: 0 }); }
+  catch (e) { F("mdScanOut").hidden = false; F("mdScanOut").textContent = e.message; return; }
+  if (r.path) addDir(r.path);
+};
+// 停掉正在跑的掃描，等它真的停了再回來（後端卡在很慢的硬碟上時要讀完那一層才停；最多等約 20 秒）
+async function stopScan() {
+  await api("/api/setup/model_scan/cancel", { method: "POST" }).catch(() => {});
+  for (let i = 0; i < 40; i++) {
+    const s = await api("/api/setup/model_scan/status", { json: chosen() }).catch(() => null);
+    if (!s?.running) return;
+    await new Promise((ok) => setTimeout(ok, 500));
+  }
 }
 F("mdScan").onclick = async () => {
   scanned = true;
-  F("mdScanOut").hidden = false; // 自動掃的時候出錯也要看得到
-  try { await api("/api/setup/model_scan", { method: "POST" }); } catch (e) { if (!/已經在掃描/.test(e.message)) return F("mdScanOut").replaceChildren(e.message); }
+  const out = F("mdScanOut");
+  out.hidden = false; // 自動掃的時候出錯也要看得到
+  if (mdScope === "dirs" && !mdDirs.length) { out.textContent = "先加入要掃的資料夾（可以按「選資料夾…」）。"; return; }
   F("mdScan").disabled = true;
+  if (scanRunning) { out.textContent = "先停掉正在跑的掃描…"; await stopScan(); }
+  try { await api("/api/setup/model_scan", { json: scanRequest(mdScope, mdDirs) }); }
+  catch (e) { if (!/已經在掃描/.test(e.message)) { F("mdScan").disabled = false; return out.replaceChildren(e.message); } }
   pollScan();
 };
 
@@ -589,8 +634,10 @@ async function pollScan() {
   let s;
   try { s = await api("/api/setup/model_scan/status", { json: chosen() }); } catch (e) { F("mdScan").disabled = false; out.textContent = e.message; return; }
   scanRunning = s.running;
+  scanAll = !s.roots?.length;
+  const where = scanAll ? "" : `（只掃指定的 ${s.roots.length} 個資料夾）`;
   if (s.running) {
-    out.innerHTML = `<div>掃描中…已看過 ${s.dirs.toLocaleString()} 個資料夾、${s.files.toLocaleString()} 個模型檔</div>
+    out.innerHTML = `<div>掃描中${where}…已看過 ${s.dirs.toLocaleString()} 個資料夾、${s.files.toLocaleString()} 個模型檔</div>
       <div class="muted sm md-path" translate="no">${esc(s.current || "")}</div><div><button class="akey sm" type="button" id="mdStop">停止</button></div>`;
     F("mdStop").onclick = () => api("/api/setup/model_scan/cancel", { method: "POST" }).catch(() => {});
     if (page === 2) scanTimer = setTimeout(pollScan, 1000);
@@ -598,9 +645,9 @@ async function pollScan() {
     return;
   }
   F("mdScan").disabled = false;
-  const head = `<div>${s.cancelled ? "已停止。" : "掃完了。"}安裝清單裡的模型找到 ${s.found.length} 個${s.found.some((f) => f.used) ? `（${s.found.filter((f) => f.used).length} 個本來就在用）` : ""}。</div>`;
+  const head = `<div>${s.cancelled ? "已停止。" : "掃完了。"}${where}安裝清單裡的模型找到 ${s.found.length} 個${s.found.some((f) => f.used) ? `（${s.found.filter((f) => f.used).length} 個本來就在用）` : ""}。</div>`;
   if (!s.suggest.length) { out.innerHTML = head + `<div class="muted sm">沒有找到還沒在用的模型資料夾。</div>`; return; }
-  const why = { manifest: "清單裡的模型", a1111: "A1111／Forge 的資料夾", yaml: "別的 ComfyUI 設定檔裡寫的", comfy: "別的 ComfyUI 的資料夾" };
+  const why = { manifest: "清單裡的模型", a1111: "A1111／Forge 的資料夾", yaml: "別的 ComfyUI 設定檔裡寫的", comfy: "別的 ComfyUI 的資料夾", picked: "你指定的資料夾" };
   out.innerHTML = head + `<div>勾選要原地使用的資料夾：</div><div class="md-list">${s.suggest.map((x, i) => `<label class="check md-row"><input type="checkbox" data-i="${i}" checked>
     <span class="md-kind">${esc(x.label)}</span><span class="md-path" translate="no">${esc(x.path)}</span>
     <span class="muted sm">${why[x.why.type] || why.comfy}${x.manifest_files ? `・清單模型 ${x.manifest_files} 個` : ""}${x.why.files ? `・${x.why.files} 個檔・${fmtBytes(x.why.bytes)}` : ""}</span></label>`).join("")}</div>
@@ -618,10 +665,11 @@ async function pollScan() {
   };
 }
 
-function diskWarn() {
+// 硬碟需求（純計算）：onPacks 是這次要補的包（已扣掉齊全的）
+function diskPlan(chk, onPacks) {
   const gib = 2 ** 30;
   // 勾選的包還缺多少：後端已經把 llama.cpp 解開後的大小算進「AI 改寫」、Node.js＋ffmpeg 算進「影音工作台」
-  const on = chk.packs.filter((p) => !packDone(p) && pick.packs.has(p.id));
+  const on = onPacks;
   const has = (id) => on.some((p) => p.id === id);
   // N 卡以外：llama.cpp 是 Vulkan 版（壓縮檔約 33MB）；ComfyUI 的 AMD 版解開約 5.8GB、Intel 版約 5.3GB；
   // A 卡換 ROCm 10 PyTorch：下載的檔（約 1.1GB 以上）裝完搬到資料的「待刪除」，ComfyUI 那邊多約 0.6GB
@@ -636,10 +684,55 @@ function diskWarn() {
   const checks = sameDisk
     ? [["資料與 ComfyUI", dataNeed + comfyNeed - (chk.comfy.ok ? 0 : chk.comfy.download_size), chk.data.free]]
     : [["資料", dataNeed, chk.data.free], ["ComfyUI", comfyNeed, chk.comfy.free]];
-  const warnings = checks.filter(([, need, free]) => free != null && need > free * 0.95)
+  return { dataNeed, comfyNeed, checks, total: dataNeed + comfyNeed };
+}
+
+function diskWarn() {
+  const on = chk.packs.filter((p) => !packDone(p) && pick.packs.has(p.id));
+  const plan = diskPlan(chk, on);
+  const warnings = plan.checks.filter(([, need, free]) => free != null && need > free * 0.95)
     .map(([name, need, free]) => `<div class="warnbox">${name} 所在的硬碟可能不夠：大約需要 ${gb(need)}，只剩 ${gb(free)}。</div>`);
-  F("diskWarn").innerHTML = warnings.join("") || (dataNeed + comfyNeed
-    ? `<div class="muted sm">這次大約會用掉 ${gb(dataNeed + comfyNeed)} 的硬碟空間。</div>` : "");
+  F("diskWarn").innerHTML = warnings.join("") || (plan.total
+    ? `<div class="muted sm">這次大約會用掉 ${gb(plan.total)} 的硬碟空間。</div>` : "");
+}
+
+// 安裝計畫（純計算）：這次會裝什麼、跳過什麼、還要下載什麼、有沒有會擋住的問題
+function buildPlan(chk, picked) {
+  const on = chk.packs.filter((p) => !packDone(p) && picked.has(p.id));
+  const install = on.map((p) => ({ id: p.id, label: p.label, bytes: p.missing.bytes }));
+  const skip = chk.packs.filter((p) => packDone(p)).map((p) => ({ id: p.id, label: p.label }));
+  const notInstalled = chk.packs.filter((p) => !packDone(p) && !picked.has(p.id)).map((p) => ({ id: p.id, label: p.label }));
+  const extras = [];
+  if (!chk.llama && picked.has("pe")) extras.push("llama.cpp");
+  if (!chk.tagger) extras.push("反推模型（約 1.2GB）");
+  if (!isLinux() && !chk.vcredist) extras.push("Visual C++ 執行階段");
+  if (picked.has("studio") && !chk.studio_tools) extras.push("Node.js、ffmpeg");
+  if (chk.workflows_missing > 0) extras.push(`ComfyUI 工作流程 ${chk.workflows_missing} 個`);
+  if (!chk.comfy.ok && !chk.comfy.exists) extras.push(`下載 ComfyUI（約 ${gb(chk.comfy.download_size)}）`);
+  const blockers = [];
+  if (chk.data.selection_problem) blockers.push(chk.data.selection_problem);
+  if (chk.comfy.exists && !chk.comfy.ok && chk.comfy.problem) blockers.push(chk.comfy.problem);
+  if (picked.has("moss") && chk.comfy.moss_problem) blockers.push(chk.comfy.moss_problem);
+  const disk = diskPlan(chk, on);
+  disk.short = disk.checks.filter(([, need, free]) => free != null && need > free * 0.95);
+  return { install, skip, notInstalled, extras, blockers, disk };
+}
+
+function renderPlan() {
+  const plan = buildPlan(chk, pick.packs);
+  const list = (items, fmt) => `<ul>${items.map(fmt).join("")}</ul>`;
+  const sec = [];
+  if (plan.install.length) sec.push(`<div class="lbl">會安裝</div>` + list(plan.install, (p) => `<li>${esc(p.label)}（約 ${gb(p.bytes)}）</li>`));
+  if (plan.extras.length) sec.push(`<div class="lbl">其他會下載</div>` + list(plan.extras, (s) => `<li>${esc(s)}</li>`));
+  if (plan.skip.length) sec.push(`<div class="lbl">已經有了（略過）</div>` + list(plan.skip, (p) => `<li>${esc(p.label)}</li>`));
+  if (plan.notInstalled.length) sec.push(`<div class="lbl">這次不裝</div>` + list(plan.notInstalled, (p) => `<li>${esc(p.label)}</li>`));
+  const disk = [];
+  if (plan.disk.total) disk.push(`<div>這次大約會用掉 ${gb(plan.disk.total)} 的硬碟空間。</div>`);
+  for (const [name, need, free] of plan.disk.short) disk.push(`<div class="st-err">${esc(name)} 所在的硬碟可能不夠：大約需要 ${gb(need)}，只剩 ${gb(free)}。</div>`);
+  if (disk.length) sec.push(`<div class="lbl">硬碟</div>` + disk.join(""));
+  if (plan.blockers.length) sec.push(`<div class="lbl">會擋住安裝的問題</div>` + list(plan.blockers, (s) => `<li>${esc(s)}</li>`));
+  const top = plan.blockers.length ? `<div class="st-err">下面的問題要先解決，否則安裝會失敗</div>` : "";
+  F("installPlan").innerHTML = top + (sec.length ? `<div class="lbl">安裝計畫</div>${sec.join("")}` : "");
 }
 
 // ---------------------------------------------------------------- 4. 安裝

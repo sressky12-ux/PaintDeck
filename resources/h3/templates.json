@@ -16,7 +16,7 @@
     "key": "subject",
     "label_zh": "人物簡述",
     "hint_zh": "要和圖 1 對得上",
-    "default_en": "a young woman with long orange hair and orange eyes, wearing a white-and-orange short dress with sunflower patterns"
+    "default_en": "a young woman with long orange hair and orange eyes, an orange flower-shaped hair ornament with black ribbons, wearing a white-and-orange short dress"
    },
    {
     "key": "motion",
@@ -76,7 +76,7 @@
     "key": "subject",
     "label_zh": "人物簡述",
     "hint_zh": "要和圖 1 對得上",
-    "default_en": "a young woman with long orange hair and orange eyes, wearing a white-and-orange short dress with sunflower patterns"
+    "default_en": "a young woman with long orange hair and orange eyes, an orange flower-shaped hair ornament with black ribbons, wearing a white-and-orange short dress"
    },
    {
     "key": "voice",
@@ -452,7 +452,7 @@
     "key": "dancer",
     "label_zh": "舞者外觀",
     "hint_zh": "要和圖 1 對得上",
-    "default_en": "a young woman with long orange hair and orange eyes, wearing a white-and-orange short dress with sunflower patterns and white sneakers"
+    "default_en": "a young woman with long orange hair and orange eyes, an orange flower-shaped hair ornament with black ribbons, wearing a white-and-orange short dress and white sneakers"
    },
    {
     "key": "stage",
@@ -646,7 +646,7 @@
     "key": "character",
     "label_zh": "角色外觀",
     "hint_zh": "要和圖 1 對得上",
-    "default_en": "a young woman with long orange hair and orange eyes, wearing an orange-and-white short dress with sunflower patterns and holding a thick book"
+    "default_en": "a young woman with long orange hair and orange eyes, an orange flower-shaped hair ornament with black ribbons, wearing an orange-and-white short dress and holding a thick book"
    },
    {
     "key": "scene",
@@ -723,7 +723,7 @@
     "key": "details",
     "label_zh": "角色外觀（從頭到腳，逗號分隔）",
     "hint_zh": "開頭寫 Female, 或 Male,；例：Female, petite, long orange hair, orange eyes, white and orange short dress",
-    "default_en": "Female, petite build, long straight orange hair, bright orange eyes, small sunflower hair ornament, white and orange short dress, white thigh-high socks"
+    "default_en": "Female, petite build, long straight orange hair, bright orange eyes, orange flower-shaped hair ornament with black ribbons, gold tassel earrings, white and orange short dress, white thigh-high socks"
    }
   ],
   "media": {
@@ -1220,7 +1220,7 @@
     "key": "subject",
     "label_zh": "說話的人",
     "hint_zh": "要和圖 1 對得上",
-    "default_en": "a young woman with long orange hair and orange eyes, wearing a white-and-orange short dress with sunflower patterns, in a sunlit room with a window behind"
+    "default_en": "a young woman with long orange hair and orange eyes, an orange flower-shaped hair ornament with black ribbons, wearing a white-and-orange short dress, in a sunlit room with a window behind"
    },
    {
     "key": "delivery",

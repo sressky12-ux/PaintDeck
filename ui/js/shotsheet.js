@@ -231,9 +231,22 @@ function region(i) {
 }
 
 // ================================================================ 對話框
+// 健檢規則的依據（後端 shotsheet.rs basis_of）：官方寫作指南、程式實際行為、我們實拍的經驗
+const BASIS = { official: "官方指南", code: "程式行為", experience: "實拍經驗" };
+
 function issueEl(x, cancel = () => closeModal("#shCheckModal")) {
-  return el("li", { class: "sh-issue " + (x.level || "warn"), onclick: () => { cancel(); F(`shSeg${x.seg}`)?.scrollIntoView({ block: "center", behavior: "smooth" }); } },
-    el("b", {}, `第 ${x.seg + 1} 段`), " ", el("code", { class: "sh-word" }, x.word || ""), " ", el("span", {}, x.msg || ""));
+  return el("li", { class: "sh-issue " + (x.level || "warn"), onclick: () => { cancel(); if (x.seg != null) F(`shSeg${x.seg}`)?.scrollIntoView({ block: "center", behavior: "smooth" }); } },
+    x.seg != null ? el("b", {}, `第 ${x.seg + 1} 段`) : null, " ", el("code", { class: "sh-word" }, x.word || ""), " ", el("span", {}, x.msg || ""),
+    BASIS[x.basis] ? el("span", { class: "muted sm sh-basis" }, ` （依據：${BASIS[x.basis]}）`) : null);
+}
+
+/** H3 頁自己寫的提示詞（不是拍攝單來的）送出前健檢。counts＝素材板能提到的 {Picture, Video, Audio} 數。
+ *  沒問題回 true；有問題開同一個對話框，「照樣送」回 true、「回去改」回 false；健檢本身失敗不擋送出 */
+export async function precheckPrompt(prompt, counts) {
+  let r;
+  try { r = await api("/api/shotsheet/check_prompt", { json: { prompt, counts } }); } catch { return true; }
+  const list = (r.issues || []).map((x) => ({ ...x, seg: null }));
+  return list.length ? ask(list) : true;
 }
 
 function issuesDialog(list) {

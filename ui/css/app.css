@@ -1646,6 +1646,24 @@ img.hc-last { width: 96px; aspect-ratio: 1; object-fit: contain; background: var
 .film-take.selected { outline:2px solid var(--acc, #e6742c); outline-offset:-2px; }
 .film-take video { width:100%; max-height:220px; object-fit:contain; background:#111; }
 .film-take pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:240px; overflow:auto; font-size:12px; }
+/* 拍攝版本並排比較：全螢幕遮罩、兩欄同步播放。 */
+.take-cmp-mask { position:fixed; inset:0; z-index:1200; display:flex; align-items:center; justify-content:center; padding:1rem; background:rgba(0,0,0,.72); }
+.take-cmp { width:min(1180px,100%); max-height:92vh; overflow:auto; display:flex; flex-direction:column; gap:.6rem; padding:.8rem; background:var(--viewer, #141414); border:1px solid var(--line, #7776); border-radius:8px; box-shadow:0 12px 40px rgba(0,0,0,.55); }
+.take-cmp-head { display:flex; align-items:center; gap:.6rem; }
+.take-cmp-title { font-size:1rem; }
+.take-cmp-x { background:none; border:0; color:inherit; cursor:pointer; font:700 20px/1 var(--f-ui); padding:0 .3rem; }
+.take-cmp-x:hover { color:var(--acc, #e6742c); }
+.take-cmp-body { display:grid; grid-template-columns:1fr 1fr; gap:.75rem; }
+.take-cmp-col { min-width:0; display:flex; flex-direction:column; gap:.45rem; padding:.55rem; border:1px solid var(--line, #7776); border-radius:6px; }
+.take-cmp-select { width:100%; }
+.take-cmp-video { width:100%; max-height:60vh; object-fit:contain; background:#111; }
+.take-cmp-label { font-weight:600; overflow-wrap:anywhere; }
+.take-cmp-note { overflow-wrap:anywhere; }
+.take-cmp-adopt { align-self:flex-start; }
+.take-cmp-controls { display:flex; align-items:center; gap:.5rem; flex-wrap:wrap; padding-top:.5rem; border-top:1px solid var(--line, #7776); }
+.take-cmp-range { flex:1 1 220px; min-width:140px; accent-color:var(--acc, #e6742c); }
+.take-cmp-time { white-space:nowrap; }
+@media (max-width:700px) { .take-cmp-body { grid-template-columns:1fr; } }
 .video-review { width:min(1000px,94vw); max-height:90vh; overflow:auto; padding:1rem; }
 .video-review-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(200px,1fr)); gap:.75rem; margin-top:1rem; }
 .video-review-frame { display:flex; flex-direction:column; gap:.5rem; height:auto; padding:.5rem; }

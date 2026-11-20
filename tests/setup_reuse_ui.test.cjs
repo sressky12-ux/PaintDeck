@@ -61,3 +61,14 @@ test('只有舊安裝紀錄時先請使用者指定舊資料，不預選空白�
   const r=context.reuseDefaults({...scan(),installations:[{legacy:true}]});
   assert.equal(r.data,'manual'); assert.equal(r.comfy,'manual');
 });
+
+test('第 3 步只掃指定的資料夾：加入時去引號、不重複，整台電腦不帶 roots', () => {
+  let list = context.addScanDir([], ' "D:\\SD\\models" ');
+  assert.deepEqual([...list], ['D:\\SD\\models']);
+  assert.equal(context.addScanDir(list, 'd:/sd/models/'), list); // 大小寫、斜線不同也算同一個
+  assert.equal(context.addScanDir(list, '   '), list);
+  list = context.addScanDir(list, 'E:\\LoRA');
+  assert.deepEqual([...list], ['D:\\SD\\models', 'E:\\LoRA']);
+  assert.deepEqual(JSON.parse(JSON.stringify(context.scanRequest('all', list))), {});
+  assert.deepEqual(JSON.parse(JSON.stringify(context.scanRequest('dirs', [...list, ' ']))), {roots: ['D:\\SD\\models', 'E:\\LoRA']});
+});

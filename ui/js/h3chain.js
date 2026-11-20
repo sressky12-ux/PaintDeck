@@ -3,6 +3,7 @@
 // 後端：src-tauri\src\h3chain.rs（存檔格式、提示詞、節點圖）、server\api_h3chain.rs（/api/h3/chain*）。設計在 design\H3長片接續_設計.md。
 import { el, api, toast, store } from "./util.js";
 import { pickFromGallery, openLightboxRecord } from "./gallery.js";
+import { openTakeCompare } from "./take-compare.js";
 
 const F = (id) => document.getElementById(id);
 const SECS = [5, 6, 8, 10, 12, 15];
@@ -265,30 +266,44 @@ function segEl(s, i) {
 
 function takesEl(s, i) {
   const list = el("div", {class:"film-takes-grid"});
+  const adopt = async (take) => {
+    const chosen = take.id === s.selected_take;
+    if (running()) return;
+    if (!chosen && chain.segments.slice(i+1).some(x=>x.status==="done") && !confirm("採用不同版本後，後面的鏡頭需要重新接續；所有舊版本會保留。繼續嗎？")) return;
+    const owner = chain, revision = openRevision;
+    clearTimeout(saveTimer);
+    if (!(await save()) || !current(owner, revision)) return;
+    selecting = owner;
+    paint();
+    try {
+      const selected = await api("/api/h3/chain/take/select", {json:{id:owner.id,seg:i,take_id:take.id}});
+      if (current(owner, revision)) chain = selected;
+    } catch(e) { if (current(owner, revision)) toast(e.message,"err"); }
+    finally { if (selecting === owner) selecting = null; if (openRevision === revision) paint(); }
+  };
   for (const take of s.takes || []) {
     const chosen = take.id === s.selected_take;
     const file = take.result?.files?.end;
-    const adopt = btn(chosen ? "已採用" : "採用這版", async () => {
-      if (running()) return;
-      if (!chosen && chain.segments.slice(i+1).some(x=>x.status==="done") && !confirm("採用不同版本後，後面的鏡頭需要重新接續；所有舊版本會保留。繼續嗎？")) return;
-      const owner = chain, revision = openRevision;
-      clearTimeout(saveTimer);
-      if (!(await save()) || !current(owner, revision)) return;
-      selecting = owner;
-      paint();
-      try {
-        const selected = await api("/api/h3/chain/take/select", {json:{id:owner.id,seg:i,take_id:take.id}});
-        if (current(owner, revision)) chain = selected;
-      } catch(e) { if (current(owner, revision)) toast(e.message,"err"); }
-      finally { if (selecting === owner) selecting = null; if (openRevision === revision) paint(); }
-    });
-    adopt.disabled = (chosen && !s.pending_take) || running();
+    const adoptBtn = btn(chosen ? "已採用" : "採用這版", () => adopt(take));
+    adoptBtn.disabled = (chosen && !s.pending_take) || running();
     list.append(el("div", {class:`film-take ${chosen ? "selected" : ""}`}, el("b",{},take.label || "拍攝版本"),
       file ? el("video", {class:"h3-prev",src:`/api/h3/chain/${chain.id}/file/${encodeURIComponent(file)}`,controls:true,preload:"none",playsinline:true}) : null,
-      adopt,el("details",{},el("summary",{},"拍攝配方"),el("pre",{translate:"no"},JSON.stringify(take.recipe,null,2)))));
+      adoptBtn,el("details",{},el("summary",{},"拍攝配方"),el("pre",{translate:"no"},JSON.stringify(take.recipe,null,2)))));
   }
+  const withVideo = (s.takes || []).filter(t => t.result?.files?.end);
+  const compare = withVideo.length >= 2 ? btn("並排比較", () => openTakeCompare({
+    title: "並排比較拍攝版本",
+    items: (s.takes || []).map(t => ({
+      id: t.id, label: t.label || "拍攝版本",
+      src: t.result?.files?.end ? `/api/h3/chain/${chain.id}/file/${encodeURIComponent(t.result.files.end)}` : "",
+      poster: "",
+      note: t.id === s.selected_take ? "目前採用" : t.id === s.pending_take ? "待審片" : "保留版本",
+    })),
+    onAdopt: (id) => { const take = (s.takes || []).find(x => x.id === id); if (take) adopt(take); },
+    disabled: running(),
+  })) : null;
   return el("details",{class:"film-takes",open:!!s.pending_take},el("summary",{},"拍攝版本",el("span",{class:"muted sm"},` (${s.takes.length})`)),
-    s.pending_take ? el("p",{class:"muted sm"},"新版本尚未採用，下一鏡會等待你的選擇。") : null,list,
+    s.pending_take ? el("p",{class:"muted sm"},"新版本尚未採用，下一鏡會等待你的選擇。") : null,compare,list,
     !running() ? btn("重拍這鏡並審片",()=>{
       // 跟「從這段重拍」一樣要先講：會再花一次錢，後面拍好的段也要重新接（2026-11-10 以前這顆按了就直接開拍）
       const after = chain.segments.slice(i+1).filter(x=>x.status==="done").length;

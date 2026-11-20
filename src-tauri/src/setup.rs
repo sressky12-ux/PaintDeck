@@ -14,7 +14,7 @@
 //!   GET  /api/setup/status    安裝進度（網頁每秒問一次）
 //!   POST /api/setup/cancel    停止下載（已經下載的部分留著，下次接著下載）
 //!   POST /api/setup/finish    完成：設定檔要已經有效；桌面版會切到正式畫面
-//!   POST /api/setup/model_scan             掃描這台電腦已經有的模型（背景跑）；…/status {data_root, comfy_dir} 看結果、…/cancel 停止
+//!   POST /api/setup/model_scan {roots?}    掃描這台電腦已經有的模型（背景跑；roots＝只掃這些資料夾，沒給＝每顆硬碟）；…/status {data_root, comfy_dir} 看結果、…/cancel 停止
 //!   POST /api/setup/model_dirs  {data_root, comfy_dir, dirs: [{kind, path}]} → 加進外部模型資料夾（原地使用、不搬檔，見 model_dirs.rs）
 //!   POST /api/setup/pick_folder {title?, start?} → 跳出 Windows 的選資料夾視窗，{path | null}（設定頁加模型資料夾也用這個）
 //!   GET  /api/setup/net         代理、下載來源的設定和偵測結果（net.rs）；POST {proxy, proxy_url, hf} 存設定
@@ -3986,10 +3986,15 @@ async fn api_ltx_remove(State(s): S, Json(body): Json<Value>) -> Response {
     reply(json!({"freed": freed, "fails": fails}))
 }
 
-/// 掃描這台電腦已經有的模型（model_dirs.rs）：開始
-async fn api_model_scan(State(s): S) -> Response {
+/// 掃描這台電腦已經有的模型（model_dirs.rs）：開始。{roots?: [資料夾…]}＝只掃這些（沒給＝每顆硬碟）
+async fn api_model_scan(State(s): S, body: axum::body::Bytes) -> Response {
+    let only = match tokio::task::spawn_blocking(move || crate::model_dirs::scan_scope(&body)).await {
+        Ok(Ok(v)) => v,
+        Ok(Err(e)) => return bad(e),
+        Err(e) => return bad(e.to_string()),
+    };
     let wants = manifest_wants(&s.res);
-    if !crate::model_dirs::scan_start(wants, vec![]) {
+    if !crate::model_dirs::scan_start(wants, only) {
         return bad("已經在掃描了");
     }
     reply(json!({"ok": true}))

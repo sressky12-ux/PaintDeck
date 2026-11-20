@@ -57,6 +57,10 @@
   .overall .bar > i { display: block; height: 100%; width: 0; background: var(--ph-amber); }
   .log { max-height: 180px; overflow-y: auto; white-space: pre-wrap; font-size: 16px; }
   .note { border-left: 4px solid var(--stripe-1); padding: 8px 12px; background: var(--case); border-radius: 4px; }
+  .install-plan { border: 1px solid var(--groove); border-radius: 6px; padding: 10px 12px; background: var(--case); display: flex; flex-direction: column; gap: 4px; }
+  .install-plan:empty { display: none; }
+  .install-plan ul { margin: 2px 0 4px; padding-left: 18px; }
+  .install-plan .lbl { margin-top: 2px; }
   @media (max-width: 760px) { .wiz { grid-template-columns: 1fr; } .steps { flex-direction: row; overflow-x: auto; padding: 18px 10px 8px; } .it { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -132,7 +136,16 @@
           </div>
           <div class="note">
             <b>這台電腦已經有模型了？</b>
-            <div class="muted sm">別的 ComfyUI、A1111／Forge 裡已經有的模型可以原地使用，不用再下載一份，也不會搬動檔案。進到這頁會自動掃描每顆硬碟，大概要一兩分鐘。</div>
+            <div class="muted sm">別的 ComfyUI、A1111／Forge 裡已經有的模型可以原地使用，不用再下載一份，也不會搬動檔案。進到這頁會自動掃描；掃每顆硬碟大概要一兩分鐘，硬碟多、檔案多會更久。知道模型放在哪的話，選「只掃指定的資料夾」會快很多。</div>
+            <div class="row gap wrap md-scope" style="margin-top:6px">
+              <label class="check sm"><input type="radio" name="mdScope" value="all" checked> 整台電腦（每顆硬碟）</label>
+              <label class="check sm"><input type="radio" name="mdScope" value="dirs"> 只掃指定的資料夾</label>
+            </div>
+            <div id="mdDirsBox" hidden>
+              <div id="mdDirList" class="md-list"></div>
+              <div class="pickrow"><input type="text" id="mdDirPath" spellcheck="false" placeholder="資料夾完整路徑，例如 D:\stable-diffusion-webui\models" aria-label="要掃的資料夾"><button class="akey sm" id="mdDirPick" type="button">選資料夾…</button><button class="akey sm" id="mdDirAdd" type="button">加入</button></div>
+              <div class="muted sm" style="margin-top:4px">可以加好幾個。選 ComfyUI、A1111／Forge 的資料夾（或它的 models）、某一類的資料夾（例如 models\Lora），或自己收模型的資料夾都可以。</div>
+            </div>
             <div class="row gap wrap" style="margin-top:6px"><button class="akey sm" id="mdScan" type="button">重新掃描這台電腦已有的模型</button></div>
             <div id="mdScanOut" class="md-scan" hidden></div>
           </div>
@@ -143,6 +156,7 @@
           <div class="opts" id="modelOpts"></div>
           <div class="note sm">全不選的話，只裝 ComfyUI、節點、反推模型，之後隨時可以回來這頁補勾。常用 LoRA 裡有些需要 Civitai 金鑰；可以在上方先填，也可以之後到「設定」填好，再回來補下載。</div>
           <div id="diskWarn"></div>
+          <div id="installPlan" class="install-plan"></div>
         </div>
 
         <!-- 4. 安裝 -->

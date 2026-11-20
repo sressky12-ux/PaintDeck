@@ -13,6 +13,16 @@ export function reuseDefaults(scan) {
   return { data: selected, comfy };
 }
 
+// 第 3 步「只掃指定的資料夾」：加進清單（去掉複製來的引號；空的、重複的不加，回傳原本那份）
+export function addScanDir(list, raw) {
+  const p = cleanPath(raw);
+  return !p || list.some(x => samePath(x, p)) ? list : [...list, p];
+}
+// 送給 /api/setup/model_scan 的掃描範圍：整台電腦＝不給 roots
+export function scanRequest(scope, dirs) {
+  return scope === "dirs" ? { roots: dirs.map(cleanPath).filter(Boolean) } : {};
+}
+
 export function locationRequest(pick) {
   return {
     data_root: cleanPath(pick.data === "new" ? pick.dataNew : pick.data === "manual" ? pick.dataManual : pick.data),

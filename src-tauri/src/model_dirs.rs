@@ -640,6 +640,8 @@ pub struct ScanState {
     /// 檔名對、大小或子資料夾不對（給使用者看，不會自動用）
     pub near: Vec<Value>,
     pub seconds: f64,
+    /// 這次只掃了哪些資料夾（空的＝每顆硬碟）
+    pub roots: Vec<String>,
 }
 
 static SCAN: Mutex<Option<ScanState>> = Mutex::new(None);
@@ -698,25 +700,73 @@ fn skip_more(name: &str) -> bool {
     ) || n.starts_with("anima_web")
 }
 
-/// 開始背景掃描（已經在掃就不重開）。want＝安裝精靈清單；known＝已經在用的資料夾（生圖站的 ComfyUI models、外部清單），結果會標出來
-pub fn scan_start(want: Vec<Want>, extra_roots: Vec<PathBuf>) -> bool {
+/// 比對路徑用：斜線統一、去掉結尾斜線、不分大小寫（跟 same() 一樣的寫法）
+fn norm(p: &Path) -> String {
+    p.to_string_lossy().replace('/', "\\").trim_end_matches('\\').to_lowercase()
+}
+
+/// child 在 parent 底下（同一個資料夾不算）
+fn inside(child: &Path, parent: &Path) -> bool {
+    norm(child).starts_with(&(norm(parent) + "\\"))
+}
+
+/// 使用者指定的掃描範圍（網頁送來的 {roots: [...]}，安裝精靈第 3 步、設定頁的掃描都用）。
+/// 沒有 roots（或請求是空的）＝掃每顆硬碟，回空清單；有 roots 但都是空字串＝錯誤（不會悄悄變成掃整台電腦）。
+/// 每一個都要是完整路徑、而且是資料夾；重複的、包在別的資料夾裡面的只留外層
+pub fn scan_scope(body: &[u8]) -> Result<Vec<PathBuf>, String> {
+    if body.iter().all(u8::is_ascii_whitespace) {
+        return Ok(vec![]);
+    }
+    let v: Value = serde_json::from_slice(body).map_err(|e| format!("送來的資料格式不對：{e}"))?;
+    let Some(list) = v.get("roots").filter(|r| !r.is_null()) else { return Ok(vec![]) };
+    let list = list.as_array().ok_or("roots 要是資料夾路徑的清單")?;
+    let mut picked: Vec<PathBuf> = vec![];
+    for r in list {
+        let s = r.as_str().ok_or("roots 每一項都要是資料夾路徑（文字）")?.trim().trim_matches('"').trim();
+        if s.is_empty() {
+            continue;
+        }
+        let p = PathBuf::from(s);
+        if !p.is_absolute() {
+            return Err(format!("要寫完整路徑（例如 D:\\stable-diffusion-webui\\models）：{s}"));
+        }
+        if !p.is_dir() {
+            return Err(format!("找不到資料夾 {s}"));
+        }
+        picked.push(p);
+    }
+    if picked.is_empty() {
+        return Err("沒有指定要掃的資料夾".into());
+    }
+    // 短的（外層）先放，後面被它包住的、跟它一樣的就不用再掃一次
+    picked.sort_by_key(|p| norm(p).len());
+    let mut out: Vec<PathBuf> = vec![];
+    for p in picked {
+        if !out.iter().any(|o| same(o, &p) || inside(&p, o)) {
+            out.push(p);
+        }
+    }
+    Ok(out)
+}
+
+/// 開始背景掃描（已經在掃就不重開）。want＝安裝精靈清單；only＝只掃這些資料夾（scan_scope 整理過的；空的＝每顆硬碟）
+pub fn scan_start(want: Vec<Want>, only: Vec<PathBuf>) -> bool {
     {
         let mut g = SCAN.lock().unwrap_or_else(|e| e.into_inner());
         if g.as_ref().is_some_and(|s| s.running) {
             return false;
         }
-        *g = Some(ScanState { running: true, ..Default::default() });
+        let roots = only.iter().map(|p| p.to_string_lossy().to_string()).collect();
+        *g = Some(ScanState { running: true, roots, ..Default::default() });
     }
     CANCEL.store(false, Ordering::SeqCst);
     std::thread::spawn(move || {
         let t = std::time::Instant::now();
-        let mut roots = crate::setup::fixed_drives();
-        for r in extra_roots {
-            if !roots.iter().any(|x| r.starts_with(x)) {
-                roots.push(r);
-            }
+        let roots = if only.is_empty() { crate::setup::fixed_drives() } else { only.clone() };
+        let mut r = scan_roots(&roots, &want);
+        if !only.is_empty() && !CANCEL.load(Ordering::SeqCst) {
+            picked_libraries(&only, &mut r.1);
         }
-        let r = scan_roots(&roots, &want);
         let mut g = SCAN.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(s) = g.as_mut() {
             s.running = false;
@@ -730,6 +780,26 @@ pub fn scan_start(want: Vec<Want>, extra_roots: Vec<PathBuf>) -> bool {
         }
     });
     true
+}
+
+/// 使用者指定的資料夾，底下沒認出任何模型庫（不在 ComfyUI／A1111 的 models 裡、自己收的一包 LoRA 之類）：
+/// 照設定頁「加入」的自動判斷（expand）看它放的是哪一類，有模型檔就列進模型庫（how＝picked）
+fn picked_libraries(only: &[PathBuf], libs: &mut Vec<Library>) {
+    for root in only {
+        if libs.iter().any(|l| same(&l.path, root) || inside(&l.path, root)) {
+            continue;
+        }
+        let Ok(dirs) = expand(root, "auto") else { continue };
+        for d in dirs {
+            if libs.iter().any(|l| l.kind == d.kind && same(&l.path, &d.path)) {
+                continue;
+            }
+            let (files, bytes) = count_models(&d.path);
+            if files > 0 {
+                libs.push(Library { kind: d.kind, path: d.path, how: "picked".into(), files, bytes });
+            }
+        }
+    }
 }
 
 fn update(f: impl FnOnce(&mut ScanState)) {
@@ -751,8 +821,15 @@ pub fn scan_roots(roots: &[PathBuf], want: &[Want]) -> (Vec<Found>, Vec<Library>
     let mut libs: Vec<Library> = vec![];
     let mut near: Vec<Value> = vec![];
     let mut yamls: Vec<PathBuf> = vec![];
-    // (資料夾, 屬於哪個模型庫)
-    let mut stack: Vec<(PathBuf, Option<usize>)> = roots.iter().map(|r| (r.clone(), None)).collect();
+    // (資料夾, 屬於哪個模型庫)。使用者直接指定 models\loras、models\Lora 這種分類資料夾時，它自己就是模型庫
+    let mut stack: Vec<(PathBuf, Option<usize>)> = vec![];
+    for r in roots {
+        let lib = library_kind(r).map(|(kind, how)| {
+            libs.push(Library { kind: kind.into(), path: r.clone(), how: how.into(), files: 0, bytes: 0 });
+            libs.len() - 1
+        });
+        stack.push((r.clone(), lib));
+    }
     let (mut ndirs, mut nfiles) = (0u64, 0u64);
     while let Some((dir, lib)) = stack.pop() {
         if CANCEL.load(Ordering::SeqCst) {
@@ -902,7 +979,7 @@ pub fn scan_view(comfyui: &Path, dirs: &[Dir]) -> Value {
         .map(|f| json!({"rel": f.rel, "file": f.file.to_string_lossy(), "kind": f.kind, "size": f.size, "used": used(&f.kind, &f.root)}))
         .collect();
     json!({"running": s.running, "finished": s.finished, "cancelled": s.cancelled, "dirs": s.dirs, "files": s.files,
-           "current": s.current, "seconds": s.seconds, "found": found, "suggest": suggest, "near": s.near})
+           "current": s.current, "seconds": s.seconds, "found": found, "suggest": suggest, "near": s.near, "roots": s.roots})
 }
 
 /// 「加一個資料夾」：kind 指定了就照用；auto＝自己看
@@ -1259,6 +1336,72 @@ mod tests {
         assert!(lk.contains(&("loras", "comfyui")));
         assert!(lk.contains(&("loras", "a1111")));
         assert!(!lk.iter().any(|(k, _)| *k == "vae")); // 沒有模型檔的模型庫不列
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 安裝精靈第 3 步「只掃指定的資料夾」：網頁送來的 roots 怎麼整理
+    #[test]
+    fn scan_scope_keeps_outer_existing_folders() {
+        let d = tmp("scope");
+        std::fs::create_dir_all(d.join("sd").join("models").join("Lora")).unwrap();
+        std::fs::create_dir_all(d.join("loras")).unwrap();
+        let body = |v: Value| serde_json::to_vec(&v).unwrap();
+        // 沒給 roots（舊的呼叫方式、空的請求）＝掃每顆硬碟
+        assert!(scan_scope(b"").unwrap().is_empty());
+        assert!(scan_scope(b"{}").unwrap().is_empty());
+        assert!(scan_scope(&body(json!({"roots": null}))).unwrap().is_empty());
+        // 有給但全是空的：不能悄悄變成掃整台電腦
+        assert!(scan_scope(&body(json!({"roots": []}))).is_err());
+        assert!(scan_scope(&body(json!({"roots": ["  ", "\"\""]}))).is_err());
+        // 相對路徑、找不到的資料夾、不是文字
+        assert!(scan_scope(&body(json!({"roots": ["models\\Lora"]}))).is_err());
+        let gone = d.join("不存在").to_string_lossy().to_string();
+        assert!(scan_scope(&body(json!({"roots": [gone]}))).unwrap_err().contains("找不到資料夾"));
+        assert!(scan_scope(&body(json!({"roots": [1]}))).is_err());
+        assert!(scan_scope(b"not json").is_err());
+        // 包在裡面的、重複的（引號、大小寫、結尾斜線不同）只留外層
+        let sd = d.join("sd");
+        let inner = format!("\"{}\"", sd.join("models").join("Lora").display());
+        let twin = if cfg!(windows) { format!("{}\\", sd.to_string_lossy().to_uppercase()) } else { format!("{}/", sd.display()) };
+        let loras = d.join("loras").to_string_lossy().to_string();
+        let got = scan_scope(&body(json!({"roots": [inner, twin, sd.to_string_lossy(), loras]}))).unwrap();
+        assert_eq!(got.len(), 2, "{got:?}");
+        assert!(got.iter().any(|p| same(p, &sd)));
+        assert!(got.iter().any(|p| same(p, &d.join("loras"))));
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// 只掃指定的資料夾：直接選 models\Lora 這種分類資料夾、或自己收的一包 LoRA，都要列成模型庫
+    #[test]
+    fn scan_of_picked_folders_lists_them_as_libraries() {
+        let d = tmp("picked");
+        // 安全張量檔頭：8 位元組長度＋JSON（只有一個 LoRA 權重名稱）
+        let lora = |p: &Path| {
+            let head = br#"{"lora_unet_blocks_0.lora_down.weight":{"dtype":"F16","shape":[1],"data_offsets":[0,2]}}"#;
+            let mut b = (head.len() as u64).to_le_bytes().to_vec();
+            b.extend_from_slice(head);
+            b.extend_from_slice(&[0, 0]);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(p, b).unwrap();
+        };
+        let cat = d.join("webui").join("models").join("Lora");
+        lora(&cat.join("a.safetensors"));
+        let loose = d.join("我的LoRA收藏");
+        lora(&loose.join("b.safetensors"));
+        lora(&loose.join("sub").join("c.safetensors"));
+        let empty = d.join("空的");
+        std::fs::create_dir_all(&empty).unwrap();
+        let only = vec![cat.clone(), loose.clone(), empty.clone()];
+        let (_, mut libs, _) = scan_roots(&only, &[]);
+        picked_libraries(&only, &mut libs);
+        let has = |p: &Path, how: &str, files: u64| libs.iter().any(|l| l.kind == "loras" && same(&l.path, p) && l.how == how && l.files == files);
+        assert!(has(&cat, "a1111", 1), "{libs:?}");
+        assert!(has(&loose, "picked", 2), "{libs:?}");
+        assert_eq!(libs.len(), 2, "{libs:?}"); // 空資料夾不列
+        // 分類資料夾已經認出來了，不會再用自動判斷多加一筆
+        let before = libs.len();
+        picked_libraries(&only, &mut libs);
+        assert_eq!(libs.len(), before);
         let _ = std::fs::remove_dir_all(&d);
     }
 

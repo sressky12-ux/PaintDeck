@@ -1182,6 +1182,8 @@ async function go() {
   const bad = precheck();
   if (bad) return toast(bad, "err");
   if (fromSheet && !(await (await import("./shotsheet.js")).precheck([F("h3Prompt").value], fromSheet))) return;
+  // 自己寫或貼的提示詞也健檢（2026-11-19，第 9～14 條參考 Phasyn Studio 規則表）
+  if (!fromSheet && !(await (await import("./shotsheet.js")).precheckPrompt(F("h3Prompt").value, counts()))) return;
   const b = F("h3Go");
   b.disabled = true;
   // 等回應時可能已經換了起手式：名字先記下來

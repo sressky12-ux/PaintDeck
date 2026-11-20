@@ -662,6 +662,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/shotsheet/meta", get(api_shotsheet::meta))
         .route("/api/shotsheet/compose", post(api_shotsheet::compose))
         .route("/api/shotsheet/check", post(api_shotsheet::check))
+        .route("/api/shotsheet/check_prompt", post(api_shotsheet::check_prompt))
         .route("/api/shotsheet/danger", post(api_shotsheet::danger))
         .route("/api/shotsheet/polish", post(api_shotsheet::polish))
         .route("/api/shotsheet/template", post(api_shotsheet::template))

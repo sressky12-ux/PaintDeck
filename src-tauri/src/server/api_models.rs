@@ -4,7 +4,7 @@
 //!   GET  /api/models/dirs                  外部資料夾清單＋分類
 //!   POST /api/models/dirs/add  {path, kind}     kind＝auto 會自己看（ComfyUI／A1111 資料夾會展開成好幾筆）
 //!   POST /api/models/dirs/remove {kind, path}
-//!   POST /api/models/scan、GET /api/models/scan、POST /api/models/scan/cancel、POST /api/models/scan/apply {dirs}
+//!   POST /api/models/scan {roots?}（roots＝只掃這些資料夾，沒給＝每顆硬碟）、GET /api/models/scan、POST /api/models/scan/cancel、POST /api/models/scan/apply {dirs}
 //!   GET  /api/models/inventory             每一類有哪些模型檔＋安裝精靈清單還缺哪些
 //!   POST /api/models/classify {path}       猜一個檔是哪一類
 //!   PUT  /api/models/upload?name=&kind=    檔案本體當請求內容（拖進設定頁的檔），先寫進 models\_incoming 再歸位
@@ -93,9 +93,11 @@ pub async fn dirs_remove(State(app): State<Shared>, Body(body): Body) -> ApiResu
 }
 
 // ---------------------------------------------------------------- 掃描
-pub async fn scan_start(State(app): State<Shared>) -> ApiResult {
+/// {roots?: [資料夾…]}＝只掃這些（沒給、或請求是空的＝每顆硬碟）
+pub async fn scan_start(State(app): State<Shared>, body: axum::body::Bytes) -> ApiResult {
+    let only = blocking(move || model_dirs::scan_scope(&body)).await.map_err(bad)?;
     let wants = crate::setup::manifest_wants(&app.paths.res);
-    if !model_dirs::scan_start(wants, vec![]) {
+    if !model_dirs::scan_start(wants, only) {
         return Err(bad("已經在掃描了"));
     }
     ok(json!({"ok": true}))

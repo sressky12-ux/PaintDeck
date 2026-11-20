@@ -106,6 +106,14 @@ pub async fn check(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     ok(json!({"issues": sh::check(&s, &prompts, &rules)}))
 }
 
+/// {prompt, counts:{Picture,Video,Audio}} → {issues}：H3 頁自己寫的提示詞（沒有拍攝單）送出前健檢
+pub async fn check_prompt(State(app): State<Shared>, Body(b): Body) -> ApiResult {
+    let n = |k: &str| b["counts"][k].as_u64().unwrap_or(0) as usize;
+    let rules = sh::rules(&danger_words(&app));
+    let prompt = b["prompt"].as_str().unwrap_or("");
+    ok(json!({"issues": sh::check_prompt(prompt, (n("Picture"), n("Video"), n("Audio")), &rules)}))
+}
+
 /// {words} → 存使用者的危險字（去空白、去重、最多 200 個）
 pub async fn danger(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let input = b["words"]
