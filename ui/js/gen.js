@@ -622,15 +622,16 @@ function modelDefaults() {
     renderLoras();
   }
   if (fam() === "moss") { F("steps").value = fastOn() ? MOSS_FAST.steps : MOSS_FAST.normal; F("cfg").value = 3; pick("sampler", "euler"); pick("scheduler", "sgm_uniform"); }
-  else if (fam() === "qwen21") { F("steps").value = isOfficialTurbo() ? 8 : isTurboModel() ? 6 : 25; F("cfg").value = isOfficialTurbo() || isTurboModel() ? 1 : 3; }
+  // 切過 MOSS（sgm_uniform）／SDXL 再切回來時，採樣器與排程要跟著恢復家族預設
+  else if (fam() === "qwen21") { F("steps").value = isOfficialTurbo() ? 8 : isTurboModel() ? 6 : 25; F("cfg").value = isOfficialTurbo() || isTurboModel() ? 1 : 3; pick("sampler", "euler"); pick("scheduler", "simple"); }
   // Krea 2 Turbo：ComfyUI 內建範本 8 步、CFG 1、euler＋simple。Raw（沒蒸餾）沒有官方建議值：先給一般 DiT 的 30 步、CFG 4
   else if (fam() === "krea2") { F("steps").value = isTurboModel() ? 8 : 30; F("cfg").value = isTurboModel() ? 1 : 4; pick("sampler", "euler"); pick("scheduler", "simple"); }
   // SDXL：NoobAI 官方建議 25～30 步、CFG 5～6、Euler a；加速版 8 步、CFG 1.5（各家建議不一樣，畫不好再照模型頁調）
   else if (fam() === "sdxl") { F("steps").value = isFastSdxl() ? 8 : 28; F("cfg").value = isFastSdxl() ? 1.5 : 5; pick("sampler", "euler_ancestral"); pick("scheduler", isFastSdxl() ? "sgm_uniform" : "normal"); }
   else if (fam() === "custom") { /* 步數、CFG 照工作流，這裡的不用 */ }
-  else if (isTurboModel()) { F("steps").value = 8; F("cfg").value = 1; }
-  else if (F("turboLora").value) { F("steps").value = /anima-turbo-lora/i.test(F("turboLora").value) ? 10 : 12; F("cfg").value = 1; }
-  else { F("steps").value = 30; F("cfg").value = 4; }
+  else if (isTurboModel()) { F("steps").value = 8; F("cfg").value = 1; pick("sampler", "euler"); pick("scheduler", "simple"); }
+  else if (F("turboLora").value) { F("steps").value = /anima-turbo-lora/i.test(F("turboLora").value) ? 10 : 12; F("cfg").value = 1; pick("sampler", "euler"); pick("scheduler", "simple"); }
+  else { F("steps").value = 30; F("cfg").value = 4; pick("sampler", "er_sde"); pick("scheduler", "simple"); }
   modelHint();
 }
 
