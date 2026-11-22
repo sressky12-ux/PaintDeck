@@ -14,11 +14,14 @@ export function fmtModel(name, max = 18) {
   return chars.length > max ? chars.slice(0, max - 1).join("") + "…" : base;
 }
 
+// 生成頁沒在顯示（隨機頁借走提示詞卡）：左區看不到，ENGINE、尺寸膠囊才出現
+const offGen = () => !$("#page-gen").classList.contains("on");
+
 export function capsSpec() {
   return { host: $("#capRow"), chips: {
-    source: { label: "ENGINE", summary: () => fmtModel($("#model").selectedOptions[0]?.textContent.trim() || "—") },
+    source: { label: "ENGINE", visible: offGen, summary: () => fmtModel($("#model").selectedOptions[0]?.textContent.trim() || "—") },
     lora: { label: "LORA", summary: () => fmtCount($$("#loraStack .lora-item:not(.off)").length) },
-    params: { label: "尺寸", summary: () => {
+    params: { label: "尺寸", visible: offGen, summary: () => {
       if (!$("#autoSizeRow").hidden && $("#autoSize").checked) return $("#sizeInfo").textContent;
       return $("#width").value && $("#height").value ? `${$("#width").value}×${$("#height").value}` : "—";
     } },
@@ -32,6 +35,17 @@ export function capsSpec() {
 let dock;
 export function refreshChips() {
   dock?.refreshCaps();
+}
+
+// 成品動作（#viewActions）放哪（2026-11-23 左右兩欄）：右區打開、「這張圖」那塊沒收起 → 放在那塊面板裡分組攤開；
+// 右區收起（「任務」鍵）、那塊收起、視窗太窄側欄變細條 → 搬到觀景窗下面排成一排。兩種都一直看得到，不用滑鼠停在圖上
+export function placeActs() {
+  if (!dock) return;   // 版面第一次排好時 init 還沒跑：init 最後會再叫一次
+  const acts = $("#viewActions");
+  const inPanel = dock.zoneOpen("right") && !dock.layout().folded.includes("imgacts");
+  const host = inPanel ? $('[data-dock="imgacts"]') : $("#page-gen .dock-main .monitor");
+  if (host && acts.parentElement !== host) host.append(acts);
+  acts.classList.toggle("under", !inPanel);
 }
 
 export function init(api) {
@@ -73,7 +87,7 @@ export function init(api) {
     menu.hidden = !show;
     more.setAttribute("aria-expanded", String(show));
   }
-  more.onclick = () => setMenu(menu.hidden);
+  more.onclick = () => setMenu(menu.hidden);   // 「⋯」現在是藏起來的空殼（按鈕都攤開在「這張圖」），留著不影響
   menu.addEventListener("click", (e) => { if (e.target.closest("[data-act]")) setMenu(false); });
   document.addEventListener("pointerdown", (e) => {
     if (!menu.hidden && !e.target.closest("#viewActions")) setMenu(false);
@@ -82,6 +96,7 @@ export function init(api) {
     if (!menu.hidden && e.key === "Escape") { setMenu(false); more.focus(); }
   });
   refresh();
+  placeActs();
 }
 
 export function taskCards(jobs, max = 4) {

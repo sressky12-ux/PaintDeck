@@ -160,6 +160,7 @@
           <button class="icon" id="promptLib" type="button" title="打開提示詞庫（整套設定和片段）" aria-label="打開提示詞庫">庫</button>
           <button class="icon" id="tagLibBtn" type="button" aria-pressed="false" title="詞庫：分類點選 tag（人物、服飾、表情、鏡頭…），點一下加進提示詞框" aria-label="打開詞庫">詞</button>
           <button class="icon" id="pwBtn" type="button" aria-pressed="false" title="衣姿：服裝、姿勢參考圖，拖進提示詞框、構圖控制或多圖參考" aria-label="打開衣姿">衣</button>
+          <button class="icon" id="promptTagger" type="button" title="反推提示詞：從輸入圖、目前看的成品，或另外挑一張圖，反推出 tag／描述" aria-label="反推提示詞">反推</button>
           <button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button>
           <button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button>
           <button class="icon" id="promptClear" type="button" title="清空" aria-label="清空提示詞">✕</button>
@@ -454,7 +455,7 @@
       <button data-mode="upscale" data-ic="zoom" type="button">放大</button>
       <button data-mode="strip" data-ic="i2i" type="button" hidden></button>
       <button data-mode="sheet" data-ic="multi" type="button" title="角色四視圖（設定稿）一次改：換衣服、改顏色、脫衣，每個視角同步改（Qwen 2.1，不用切模型）">四視圖</button>
-    </div><button class="akey sm stage-tasks-btn" id="stageTasksBtn" type="button" aria-pressed="true" title="收起／打開右邊的任務欄">任務 <span class="vfd sm" id="stageTasksN" hidden></span></button></div>
+    </div><button class="akey sm stage-find-btn" id="findBtn" type="button" title="找功能（Ctrl+K）：打「反推」「遮罩」「LoRA」「種子」…直接跳過去" aria-haspopup="dialog" aria-controls="finder">⌕ 找功能</button><button class="akey sm stage-tasks-btn" id="stageTasksBtn" type="button" aria-pressed="true" title="收起／打開右欄（這張圖、任務）">任務 <span class="vfd sm" id="stageTasksN" hidden></span></button></div>
   <section class="panel monitor stage screws" aria-label="畫面">
     <div class="readout" aria-live="polite"><span id="osdl">● READY</span><span class="sep"></span><span id="osdm">—</span><span class="grow"></span><span class="a" id="osdr"></span><span class="muted sm view-meta" id="viewMeta"></span></div>
     <div class="viewer" id="viewer">
@@ -485,32 +486,45 @@
       </div>
       <span class="vlbl">VIEWER</span><span class="pled" id="pled"></span>
     </div>
-    <div class="view-actions underscreen" id="viewActions" hidden>
-      <button class="akey" data-act="reuse" data-ic="loop" type="button">重用參數</button>
-      <button class="akey" data-act="img2img" data-ic="i2i" type="button">圖生圖</button>
-      <button class="akey" data-act="inpaint" data-ic="inpaint" type="button">局部重繪</button>
-      <button class="akey" data-act="upscale" data-ic="zoom" type="button">放大</button>
-      <button class="akey" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
-      <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
-      <button class="akey" data-act="fav" type="button">☆ 收藏</button>
-      <a class="akey" data-act="download" data-ic="floppy" download>下載</a>
-      <button class="akey" id="viewMore" type="button" aria-expanded="false" aria-controls="viewMoreMenu" aria-label="更多成品動作">⋯</button>
-      <div id="viewMoreMenu" hidden>
-        <button class="akey" data-act="multiref" data-ic="multi" type="button">多圖參考</button>
-        <button class="akey" data-act="strip" data-ic="i2i" type="button" hidden></button>
-        <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
-        <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
-        <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
-        <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
-        <button class="akey" data-act="tagger" data-ic="rewind" type="button">反推</button>
-        <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
-        <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
-        <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
-        <button class="akey warn" data-act="delete" data-ic="eject" type="button">回收區</button>
-      </div>
-    </div>
   </section>
 
+
+  <!-- 右區「這張圖」（2026-11-23 左右兩欄）：成品動作全部攤開、一直看得到。右區收起或視窗太窄時，stage.js placeActs 把 #viewActions 搬到觀景窗下面排成一排 -->
+  <div class="dock-grp" data-dock="imgacts">
+    <p class="muted sm" id="imgActsEmpty">還沒選圖：畫好一張，或點右下幻燈片匣、圖庫裡的圖，這裡就會出現能對它做的事。</p>
+    <div class="view-actions" id="viewActions" hidden>
+      <div class="va-grp"><span class="va-lbl">接著做</span>
+        <button class="akey" data-act="reuse" data-ic="loop" type="button" title="把這張圖的提示詞、模型、LoRA、尺寸、取樣整套放回生成頁">重用參數</button>
+        <button class="akey" data-act="img2img" data-ic="i2i" type="button">圖生圖</button>
+        <button class="akey" data-act="inpaint" data-ic="inpaint" type="button">局部重繪</button>
+        <button class="akey" data-act="upscale" data-ic="zoom" type="button">放大</button>
+        <button class="akey" data-act="multiref" data-ic="multi" type="button">多圖參考</button>
+        <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
+        <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
+        <button class="akey" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
+        <button class="akey" data-act="strip" data-ic="i2i" type="button" hidden></button>
+        <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
+      </div>
+      <div class="va-grp"><span class="va-lbl">看懂它</span>
+        <button class="akey" data-act="tagger" data-ic="rewind" type="button" title="從這張圖反推提示詞">反推</button>
+      </div>
+      <div class="va-grp"><span class="va-lbl">帶走</span>
+        <button class="akey" data-act="fav" type="button">☆ 收藏</button>
+        <a class="akey" data-act="download" data-ic="floppy" download>下載</a>
+        <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
+        <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
+        <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
+        <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
+      </div>
+      <div class="va-grp va-end">
+        <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
+        <button class="akey warn" data-act="delete" data-ic="eject" type="button">回收區</button>
+      </div>
+      <!-- 以前的「⋯」更多選單：按鈕都攤開了，留著空殼（id 不刪） -->
+      <button class="akey" id="viewMore" type="button" aria-expanded="false" aria-controls="viewMoreMenu" aria-label="更多成品動作" hidden>⋯</button>
+      <div id="viewMoreMenu" hidden></div>
+    </div>
+  </div>
 
   <aside class="mag stage-tasks" data-dock="tasks" aria-label="任務">
     <div class="row gap wrap"><span class="vfd sm" id="stageQueue">QUEUE · 0</span>
@@ -2389,7 +2403,7 @@
         <dl><dt><kbd>?</kbd></dt><dd>打開這個說明</dd><dt><kbd>Alt</kbd>＋<kbd>1</kbd>～<kbd>9</kbd></dt><dd>切換功能（跟頂列及「全部功能」裡按鍵上的編號一樣）</dd><dt><kbd>Alt</kbd>＋<kbd>0</kbd></dt><dd>設定</dd>
         <dt><kbd>Q</kbd></dt><dd>任務面板</dd><dt><kbd>Esc</kbd></dt><dd>關閉浮層</dd></dl></section>
       <section><h4>生成</h4>
-        <dl><dt><kbd>Ctrl</kbd>＋<kbd>Enter</kbd></dt><dd>生成</dd><dt><kbd>Ctrl</kbd>＋<kbd>V</kbd></dt><dd>貼上圖片＝圖生圖（多圖參考模式下＝加一張參考圖）</dd>
+        <dl><dt><kbd>Ctrl</kbd>＋<kbd>Enter</kbd></dt><dd>生成</dd><dt><kbd>Ctrl</kbd>＋<kbd>K</kbd></dt><dd>找功能（打「反推」「遮罩」「種子」…，Enter 直接跳過去）</dd><dt><kbd>Ctrl</kbd>＋<kbd>V</kbd></dt><dd>貼上圖片＝圖生圖（多圖參考模式下＝加一張參考圖）</dd>
         <dt><kbd>Ctrl</kbd>＋<kbd>↑</kbd>／<kbd>↓</kbd></dt><dd>提示詞裡：游標所在的 tag（或選取的文字）權重 ±0.05，寫成 <code>(tag:1.10)</code></dd>
         <dt><kbd>↑</kbd><kbd>↓</kbd>＋<kbd>Enter</kbd>／<kbd>Tab</kbd></dt><dd>選 tag 建議</dd><dt><code>{紅|藍|綠}</code></dt><dd>每張隨機挑一個</dd>
         <dt>旋鈕</dt><dd>上下拖曳、滾輪、或點一下後按方向鍵</dd></dl></section>
@@ -2421,5 +2435,13 @@
   </div>
 </div>
 <div id="capLayer"></div>
+<!-- Ctrl+K 找功能（js/finder.js）：放在 #page-gen 外面，版面（dock.js）重排時不會被拿掉 -->
+<div class="finder" id="finder" hidden role="dialog" aria-label="找功能">
+  <div class="finder-box">
+    <input id="finderIn" type="search" autocomplete="off" placeholder="找功能：反推、遮罩、LoRA、種子、去背…" aria-label="找功能" aria-controls="finderList">
+    <ul id="finderList" role="listbox" aria-label="找到的功能"></ul>
+    <div class="muted sm">↑↓ 選、Enter 前往、Esc 關掉。只找生成頁現在用得到的（切了模式、換了模型，清單會跟著變）。</div>
+  </div>
+</div>
 </body>
 </html>

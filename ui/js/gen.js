@@ -249,6 +249,14 @@ export function init() {
   F("initFromGallery").onclick = () => pickFromGallery(async (rec) => setInit(await api("/api/to_input", { json: { id: rec.id } })));
   F("maskEdit").onclick = () => S.init && mask.open(S.init, (m) => { S.mask = m; showInit(); });
   F("initTagger").onclick = () => S.init && tagger.open({ name: S.init.name }, applyTags, fam(), triggerWords);
+  // 提示詞卡的「反推」（2026-11-23）：圖生圖這類有輸入圖就推輸入圖，否則推觀景窗目前那張成品，都沒有就挑一張檔案
+  F("promptTagger").onclick = async () => {
+    if (S.init && !F("initBox").hidden) return tagger.open({ name: S.init.name }, applyTags, fam(), triggerWords);
+    if (S.current && !isVideo(S.current)) return tagger.open({ id: S.current.id }, applyTags, fam(), triggerWords);
+    const f = await pickFile();
+    if (!f) return;
+    try { tagger.open({ name: (await uploadFile(f)).name }, applyTags, fam(), triggerWords); } catch (e) { toast(e.message, "err"); }
+  };
   F("initParams").onclick = () => S.init?.params && applyParams(S.init.params, false);
   document.addEventListener("paste", async (e) => {
     if (!onGenPage() || !$("#imModal").hidden || !$("#loraPrev").hidden) return; // 讀圖片參數、換 LoRA 預覽圖的視窗開著：貼給它們

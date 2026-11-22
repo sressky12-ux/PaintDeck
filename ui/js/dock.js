@@ -114,6 +114,8 @@ export function resetDock(name) {
  *   sizes    { top, left, right, bottom }：各區尺寸
  *   inset    true＝容器本身已經在一塊機殼面板裡（導演台、漫畫台…），區不再畫成一塊塊機殼
  *   caps     { host, chips: { id: { label, summary(), visible?() } } }：膠囊列
+ *   panels 的 chip: true：放在區裡的面板也做一顆膠囊（生成頁的左區面板給隨機頁用：頁面藏著時點膠囊改成彈出、借內容）
+ *   onRender 每次排完版面叫一次（生成頁用來決定成品動作放右區還是觀景窗下面）
  */
 export function mountDock(page, spec) {
   const key = "dock_" + spec.name + "_fixed";
@@ -205,7 +207,7 @@ export function mountDock(page, spec) {
     const head = el("div", { class: "dock-head", title: "點一下收起／展開這塊" },
       el("span", { class: "dock-title" }, p.title), el("span", { class: "grow" }), fold);
     head.addEventListener("click", (e) => { if (!e.target.closest("button")) toggleFold(p.id); });
-    if (p.zone === "cap") {
+    if (p.zone === "cap" || p.chip) {
       const config = spec.caps.chips[p.id];
       const value = el("span", { class: "v" });
       const button = el("button", { type: "button", class: "cap-chip", "data-cap": p.id, "aria-haspopup": "dialog",
@@ -270,6 +272,7 @@ export function mountDock(page, spec) {
       if (at?.kind === "cap" && w.parentElement !== page) page.append(w);   // 膠囊面板藏在容器裡，內容（#model 這些）還要留在畫面上給別的程式找
     }
     apply();
+    spec.onRender?.();
   }
 
   function commit() {
