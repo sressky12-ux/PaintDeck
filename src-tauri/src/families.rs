@@ -15,7 +15,7 @@
 //!                              diffusers 格式的 LoRA 是 text_fusion.*、transformer_blocks.N.attn.to_gate、ff.gate／up／down
 //!
 //! 判斷順序（Anima、Qwen、MOSS 的規則一字不改，只在前面插入新家族的「結構證據」）：
-//!   MOSS → Krea 2 → Qwen 的 txt_in.text_norm → Flux／SD3 → SDXL／SD1.5 → （有 UNet 命名卻分不出 SD1.5／SDXL：metadata，否則 other）
+//!   MiniMax H3 Image（有影像與條件投影、無音訊投影）→ MOSS → Krea 2 → Qwen 的 txt_in.text_norm → Flux／SD3 → SDXL／SD1.5 → （有 UNet 命名卻分不出 SD1.5／SDXL：metadata，否則 other）
 //!   → Qwen 的 transformer_blocks → Anima → metadata → other。
 //!   SD 的 UNet 與 Flux／SD3 的 diffusers 格式也有 transformer_blocks，所以一定要比舊的 Qwen 規則先判斷。
 //!   SD1.5 與 SDXL 之間，結構證據（區塊編號、transformer 深度）比 label_emb、文字編碼器名稱可靠。
@@ -36,24 +36,26 @@ pub const ANIMA: &str = "anima";
 pub const QWEN21: &str = "qwen21";
 pub const MOSS: &str = "moss";
 pub const KREA2: &str = "krea2";
+pub const MMIMG: &str = "mmimage";
 pub const SD15: &str = "sd15";
 pub const SDXL: &str = "sdxl";
 pub const FLUX: &str = "flux";
 pub const SD3: &str = "sd3";
 pub const OTHER: &str = "other";
 /// 顯示名稱（順序就是生成頁模型選單的順序：內建的在前面，順序跟 BUILTIN 一樣）
-pub const FAMILY_NAMES: [(&str, &str); 8] = [
+pub const FAMILY_NAMES: [(&str, &str); 9] = [
     (ANIMA, "Anima（動漫）"),
     (QWEN21, "Qwen 2.1（編輯）"),
     (MOSS, "MOSS-Image（文生圖繪圖）"),
     (KREA2, "Krea 2（寫實／插畫）"),
+    (MMIMG, "MiniMax H3 Image（文生圖、多圖改圖）"),
     (SDXL, "SDXL（含 Pony、Illustrious、NoobAI）"),
     (SD15, "SD 1.5"),
     (FLUX, "Flux"),
     (SD3, "SD3"),
 ];
 /// 生圖站內建流程（graphs.rs）真的會畫的家族；其他家族只能走匯入的工作流
-pub const BUILTIN: [&str; 5] = [ANIMA, QWEN21, MOSS, KREA2, SDXL];
+pub const BUILTIN: [&str; 6] = [ANIMA, QWEN21, MOSS, KREA2, MMIMG, SDXL];
 
 pub fn is_builtin(family: &str) -> bool {
     BUILTIN.contains(&family)
@@ -636,6 +638,11 @@ fn meta_family(m: &Meta) -> Option<&'static str> {
 }
 
 fn classify_with(keys: &[String], meta: Option<&Meta>) -> &'static str {
+    // 圖片與影片模型共用注意力層，先看三種投影來分辨。
+    let has = |weight: &str| keys.iter().any(|k| k == weight || k.strip_suffix(weight).is_some_and(|prefix| prefix.ends_with('.')));
+    if has("video_patch_proj.weight") && has("condition_proj.weight") && !has("audio_patch_proj.weight") {
+        return MMIMG;
+    }
     let p = Probe::new(keys);
     if p.moss {
         MOSS
@@ -791,7 +798,9 @@ pub fn family_of(roots: &[PathBuf], name: &str) -> &'static str {
 /// "Qwen" 不寫 2.1 的是第一代 Qwen-Image，架構不同，不猜
 pub fn from_base_model(base: &str) -> Option<&'static str> {
     let b = base.to_lowercase();
-    if b.contains("anima") {
+    if b.contains("minimax") && b.contains("image") {
+        Some(MMIMG) // 要排在前面：H3 影片寫 "MiniMax H3"，圖片版多一個 Image
+    } else if b.contains("anima") {
         Some(ANIMA)
     } else if b.contains("moss") {
         Some(MOSS)
@@ -1661,6 +1670,16 @@ mod tests {
         let mut out = (body.len() as u64).to_le_bytes().to_vec();
         out.extend(body);
         out
+    }
+
+    #[test]
+    fn mmimage_header() {
+        let mut keys = vec!["video_patch_proj.weight", "condition_proj.weight", "blocks.0.attn.qkv_proj.weight"];
+        let image = Tmp::new("a.safetensors", &safetensors(&keys, None));
+        assert_eq!(detect(image.path()), "mmimage");
+        keys.push("audio_patch_proj.weight");
+        let video = Tmp::new("b.safetensors", &safetensors(&keys, None));
+        assert_eq!(detect(video.path()), OTHER);
     }
 
     #[test]

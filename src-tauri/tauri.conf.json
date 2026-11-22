@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "繪匣 PaintDeck",
-  "version": "26.1121.1",
+  "version": "26.1122.5",
   "identifier": "local.anima.studio",
   "build": {
     "frontendDist": "../ui"

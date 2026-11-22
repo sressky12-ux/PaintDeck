@@ -1,0 +1,252 @@
+{
+ "poses": [
+  {
+   "id": "full_single_P001",
+   "no": "P001",
+   "line": "全身·标准",
+   "cat": "坐姿",
+   "ja": "仰け反り座り・片膝立て",
+   "zh": "后仰坐·单膝立起",
+   "en": "sitting leaning back, one knee raised",
+   "lineEn": "full body, solo",
+   "angles": [
+    {
+     "zh": "正面",
+     "en": "front view",
+     "t": "p/t/full_single_P001_front.webp",
+     "i": "p/i/full_single_P001_front.webp",
+     "o": "o/p/full_single_P001_front.png"
+    },
+    {
+     "zh": "俯拍",
+     "en": "high angle, from above",
+     "t": "p/t/full_single_P001_high.webp",
+     "i": "p/i/full_single_P001_high.webp",
+     "o": "o/p/full_single_P001_high.png"
+    },
+    {
+     "zh": "仰拍",
+     "en": "low angle, from below",
+     "t": "p/t/full_single_P001_low.webp",
+     "i": "p/i/full_single_P001_low.webp",
+     "o": "o/p/full_single_P001_low.png"
+    },
+    {
+     "zh": "侧面",
+     "en": "side view",
+     "t": "p/t/full_single_P001_side.webp",
+     "i": "p/i/full_single_P001_side.webp",
+     "o": "o/p/full_single_P001_side.png"
+    },
+    {
+     "zh": "斜侧",
+     "en": "three-quarter view",
+     "t": "p/t/full_single_P001_diag.webp",
+     "i": "p/i/full_single_P001_diag.webp",
+     "o": "o/p/full_single_P001_diag.png"
+    }
+   ]
+  }
+ ],
+ "costumes": [
+  {
+   "id": "SPR-0001",
+   "cat": "春季",
+   "catEn": "spring",
+   "kw": "ivory frill knit denim mini skirt coat socks white sneakers",
+   "zh": "外穿大衣，下身配象牙白荷叶边针织牛仔短裙，配袜子，脚踩白色运动鞋。",
+   "en": "spring outfit, ivory frill knit denim mini skirt, coat, socks, white sneakers",
+   "ti": "大衣 + 荷叶边针织牛仔短裙",
+   "t": "c/t/SPR-0001.webp",
+   "m": "c/m/SPR-0001.webp",
+   "i": "c/i/SPR-0001.webp",
+   "o": "o/c/SPR-0001.png"
+  }
+ ],
+ "anime": [
+  {
+   "id": "SPR-0001",
+   "cat": "春季",
+   "catEn": "spring",
+   "kw": "ivory frill knit denim mini skirt coat socks white sneakers",
+   "zh": "外穿大衣，下身配象牙白荷叶边针织牛仔短裙，配袜子，脚踩白色运动鞋。",
+   "en": "spring outfit, ivory frill knit denim mini skirt, coat, socks, white sneakers",
+   "ti": "大衣 + 荷叶边针织牛仔短裙",
+   "t": "a/t/SPR-0001.webp",
+   "m": "a/m/SPR-0001.webp",
+   "i": "a/i/SPR-0001.webp",
+   "o": "o/a/SPR-0001.png"
+  },
+  {
+   "id": "charadb-O001",
+   "cat": "制服与校园风",
+   "catEn": "school uniforms",
+   "kw": "serafuku, sailor collar, blue sailor collar, red neckerchief, pleated skirt, blue skirt",
+   "zh": "藏青水手服，水手服、蓝色、红色、百褶、半身裙。",
+   "en": "serafuku, sailor collar, blue sailor collar, red neckerchief, pleated skirt, blue skirt",
+   "ti": "藏青水手服",
+   "t": "https://charadb-2fi.pages.dev/thumb/O001.webp",
+   "m": "https://charadb-2fi.pages.dev/img/O001.jpg",
+   "i": "https://charadb-2fi.pages.dev/img/O001.jpg",
+   "o": "",
+   "ext": 1
+  }
+ ],
+ "depths": {
+  "pack": {
+   "id": "gia-depth",
+   "site": "https://ai-pose-depth-gallery.pages.dev/",
+   "siteName": "ai-pose-depth-gallery",
+   "author": "ギア",
+   "authorUrl": "https://x.com/giaaibusi",
+   "credit": "素材来自 ai-pose-depth-gallery，作者ギア（https://x.com/giaaibusi）",
+   "unofficial": "非官方汉化",
+   "note": "图片由原站托管，本站不保存。双人互动默认隐藏，需打开右上角「18+」并确认已满 18 岁。",
+   "referrerPolicy": "no-referrer",
+   "source": "hotlink",
+   "packs": [
+    {
+     "id": "gia-depth",
+     "site": "https://ai-pose-depth-gallery.pages.dev/",
+     "siteName": "ai-pose-depth-gallery",
+     "author": "ギア",
+     "authorUrl": "https://x.com/giaaibusi",
+     "credit": "素材来自 ai-pose-depth-gallery，作者ギア（https://x.com/giaaibusi）",
+     "unofficial": "非官方汉化",
+     "note": "图片由原站托管，本站不保存。双人互动默认隐藏，需打开右上角「18+」并确认已满 18 岁。",
+     "referrerPolicy": "no-referrer",
+     "source": "hotlink"
+    }
+   ]
+  },
+  "items": [
+   {
+    "id": "full_sexy_P001",
+    "no": "P001",
+    "line": "全身·性感",
+    "lineEn": "full body, solo, sexy",
+    "lineJa": "全身1人・セクシー系",
+    "cat": "站姿",
+    "catJa": "立ち",
+    "ja": "S字立ち・腰を横に突き出す",
+    "zh": "S形站姿·胯部侧顶",
+    "en": "S-curve standing pose, hip pushed out to the side",
+    "pack": "gia-depth",
+    "site": "https://ai-pose-depth-gallery.pages.dev/",
+    "credit": "素材来自 ai-pose-depth-gallery，作者ギア（https://x.com/giaaibusi）",
+    "unofficial": "非官方汉化",
+    "angles": [
+     {
+      "zh": "正面",
+      "en": "front view",
+      "ja": "正面",
+      "t": "https://pwimg.0vo.pro/d/thumbs/full_sexy_P001_front.jpg",
+      "i": "https://pwimg.0vo.pro/d/img/full_sexy_P001_front.png"
+     },
+     {
+      "zh": "斜侧",
+      "en": "three-quarter view",
+      "ja": "斜め",
+      "t": "https://pwimg.0vo.pro/d/thumbs/full_sexy_P001_diag.jpg",
+      "i": "https://pwimg.0vo.pro/d/img/full_sexy_P001_diag.png"
+     },
+     {
+      "zh": "侧面",
+      "en": "side view",
+      "ja": "横",
+      "t": "https://pwimg.0vo.pro/d/thumbs/full_sexy_P001_side.jpg",
+      "i": "https://pwimg.0vo.pro/d/img/full_sexy_P001_side.png"
+     },
+     {
+      "zh": "俯拍",
+      "en": "high angle, from above",
+      "ja": "上から",
+      "t": "https://pwimg.0vo.pro/d/thumbs/full_sexy_P001_high.jpg",
+      "i": "https://pwimg.0vo.pro/d/img/full_sexy_P001_high.png"
+     },
+     {
+      "zh": "仰拍",
+      "en": "low angle, from below",
+      "ja": "下から",
+      "t": "https://pwimg.0vo.pro/d/thumbs/full_sexy_P001_low.jpg",
+      "i": "https://pwimg.0vo.pro/d/img/full_sexy_P001_low.png"
+     }
+    ],
+    "ext": 1,
+    "ref": "no-referrer"
+   }
+  ]
+ },
+ "cat_pose": [
+  {
+   "id": "full_single_P001_front",
+   "系統": "全身1人・標準系",
+   "ポーズ番号": "P001",
+   "分類": "座り",
+   "ポーズ名": "仰け反り座り・片膝立て",
+   "アングル": "正面",
+   "サムネ": "thumbs/full_single_P001_front.jpg",
+   "原寸": "img/full_single_P001_front.png"
+  },
+  {
+   "id": "full_single_P001_high",
+   "系統": "全身1人・標準系",
+   "ポーズ番号": "P001",
+   "分類": "座り",
+   "ポーズ名": "仰け反り座り・片膝立て",
+   "アングル": "上から",
+   "サムネ": "thumbs/full_single_P001_high.jpg",
+   "原寸": "img/full_single_P001_high.png"
+  },
+  {
+   "id": "full_single_P001_low",
+   "系統": "全身1人・標準系",
+   "ポーズ番号": "P001",
+   "分類": "座り",
+   "ポーズ名": "仰け反り座り・片膝立て",
+   "アングル": "下から",
+   "サムネ": "thumbs/full_single_P001_low.jpg",
+   "原寸": "img/full_single_P001_low.png"
+  },
+  {
+   "id": "full_single_P001_side",
+   "系統": "全身1人・標準系",
+   "ポーズ番号": "P001",
+   "分類": "座り",
+   "ポーズ名": "仰け反り座り・片膝立て",
+   "アングル": "横",
+   "サムネ": "thumbs/full_single_P001_side.jpg",
+   "原寸": "img/full_single_P001_side.png"
+  },
+  {
+   "id": "full_single_P001_diag",
+   "系統": "全身1人・標準系",
+   "ポーズ番号": "P001",
+   "分類": "座り",
+   "ポーズ名": "仰け反り座り・片膝立て",
+   "アングル": "斜め",
+   "サムネ": "thumbs/full_single_P001_diag.jpg",
+   "原寸": "img/full_single_P001_diag.png"
+  }
+ ],
+ "cat_costume": [
+  {
+   "id": "SPR-0001",
+   "カテゴリ": "春",
+   "キーワード": "ivory frill knit denim mini skirt coat socks white sneakers",
+   "サムネ": "thumbs/SPR-0001.webp",
+   "画像": "img/SPR-0001.webp",
+   "原寸": "png/SPR-0001.png"
+  }
+ ],
+ "cat_anime": [
+  {
+   "id": "SPR-0001",
+   "カテゴリ": "春",
+   "キーワード": "ivory frill knit denim mini skirt coat socks white sneakers",
+   "サムネ": "thumbs/SPR-0001.webp",
+   "画像": "img/SPR-0001.webp",
+   "原寸": "png/SPR-0001.png"
+  }
+ ]
+}

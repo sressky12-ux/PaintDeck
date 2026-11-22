@@ -1,0 +1,242 @@
+[
+ {
+  "kw": "ivory frill knit denim mini skirt coat socks white sneakers",
+  "cat_en": "spring",
+  "id": "SPR-0001",
+  "zh": "外穿大衣，下身配象牙白荷葉邊針織牛仔短裙，配襪子，腳踩白色運動鞋。",
+  "en": "spring outfit, ivory frill knit denim mini skirt, coat, socks, white sneakers",
+  "title": "大衣 + 荷葉邊針織牛仔短裙"
+ },
+ {
+  "kw": "yellow floral camisole cardigan denim pants sandals mini tote necklace",
+  "cat_en": "spring",
+  "id": "SPR-0138",
+  "zh": "內搭黃色碎花細肩帶，外面套開襟衫，下裝是牛仔長褲，腳踩涼鞋，配托特包與項鍊。",
+  "en": "spring outfit, yellow floral camisole, cardigan, denim trousers, sandals, tote bag, necklace",
+  "title": "開襟衫 + 牛仔長褲"
+ },
+ {
+  "kw": "white shirt black shorts socks tights loafers mini bag silver",
+  "cat_en": "summer",
+  "id": "SUM-0162",
+  "zh": "上身是白色襯衣，下裝是黑色短褲，搭配襪子與褲襪，腳踩樂福鞋，配銀色手提包。",
+  "en": "summer outfit, white shirt, black shorts, socks, tights, loafers, silver bag",
+  "title": "白色襯衣 + 黑色短褲"
+ },
+ {
+  "kw": "white black polka-dot shirt camisole denim jeans sandals brown leather",
+  "cat_en": "summer",
+  "id": "SUM-0205",
+  "zh": "內搭白色拼黑色圓點襯衣與細肩帶，外搭皮夾克，下裝是牛仔褲，穿棕色涼鞋。",
+  "en": "summer outfit, white black polka-dot shirt, camisole, denim jeans, brown sandals, leather jacket",
+  "title": "皮夾克 + 牛仔褲"
+ },
+ {
+  "kw": "burgundy blouse brown denim pants boots mini bag gold necklace",
+  "cat_en": "autumn",
+  "id": "AUT-0001",
+  "zh": "上身穿酒紅色襯衫，下身配棕色牛仔長褲，腳踩靴子，手提包與金色項鍊作點綴。",
+  "en": "autumn outfit, burgundy blouse, brown denim trousers, boots, bag, gold necklace",
+  "title": "酒紅色襯衫 + 棕色牛仔長褲"
+ },
+ {
+  "kw": "brown knit cardigan camisole burgundy corduroy pants suede boots ribbon",
+  "cat_en": "autumn",
+  "id": "AUT-0060",
+  "zh": "內搭細肩帶，外穿棕色針織開襟衫，下裝是酒紅色燈芯絨長褲，腳踩麂皮靴子，蝴蝶結作點綴。",
+  "en": "autumn outfit, brown knit cardigan, camisole, burgundy corduroy trousers, suede boots, ribbon",
+  "title": "針織開襟衫 + 燈芯絨長褲"
+ },
+ {
+  "kw": "beige knit green corduroy skirt fur jacket boots bag beret",
+  "cat_en": "winter",
+  "id": "WIN-0001",
+  "zh": "內搭米色針織衫，外穿毛絨夾克，下身配綠色燈芯絨半身裙，腳踩靴子，配手提包與貝雷帽。",
+  "en": "winter outfit, beige knit top, green corduroy skirt, fur jacket, boots, bag, beret",
+  "title": "毛絨夾克 + 燈芯絨半身裙"
+ },
+ {
+  "kw": "brown corduroy jacket ivory turtleneck knit skirt black boots leather",
+  "cat_en": "winter",
+  "id": "WIN-0167",
+  "zh": "內搭象牙白高領毛衣，外穿棕色燈芯絨夾克，下身配針織半身裙，鞋子選黑色靴子。",
+  "en": "winter outfit, brown corduroy jacket, ivory turtleneck, knit skirt, black boots",
+  "title": "燈芯絨夾克 + 針織半身裙"
+ },
+ {
+  "kw": "navy bra briefs tulle stockings satin heels necklace",
+  "cat_en": "lingerie",
+  "id": "LNG-0105",
+  "zh": "上衣選藏青色胸罩，下身配內褲，搭配薄紗過膝襪，鞋子選緞面高跟鞋，項鍊作點綴。",
+  "en": "lingerie outfit, navy bra, briefs, tulle stockings, satin high heels, necklace",
+  "title": "藏青色胸罩 + 內褲"
+ },
+ {
+  "kw": "black bra briefs lace satin ribbon stockings heels silver necklace",
+  "cat_en": "lingerie",
+  "id": "LNG-0180",
+  "zh": "上衣選黑色胸罩，下身配內褲，腿上是蕾絲緞面蝴蝶結過膝襪，腳踩高跟鞋，配銀色項鍊。",
+  "en": "lingerie outfit, black bra, briefs, lace satin ribbon stockings, high heels, silver necklace",
+  "title": "黑色胸罩 + 內褲"
+ },
+ {
+  "kw": "mint satin gloves heels",
+  "cat_en": "party",
+  "id": "PTY-0003",
+  "zh": "鞋子選高跟鞋，再加薄荷綠緞面手套。",
+  "en": "party outfit, mint satin gloves, high heels",
+  "title": "薄荷綠緞面手套 + 高跟鞋"
+ },
+ {
+  "kw": "black lace midi dress grey tights pumps heels necklace",
+  "cat_en": "party",
+  "id": "PTY-0021",
+  "zh": "一條黑色蕾絲中長洋裝，腿上是灰色褲襪，穿包鞋與高跟鞋，再加項鍊。",
+  "en": "party outfit, black lace midi dress, grey tights, pumps, high heels, necklace",
+  "title": "黑色蕾絲中長洋裝"
+ },
+ {
+  "kw": "mint floral pants cardigan sandals necklace tote",
+  "cat_en": "swimsuit",
+  "id": "SWM-0001",
+  "zh": "外搭開襟衫，下身配薄荷綠碎花長褲，穿涼鞋，配項鍊與托特包。",
+  "en": "swimsuit outfit, mint floral trousers, cardigan, sandals, necklace, tote bag",
+  "title": "開襟衫 + 薄荷綠碎花長褲"
+ },
+ {
+  "kw": "cream floral pants cardigan sandals necklace tote",
+  "cat_en": "swimsuit",
+  "id": "SWM-0012",
+  "zh": "外穿開襟衫，配奶油色碎花長褲，穿涼鞋，項鍊與托特包作點綴。",
+  "en": "swimsuit outfit, cream floral trousers, cardigan, sandals, necklace, tote bag",
+  "title": "開襟衫 + 奶油色碎花長褲"
+ },
+ {
+  "kw": "pink knit turtleneck mini dress stockings heels",
+  "cat_en": "sexy",
+  "id": "SXY-0001",
+  "zh": "一條短款洋裝，疊穿粉色針織高領毛衣，搭配過膝襪，穿高跟鞋。",
+  "en": "sexy outfit, pink knit turtleneck, mini dress, stockings, high heels",
+  "title": "短款洋裝"
+ },
+ {
+  "kw": "blue lace camisole cardigan ivory pants beige ribbon satin gold",
+  "cat_en": "spring",
+  "id": "SPR-0125",
+  "zh": "內搭藍色蕾絲細肩帶，外搭開襟衫，下身配象牙白拼米色長褲，點綴金色蝴蝶結。",
+  "en": "spring outfit, blue lace camisole, cardigan, ivory beige trousers, gold ribbon",
+  "title": "開襟衫 + 象牙白拼米色長褲"
+ },
+ {
+  "kw": "yellow ribbon chiffon camisole white pleated mini skirt beige tights",
+  "cat_en": "spring",
+  "id": "SPR-0067",
+  "zh": "上身是黃色蝴蝶結雪紡細肩帶，下身配白色百褶短裙，搭配米色褲襪。",
+  "en": "spring outfit, yellow ribbon chiffon camisole, white pleated mini skirt, beige tights",
+  "title": "蝴蝶結雪紡細肩帶 + 百褶短裙"
+ },
+ {
+  "kw": "pink pleated mini skirt shorts shirt lace socks sandals ribbon",
+  "cat_en": "summer",
+  "id": "SUM-0033",
+  "zh": "上身是襯衣，下身配粉色百褶短裙褲，搭配蕾絲襪子，腳踩涼鞋，再加蝴蝶結。",
+  "en": "summer outfit, pink pleated mini skirt, shorts, shirt, lace socks, sandals, ribbon",
+  "title": "襯衣 + 粉色百褶短裙褲"
+ },
+ {
+  "kw": "black white polka-dot shirt camisole denim jeans sandals brown leather",
+  "cat_en": "summer",
+  "id": "SUM-0219",
+  "zh": "內搭黑色拼白色圓點襯衣與細肩帶，外搭皮夾克，配牛仔褲，鞋子選棕色涼鞋。",
+  "en": "summer outfit, black white polka-dot shirt, camisole, denim jeans, brown sandals, leather jacket",
+  "title": "皮夾克 + 牛仔褲"
+ },
+ {
+  "kw": "lace velvet mini dress beige coat socks ribbon bag gold",
+  "cat_en": "autumn",
+  "id": "AUT-0125",
+  "zh": "穿蕾絲絲絨短款洋裝，外披米色大衣，配襪子，再加金色蝴蝶結手提包。",
+  "en": "autumn outfit, lace velvet mini dress, beige coat, socks, ribbon gold bag",
+  "title": "蕾絲絲絨短款洋裝 + 大衣"
+ },
+ {
+  "kw": "ivory knit cardigan camisole burgundy skirt brown leather boots ribbon",
+  "cat_en": "autumn",
+  "id": "AUT-0051",
+  "zh": "內搭細肩帶，外搭象牙白針織開襟衫，下身配酒紅色半身裙，穿棕色皮質靴子，配蝴蝶結。",
+  "en": "autumn outfit, ivory knit cardigan, camisole, burgundy skirt, brown leather boots, ribbon",
+  "title": "針織開襟衫 + 半身裙"
+ },
+ {
+  "kw": "beige knit sweater brown pants black boots mini bag fur",
+  "cat_en": "winter",
+  "id": "WIN-0127",
+  "zh": "內搭米色針織毛衣，外面套毛絨披肩，配棕色長褲，穿黑色靴子，再加手提包。",
+  "en": "winter outfit, beige knit sweater, brown trousers, black boots, bag, fur stole",
+  "title": "毛絨披肩 + 棕色長褲"
+ },
+ {
+  "kw": "black corduroy jacket grey turtleneck knit skirt boots brown leather",
+  "cat_en": "winter",
+  "id": "WIN-0197",
+  "zh": "內搭灰色高領毛衣，外穿黑色燈芯絨夾克，配針織半身裙，穿棕色靴子。",
+  "en": "winter outfit, black corduroy jacket, grey turtleneck, knit skirt, brown boots",
+  "title": "燈芯絨夾克 + 針織半身裙"
+ },
+ {
+  "kw": "lace camisole shorts pink black stockings heels cardigan",
+  "cat_en": "lingerie",
+  "id": "LNG-0005",
+  "zh": "內搭蕾絲細肩帶，外穿開襟衫，配短褲，腿上是粉色拼黑色過膝襪，鞋子選高跟鞋。",
+  "en": "lingerie outfit, lace camisole, shorts, pink black stockings, high heels, cardigan",
+  "title": "開襟衫 + 短褲"
+ },
+ {
+  "kw": "floral lace camisole dress lavender ribbon belt cardigan stockings",
+  "cat_en": "lingerie",
+  "id": "LNG-0032",
+  "zh": "身穿洋裝，內搭碎花蕾絲細肩帶，外披開襟衫，腿上是過膝襪，點綴薰衣草紫蝴蝶結腰帶。",
+  "en": "lingerie outfit, floral lace camisole, dress, lavender ribbon belt, cardigan, stockings",
+  "title": "洋裝 + 開襟衫"
+ },
+ {
+  "kw": "black velvet mini dress ribbon tights pumps",
+  "cat_en": "party",
+  "id": "PTY-0028",
+  "zh": "一條黑色絲絨短款洋裝，腿上是蝴蝶結褲襪，穿包鞋。",
+  "en": "party outfit, black velvet mini dress, ribbon tights, pumps",
+  "title": "黑色絲絨短款洋裝"
+ },
+ {
+  "kw": "black mini dress tulle skirt satin gloves heels",
+  "cat_en": "party",
+  "id": "PTY-0009",
+  "zh": "身穿黑色短款洋裝，配薄紗半身裙，鞋子選高跟鞋，點綴緞面手套。",
+  "en": "party outfit, black mini dress, tulle skirt, satin gloves, high heels",
+  "title": "黑色短款洋裝"
+ },
+ {
+  "kw": "orange swimsuit gold belt sandals sunglasses",
+  "cat_en": "swimsuit",
+  "id": "SWM-0028",
+  "zh": "身穿橙色泳衣，鞋子選涼鞋，點綴金色腰帶與墨鏡。",
+  "en": "swimsuit outfit, orange swimsuit, gold belt, sandals, sunglasses",
+  "title": "橙色泳衣"
+ },
+ {
+  "kw": "black floral pants cardigan sandals necklace tote",
+  "cat_en": "swimsuit",
+  "id": "SWM-0051",
+  "zh": "外面套開襟衫，配黑色碎花長褲，鞋子選涼鞋，項鍊與托特包作點綴。",
+  "en": "swimsuit outfit, black floral trousers, cardigan, sandals, necklace, tote bag",
+  "title": "開襟衫 + 黑色碎花長褲"
+ },
+ {
+  "kw": "white satin mini dress gloves stockings heels",
+  "cat_en": "sexy",
+  "id": "SXY-0082",
+  "zh": "穿白色緞面短款洋裝，配過膝襪，穿高跟鞋，手套作點綴。",
+  "en": "sexy outfit, white satin mini dress, gloves, stockings, high heels",
+  "title": "白色緞面短款洋裝"
+ }
+]

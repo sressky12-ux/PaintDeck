@@ -24,6 +24,7 @@ pub async fn state(State(app): State<Shared>) -> ApiResult {
             ("upscalers", "UpscaleModelLoader", "model_name"),
             ("samplers", "KSampler", "sampler_name"),
             ("schedulers", "KSampler", "scheduler"),
+            ("text_encoders", "CLIPLoader", "clip_name"),
         ];
         for (k, node, field) in wanted {
             match c.options(node, field).await {
@@ -374,6 +375,25 @@ fn missing_params(p: &Map<String, Value>) -> Vec<&'static str> {
     need.iter().copied().filter(|k| p.get(*k).is_none_or(Value::is_null)).collect()
 }
 
+/// 只有 MiniMax 圖片有一套完整的官方預設。已指定的取樣選項照用。
+fn mmimage_defaults(p: &mut Map<String, Value>) {
+    for (key, value) in [("width", json!(2048)), ("height", json!(2048)), ("steps", json!(6)),
+                         ("cfg", json!(1)), ("sampler", json!("euler")), ("scheduler", json!("simple"))] {
+        if p.get(key).is_none_or(Value::is_null) { p.insert(key.into(), value); }
+    }
+}
+
+fn validate_generation(app: &Shared, p: &mut Map<String, Value>) -> Result<(), super::ApiError> {
+    let missing = missing_params(p);
+    if missing.is_empty() { return Ok(()); }
+    let model = p.get("model").and_then(Value::as_str).unwrap_or("");
+    if families::family_of(&app.paths.unet_roots(), model) == families::MMIMG {
+        mmimage_defaults(p);
+        return Ok(());
+    }
+    Err(bad(format!("缺少參數：{}（沒給不會用預設值，會組出 0 步、CFG 0 的圖）", missing.join("、"))))
+}
+
 fn random_seed() -> i64 {
     rand::random_range(0..=(1i64 << 48))
 }
@@ -407,10 +427,7 @@ pub async fn generate(State(app): State<Shared>, Body(body): Body) -> ApiResult 
     if !(1..=MAX_COUNT).contains(&count) {
         return Err(bad(format!("count 要在 1～{MAX_COUNT} 之間（送來的是 {count}）")));
     }
-    let missing = missing_params(&p);
-    if !missing.is_empty() {
-        return Err(bad(format!("缺少參數：{}（沒給不會用預設值，會組出 0 步、CFG 0 的圖）", missing.join("、"))));
-    }
+    validate_generation(&app, &mut p)?;
     resolve_seed(&mut p)?;
     submit(&app, p, count).await
 }
@@ -613,6 +630,23 @@ fn prepare(app: &Shared, mut p: Map<String, Value>) -> Result<Prepared, super::A
     Ok(Prepared { p, video, flow, fam, skipped, notes })
 }
 
+fn training_note(training_local: bool, to_local_comfy: bool) -> Option<&'static str> {
+    (training_local && to_local_comfy).then_some("本機正在訓練 LoRA，出圖可能很慢或讓訓練失敗")
+}
+
+fn add_job_notes(app: &Shared, jobs: &mut [Value], ignored: &[String]) {
+    let local = super::api_train::training_id().and_then(|id| super::api_train::load(app, &id).ok())
+        .is_some_and(|p| p["run"]["target"] == "local");
+    for job in jobs {
+        let mut notes = ignored.to_vec();
+        // submit_one 只在非主節點寫 node；內建 H3 直接送本機。
+        if let Some(note) = training_note(local, job["node"].is_null()) {
+            if !notes.iter().any(|s| s == note) { notes.push(note.into()); }
+        }
+        if !notes.is_empty() { job["notes"] = json!(notes); }
+    }
+}
+
 /// 同 submit，回傳 [{"job": 任務編號, "seed": 種子}]（導演台自己等任務跑完）。
 /// 有因為家族不合而略過的 LoRA，每個 job 多一個 skipped_loras（檔名清單）；有給了卻沒作用的參數，多一個 notes（白話句子）
 pub async fn submit_jobs(
@@ -622,7 +656,9 @@ pub async fn submit_jobs(
 ) -> Result<Vec<Value>, super::ApiError> {
     // 影片用內建的 H3（請求指定、或設定選的；舊的 ltx23 也算）：換成 H3 參數排進本機 ComfyUI。匯入的影片工作流照舊走 prepare
     if p.get("mode").and_then(Value::as_str) == Some("video") && video_engine(&app.paths, &p) == video_wf::BUILTIN {
-        return super::api_h3::submit_from_gen(app, &p, count).await;
+        let mut jobs = super::api_h3::submit_from_gen(app, &p, count).await?;
+        add_job_notes(app, &mut jobs, &[]);
+        return Ok(jobs);
     }
     // 工作節點：任何一台在線就能送（只有主節點時＝主節點在線）
     if !app.pool.loads().iter().any(|l| l.online) {
@@ -669,11 +705,7 @@ pub async fn submit_jobs(
             j["skipped_loras"] = json!(skipped);
         }
     }
-    if !notes.is_empty() {
-        for j in &mut jobs {
-            j["notes"] = json!(notes);
-        }
-    }
+    add_job_notes(app, &mut jobs, &notes);
     Ok(jobs)
 }
 
@@ -744,10 +776,7 @@ pub async fn export_graph(State(app): State<Shared>, Body(body): Body) -> ApiRes
     let Some(Value::Object(mut p)) = body.get("params").cloned() else {
         return Err(bad("送來的資料格式不對：缺少 params"));
     };
-    let missing = missing_params(&p);
-    if !missing.is_empty() {
-        return Err(bad(format!("缺少參數：{}（沒給不會用預設值，會組出 0 步、CFG 0 的圖）", missing.join("、"))));
-    }
+    validate_generation(&app, &mut p)?;
     // 只匯得出工作流組也有的模式（匯回去才有地方放）
     let m = p.get("mode").and_then(Value::as_str).unwrap_or("txt2img");
     if !image_wf::MODES.contains(&m) {
@@ -955,6 +984,20 @@ mod missing_tests {
     use super::missing_params;
     use serde_json::json;
 
+    #[test]
+    fn mmimage_defaults_preserve_overrides() {
+        let mut p = json!({"steps":9}).as_object().unwrap().clone();
+        super::mmimage_defaults(&mut p);
+        assert_eq!(p["steps"], 9);
+        assert_eq!(p["width"], 2048);
+        assert_eq!(p["height"], 2048);
+        assert_eq!(p["cfg"], 1);
+        assert_eq!(p["sampler"], "euler");
+        assert_eq!(p["scheduler"], "simple");
+        assert_eq!(crate::pe::skill_guide("t2i","mmimage"), Some("qwen"));
+        assert_eq!(crate::agent::family_guide("mmimage"), "qwen");
+    }
+
     fn miss(v: serde_json::Value) -> Vec<&'static str> {
         missing_params(v.as_object().unwrap())
     }
@@ -973,6 +1016,14 @@ mod missing_tests {
         for mode in ["upscale", "rembg", "video", "charsheet"] {
             assert!(miss(json!({"mode": mode})).is_empty(), "{mode}");
         }
+    }
+
+    #[test]
+    fn notes_when_training() {
+        let message = "本機正在訓練 LoRA，出圖可能很慢或讓訓練失敗";
+        assert_eq!(super::training_note(true,true), Some(message));
+        assert_eq!(super::training_note(true,false), None);
+        assert_eq!(super::training_note(false,true), None);
     }
 
     fn notes(v: serde_json::Value, fam: &str, mode: &str) -> Vec<String> {

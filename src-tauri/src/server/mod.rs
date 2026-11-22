@@ -28,6 +28,8 @@ mod api_pe;
 mod api_play;
 mod api_refmod;
 mod api_wardrobe;
+mod api_posewear;
+mod api_pwproxy;
 mod api_runninghub;
 mod api_sdapi;
 mod api_studio;
@@ -41,6 +43,7 @@ mod api_cache;
 mod api_diagnostics;
 mod api_train;
 mod train_ms;
+mod train_kohaku;
 mod train_run;
 
 use crate::civitai::Civitai;
@@ -483,6 +486,18 @@ pub fn router(app: Shared) -> Router {
         .route("/api/assets/{id}/refmod", post(api_assets::make_refmod))
         .route("/api/refmod/status", get(api_refmod::status))
         .route("/api/refmod/install", post(api_refmod::install))
+        .route("/api/posewear/index", get(api_posewear::index))
+        .route("/api/posewear/use", post(api_posewear::use_item))
+        .route("/api/posewear/spa/{name}", get(api_posewear::spa))
+        // 衣姿頁前端跟官網同步（ui/posewear/loader.js 用）
+        .route("/api/posewear/front/status", get(api_posewear::front_status))
+        .route("/api/posewear/front/refresh", get(api_posewear::front_refresh))
+        .route("/api/posewear/front/file/{name}", get(api_posewear::front_file))
+        // 衣姿整頁的試穿工作台（豆包、Gemini、OpenAI）轉發代理，照搬 posewear 官網的 /api/proxy
+        .route(
+            "/api/proxy",
+            get(api_pwproxy::proxy).post(api_pwproxy::proxy).options(api_pwproxy::preflight).layer(DefaultBodyLimit::max(64 * 1024 * 1024)),
+        )
         .route("/api/wardrobe/status", get(api_wardrobe::status))
         .route("/api/wardrobe/install", post(api_wardrobe::install))
         .route("/api/wardrobe/x/{*rest}", get(api_wardrobe::forward).post(api_wardrobe::forward))
@@ -635,6 +650,11 @@ pub fn router(app: Shared) -> Router {
         .route("/api/train/trainer", get(train_run::trainer))
         .route("/api/train/trainer/install", post(train_run::trainer_install))
         .route("/api/train/trainer/remove", post(train_run::trainer_remove))
+        .route("/api/train/kohaku/install", post(train_kohaku::install))
+        .route("/api/train/kohaku/cancel", post(train_kohaku::cancel))
+        .route("/api/train/kohaku/checks", get(train_kohaku::checks))
+        .route("/api/train/kohaku/download_heal", post(train_kohaku::download_heal))
+        .route("/api/train/kohaku/buildtools", post(train_kohaku::buildtools))
         .route("/api/train/{id}", get(api_train::get).post(api_train::set).delete(api_train::delete))
         .route("/api/train/{id}/images", post(api_train::images_add).layer(DefaultBodyLimit::max(220 * 1024 * 1024)))
         .route("/api/train/{id}/images/set", post(api_train::images_set))

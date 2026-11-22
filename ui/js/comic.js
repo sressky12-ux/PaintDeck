@@ -397,11 +397,12 @@ function renderLoras() {
     const bad = !!fam && fam !== "moss";
     const num = el("input", { type: "number", min: -2, max: 3, step: 0.05, value: l.strength ?? 0.8, disabled: running, "aria-label": "強度",
       onchange: (e) => { l.strength = Math.min(3, Math.max(-2, +e.target.value || 0)); e.target.value = l.strength; changed(); imgInfo(); } });
-    return el("div", { class: "lora-item cm-lora" + (l.enabled !== false && !bad ? "" : " off") + (bad ? " mismatch" : ""), title: l.name },
+    const nm = loras.loraNames(loraMeta(l.name)?.title || short(l.name), l.name);   // 兩行卡：全名換行、檔名小字（固定舞台 A 案）
+    return el("div", { class: "lora-item cm-lora two" + (l.enabled !== false && !bad ? "" : " off") + (bad ? " mismatch" : ""), title: l.name },
       el("input", { type: "checkbox", checked: l.enabled !== false, disabled: running, title: "暫時停用", onchange: (e) => { l.enabled = e.target.checked; renderLoras(); changed(); } }),
-      el("span", { class: "nm" }, loraMeta(l.name)?.title || short(l.name)),
+      el("div", { class: "nmw" }, el("b", { class: "nm" }, nm.name), nm.file ? el("small", { class: "fn" }, nm.file) : null),
+      el("button", { type: "button", class: "icon lx", title: "移除", disabled: running, onclick: () => { P.loras.splice(i, 1); renderLoras(); changed(); } }, "✕"),
       num,
-      el("button", { type: "button", class: "icon", title: "移除", disabled: running, onclick: () => { P.loras.splice(i, 1); renderLoras(); changed(); } }, "✕"),
       bad ? el("div", { class: "lora-note" }, `不是 MOSS 用的 LoRA（${fam}），畫整頁時會被略過`) : null);
   }));
   imgInfo();
@@ -476,7 +477,7 @@ function renderRuns() {
   box.innerHTML = "";
   const runs = P?.runs || [];
   if (!runs.length) {
-    box.append(el("div", { class: "muted pad" }, "還沒畫過。左邊選版型、寫好每一格，按「畫這一頁」。不知道怎麼寫？上面「套用範例」挑一個先跑跑看。"));
+    box.append(el("div", { class: "empty-span muted pad" }, "還沒畫過。左邊選版型、寫好每一格，按「畫這一頁」。不知道怎麼寫？上面「套用範例」挑一個先跑跑看。"));
     return;
   }
   for (const r of runs) {
@@ -557,7 +558,7 @@ export function onEvent(m) {
 export function init() {
   // 漫畫：角色 → 角色卡（claim）；場景、道具、片段…的文字照舊接在外貌補充後面
   drawer.mount(F("cmAssets"), { family: () => "comic", insert: drawer.appendTo(F("cmCast")), claim: (it, p) => it.kind === "char" && addChar(it, p) });
-  F("cmLoraAdd").onclick = () => loras.openPicker((l, trig) => addLora(l, trig), "moss");
+  F("cmLoraAdd").onclick = () => loras.openPicker((l, trig) => addLora(l, trig), "moss", { multi: true, have: new Set((P?.loras || []).map((x) => x.name)) });
   F("cmProj").onchange = async () => { await save(); openProject(F("cmProj").value); };
   F("cmNew").onclick = async () => {
     const title = prompt("新作品的名字", "");

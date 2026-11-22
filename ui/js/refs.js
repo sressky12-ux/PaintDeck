@@ -22,7 +22,8 @@ const TEMPLATES = [
 ];
 
 let refs = [], ctx = null, dragFrom = -1;
-const tag = (i) => `<image${i + 1}>`;
+export function maxRefs(family = ctx?.family?.()) { return family === "mmimage" ? 16 : MAX; }
+const tag = (i) => ctx?.family?.() === "mmimage" ? `<Picture ${i + 1}>` : `<image${i + 1}>`;
 
 export function init(c) {
   ctx = c; // { prompt: textarea, save(), onChange() }
@@ -37,20 +38,21 @@ export function init(c) {
 }
 
 export const get = () => refs;
-export function set(list) { refs = (list || []).slice(0, MAX); render(); }
+export function set(list) { refs = [...(list || [])]; render(); }
 
 export async function addFiles(files) {
   const imgs = [...files].filter((f) => f.type.startsWith("image/"));
   for (const f of imgs) {
-    if (refs.length >= MAX) { toast(`參考圖最多 ${MAX} 張`, "err"); break; }  // 已經加進去的照樣要畫出來、存起來
+    if (refs.length >= maxRefs()) { toast(`參考圖最多 ${maxRefs()} 張`, "err"); break; }  // 已經加進去的照樣要畫出來、存起來
     try { add(await uploadFile(f), false); } catch (e) { toast(e.message, "err"); }
   }
   render(); ctx.save();
 }
 
-export function add(r, rerender = true) {
-  if (refs.length >= MAX) { toast(`參考圖最多 ${MAX} 張`, "err"); return null; }
-  refs.push({ name: r.name, width: r.width, height: r.height, role: refs.length ? "person" : "base" });
+/** role 不給＝第一張底圖、其他人物；衣姿抽屜（posewear.js）會給 "outfit"／"pose" */
+export function add(r, rerender = true, role = null) {
+  if (refs.length >= maxRefs()) { toast(`參考圖最多 ${maxRefs()} 張`, "err"); return null; }
+  refs.push({ name: r.name, width: r.width, height: r.height, role: role && ROLES[role] ? role : refs.length ? "person" : "base" });
   if (rerender) { render(); ctx.save(); }
   return refs.length;
 }
@@ -65,7 +67,7 @@ function pickMany() {
 function remapPrompt(map) {
   const t = ctx.prompt;
   let lost = false;
-  t.value = t.value.replace(/<image(\d+)>/g, (m, n) => {
+  t.value = t.value.replace(/<(?:image|Picture )(\d+)>/g, (m, n) => {
     const to = map[+n - 1];
     if (to === undefined) return m;
     if (to === null) { lost = true; return "<image?>"; }
@@ -130,7 +132,7 @@ export function render() {
         ...Object.entries(ROLES).map(([k, v]) => el("option", { value: k, selected: r.role === k }, v))));
     tray.append(card);
   });
-  if (refs.length < MAX) {
+  if (refs.length < maxRefs()) {
     const zone = el("div", { class: "ref-add", title: "拖曳圖片到這裡（可一次多張），或點一下選檔案", onclick: pickMany },
       el("div", {}, "＋"), el("div", { class: "sm" }, refs.length ? "再加一張" : "拖曳或點此加入參考圖（可多選）"));
     zone.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); zone.classList.add("over"); } });
@@ -138,7 +140,7 @@ export function render() {
     zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); addFiles(e.dataTransfer.files); });
     tray.append(zone);
   }
-  $("#refCount").textContent = `${refs.length} / ${MAX}` + (refs.length > 4 ? "・張數多會比較慢" : "");
+  $("#refCount").textContent = `${refs.length} / ${maxRefs()}` + (refs.length > 4 ? "・張數多會比較慢" : "");
   ctx?.onChange?.();
 }
 
@@ -194,10 +196,11 @@ export function compose(ask = false, group = false) {
 // 送出前檢查：張數、提示詞裡的標記
 export function check(prompt) {
   if (!refs.length) return "請先加入至少一張參考圖";
-  const used = [...prompt.matchAll(/<image(\d+)>/g)].map((m) => +m[1]);
+  if (refs.length > maxRefs()) return `目前有 ${refs.length} 張參考圖，這個家族最多 ${maxRefs()} 張，請先移除多出的圖。`;
+  const used = [...prompt.matchAll(/<(?:image|Picture )(\d+)>/g)].map((m) => +m[1]);
   const bad = used.filter((k) => k < 1 || k > refs.length);
-  if (bad.length) return `提示詞裡的 <image${bad[0]}> 沒有對應的參考圖（目前只有 ${refs.length} 張）`;
+  if (bad.length) return `提示詞裡的 ${tag(bad[0] - 1)} 沒有對應的參考圖（目前只有 ${refs.length} 張）`;
   if (prompt.includes("<image?>")) return "提示詞裡還有 <image?>（被移除的圖），請先改掉";
-  if (refs.length >= 2 && !used.length) toast("提示詞裡沒有用 <image1> 這類標記指名圖片，模型可能分不清楚哪張做什麼（點圖上的編號可以插入）");
+  if (refs.length >= 2 && !used.length) toast(`提示詞裡沒有用 ${tag(0)} 這類標記指名圖片（點圖上的編號可以插入）`);
   return null;
 }

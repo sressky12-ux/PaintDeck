@@ -40,6 +40,7 @@
 | anima | Anima 動漫模型。Turbo 版最常用 | Turbo：8 步、CFG 1、euler、simple、832×1216；非 Turbo：30 步、CFG 4、er_sde | Danbooru tag＋英文句子（見「提示詞」） |
 | qwen21 | Qwen-Image 2.1（介面叫「編輯」）：改圖、多圖參考、寫實、中文字 | Turbo：8 步 CFG 1；一般：25 步 CFG 3；1024×1536 | 英文長段落；改圖用中文指令 |
 | moss | MOSS-Image（介面叫「文生圖繪圖」）：排版、寫字、版面框、漫畫台 | 25 步（掛 `moss_speed_dmd` 加速 LoRA 0.35 時 10 步）、CFG 3、euler、sgm_uniform、1024×1536 | 英文描述；文字用引號寫出來 |
+| mmimage | MiniMax H3 Image（2026-11-22）：文生圖、多圖參考改圖（最多 16 張，提示詞用 `<Picture 1>` 指第幾張） | 6 步、CFG 1、euler、simple、預設 4MP（2048×2048），4～20MP、邊長 32 的倍數；8GB 建議：主模型 `minimax_h3_image_pruned_w4a8`＋文字編碼器 nvfp4（跟 H3 影片共用）＋VAE 分塊解碼 512＋不開擴寫器（3070 實測 4MP 約 55 秒、16MP 約 165 秒） | 英文完整句子；安裝精靈選配包 `mmimage`／`mmimage_hq` |
 | h3 | MiniMax H3 有聲影片（內建影片，2026-10-30 起取代 LTX-2.3） | `mode:"video"` 用 | H3 格式（`integrated_multimodal_description:`…）或一般描述，會自動包成一個鏡頭 |
 | custom | 使用者匯入的 ComfyUI 生圖工作流（model 是 `wf:<代號>`） | 步數 CFG 照工作流 | 照工作流 |
 | sdxl／flux／sd15 | 使用者自己放的其他模型 | 25 步 CFG 4 | 照該模型 |
@@ -61,7 +62,7 @@ MOSS 另外可給 `moss_te:"4b"`（文字編碼器改用 Qwen3.5-4B＋投影轉�
 | img2img | 圖生圖 | `init_image`（輸入檔名）、`denoise`（0～1，預設 0.6 上下）、`size_mode:"auto"\|"fixed"`、`pixels`。MOSS 加 `moss_edit:"auto"\|"ai-toolkit"\|"ai-toolkit (kv_cache off)"\|"Moss-Image-Edit"` ＝照指令改圖：輸入圖當參考（`TextEncodeMOSSImageEdit`）、從空白畫、重繪固定 1、參考圖約 0.5MP（`edit_pixels` 可改）；要掛 MOSS 編輯 LoRA（MOSS 包附 `loras/moss/moss_edit_chinoll.safetensors`），auto＝LoRA 名字有 chinoll／moss-image-edit 用 Moss-Image-Edit，其他用 ai-toolkit。ComfyUI 要 0.38＋繪匣 2026-10-30 以後的 MOSS 補丁，或 0.43 以後 |
 | inpaint | 局部重繪 | `init_image`、`mask`（遮罩檔名，白色＝要重畫）、`denoise`（預設 1.0）、`inpaint:{method, area:"full"\|"masked", grow, blur, padding}`。**只重畫遮罩附近要寫 `area:"masked"`**，預設是整張 |
 | outpaint | 擴圖 | `init_image`、`outpaint:{top, bottom, left, right, feather}`（像素） |
-| multiref | 多圖參考（只限 qwen21） | `refs:[{image, role?}]`（第 1 張決定構圖和尺寸）、`size_mode:"auto"`、`pixels`（輸出像素數，例如原圖寬×高）、`ref_pixels`。提示詞用 `<image1>`、`<image2>` 指名 |
+| multiref | 多圖參考（qwen21 最多 10 張；mmimage 最多 16 張，提示詞用 `<Picture 1>`） | `refs:[{image, role?}]`（第 1 張決定構圖和尺寸）、`size_mode:"auto"`、`pixels`（輸出像素數，例如原圖寬×高）、`ref_pixels`。提示詞用 `<image1>`、`<image2>` 指名 |
 | upscale | 放大 | `init_image`、`upscale:{upscaler, scale, refine, denoise}` |
 | sheet | 角色設定圖（多視圖） | `sheet:{req, ref}` |
 | diff | 差分（同一張改表情、小地方） | `init_image`、`diff:{…}`，看生成頁的「生圖玩法」 |
@@ -116,7 +117,13 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 **AI 改寫（不想自己寫時）**：`POST /api/pe/rewrite {text, …}` 是 SSE 串流（事件 status、reasoning、content、zh_delta、result、error），用 `anima_api` 呼叫會拿到整段串流文字，取最後的 result。改寫用本機 llama-server 的通用模型（9B／35B，設定 `pe_general`），第一次要載入幾十秒。官方 PE 改寫模型 2026-10-30 起整個拿掉（沒有 `pe_engine` 設定了；升級後開站會把舊的 PE 檔刪掉、自動補下載通用 9B，進度在 `GET /api/pe/status` 的 `retire`）。`GET /api/pe/status` 看狀態、`POST /api/pe/stop` 關掉讓出顯存。
 **中英對照（看提示詞每段的中文）**：`POST /api/tags/zh {tags:[...]}` 查 tag 對照表，回 `{zh:{原字串:中文}}`（立刻回、不用模型，查不到的不放；品質詞、分級、年代、`score_N`、`year 2025` 也認得）。對照表翻不了的句子、片語用 `POST /api/pe/translate {texts:[...], rid?}`：交給上面同一顆通用模型翻成繁中，回 `{zh:[中文或 null, …]}` 跟 texts 一一對應，一次最多 40 段、4000 字，第一次要等模型載入，`POST /api/pe/cancel {rid}` 停。
 
-**詞庫（分類點選 tag）**：`GET /api/tags/library?src=danbooru|weilin`（預設 danbooru）回 `{source, groups:[{name, subs:[{name, tags:[[插入的字, 中文說明, 使用次數?, 段落序號?], …], secs?:[段落名…]}]}]}`。**danbooru**（預設）＝Danbooru wiki 的 tag group 分類：11 大類、92 小類、約 1.5 萬個不重複 tag（使用次數 ≥ 10、一般類），小類裡照 wiki 的段落分組、段落內照使用次數排，中文說明來自對照表／WeiLin／本機模型直翻＋人工校（`tools\danbooru_taggroups.mjs`、`tools\danbooru_groups_zh.json`）。**weilin**＝11 大類（人物、服飾、表情動作、畫面、環境、場景、物品、鏡頭、漢服、魔法系、NSFW）、132 小類、約 4100 條，照搬 WeiLin-Comfyui-Tools-Prompt（MIT）轉繁體；單一 tag 已經換成空白、括號跳脫，「魔法系」「漢服」有些是整段提示詞（含權重括號，漢服有幾條帶 `<lora:…>` 寫法，繪匣不認，要另外掛 LoRA）。網頁：生成頁提示詞框右上「詞」打開抽屜，點一下加進最後點過的提示詞框（大框、分段小框、負面都行），已經在框裡的會亮，再點一下拿掉；抽屜裡的搜尋打簡體也找得到。左邊功能列「02 隨機」是生成頁的分身（`#taglib`，2026-11-17 晚從「詞庫」改名、拿掉詞庫分頁；詞庫只留在生成頁的「詞」抽屜）：左欄是「隨機產生器」（ComfyUI 外掛 Comfyui-Anima-Wardrobe-V6，GPL-3.0，作者灵冻不冻；15 段 57 欄規則抽籤、2400 多個角色、167 套服裝、782 組場景；顯示時簡轉繁，送給引擎的是原值）。隨機產生器 API：`GET /api/wardrobe/status`（`{installed, same, loaded, online, remote, repo, commit}`）、`POST /api/wardrobe/install`（只裝本機 ComfyUI，clone 固定 commit 到 `custom_nodes\Comfyui-Anima-Wardrobe-V6`，裝完要重開 ComfyUI）、`GET|POST /api/wardrobe/x/<路徑>` 原樣轉給 ComfyUI 的 `/anima-wardrobe-v6/<路徑>`（`pools`、`characters`、`scenes`、`outfit-library`、`roll`…）。抽一組：`POST /api/wardrobe/x/roll {seed, nsfw_level:"sfw|suggestive|explicit|hardcore|extreme|any", weights_json, selected_roles:"tag|tag", disabled_sections, scene_pick, pick_pool_mode, pick_pool_ids, …}` 回 `{text, cn_summary, notes, report}`；同 seed 同參數結果一模一樣（請求要是正確的 UTF-8 JSON，送壞了外掛會當成沒給 seed）。網頁上「每次生成前重抽」勾了，在隨機頁按生成會先抽一組套進提示詞。中欄借生成頁的提示詞（含 AI 改寫）、LoRA 卡匣，底下黏著生成鈕和最新一張；右欄借模型與輸入、尺寸與模式、取樣（步數、CFG、張數、種子、整套設定）、附加（高解析修復、構圖控制、自動修臉、X/Y）——同一組元素，離開隨機頁就放回生成頁，「AI 組成完整提示詞」＝把提示詞框內容當想法送 `POST /api/pe/rewrite`。AI 改寫的「用哪顆腦袋」會在 body 帶 `brain`（`cloud`／`api:<連線 id>`；不帶＝本機），API 頁對照表「AI 改寫」有指定時以對照表為準。WeiLin 的 danbooru 翻譯（只收原本對照表沒有的）也接進了 `/api/tags` 的中文搜尋和 `/api/tags/zh`：一般 tag 照收；角色的翻譯 WeiLin 錯很多（看起來是 AI 編的），每條都拿 Danbooru wiki 的別名和 Bangumi 的中文名校對過，對不上的換掉、查不到的不收（`tools\weilin_tags.mjs`、`tools\weilin_chars.mjs`）。
+**詞庫（分類點選 tag）**：`GET /api/tags/library?src=danbooru|weilin`（預設 danbooru）回 `{source, groups:[{name, subs:[{name, tags:[[插入的字, 中文說明, 使用次數?, 段落序號?], …], secs?:[段落名…]}]}]}`。**danbooru**（預設）＝Danbooru wiki 的 tag group 分類：11 大類、92 小類、約 1.5 萬個不重複 tag（使用次數 ≥ 10、一般類），小類裡照 wiki 的段落分組、段落內照使用次數排，中文說明來自對照表／WeiLin／本機模型直翻＋人工校（`tools\danbooru_taggroups.mjs`、`tools\danbooru_groups_zh.json`）。**weilin**＝11 大類（人物、服飾、表情動作、畫面、環境、場景、物品、鏡頭、漢服、魔法系、NSFW）、132 小類、約 4100 條，照搬 WeiLin-Comfyui-Tools-Prompt（MIT）轉繁體；單一 tag 已經換成空白、括號跳脫，「魔法系」「漢服」有些是整段提示詞（含權重括號，漢服有幾條帶 `<lora:…>` 寫法，繪匣不認，要另外掛 LoRA）。網頁：生成頁提示詞框右上「詞」打開抽屜，點一下加進最後點過的提示詞框（大框、分段小框、負面都行），已經在框裡的會亮，再點一下拿掉；抽屜裡的搜尋打簡體也找得到。頂列「02 隨機」是生成頁的分身（`#taglib`，2026-11-17 晚從「詞庫」改名、拿掉詞庫分頁；「詞」抽屜隨提示詞卡共用）：中央是「隨機產生器」（ComfyUI 外掛 Comfyui-Anima-Wardrobe-V6，GPL-3.0，作者灵冻不冻；15 段 57 欄規則抽籤、2400 多個角色、167 套服裝、782 組場景；顯示時簡轉繁，送給引擎的是原值）。隨機產生器 API：`GET /api/wardrobe/status`（`{installed, same, loaded, online, remote, repo, commit}`）、`POST /api/wardrobe/install`（只裝本機 ComfyUI，clone 固定 commit 到 `custom_nodes\Comfyui-Anima-Wardrobe-V6`，裝完要重開 ComfyUI）、`GET|POST /api/wardrobe/x/<路徑>` 原樣轉給 ComfyUI 的 `/anima-wardrobe-v6/<路徑>`（`pools`、`characters`、`scenes`、`outfit-library`、`roll`…）。抽一組：`POST /api/wardrobe/x/roll {seed, nsfw_level:"sfw|suggestive|explicit|hardcore|extreme|any", weights_json, selected_roles:"tag|tag", disabled_sections, scene_pick, pick_pool_mode, pick_pool_ids, …}` 回 `{text, cn_summary, notes, report}`；同 seed 同參數結果一模一樣（請求要是正確的 UTF-8 JSON，送壞了外掛會當成沒給 seed）。網頁上「每次生成前重抽」勾了，在隨機頁按生成會先抽一組套進提示詞。底部借生成頁的整張提示詞卡。模型、LoRA、尺寸、取樣、附加、版面框及 AI 改寫都能從卡上的膠囊開啟。離頁時整張卡會回到生成頁的停靠位置。右側顯示最新成品，「AI 組成完整提示詞」＝把提示詞框內容當想法送 `POST /api/pe/rewrite`。AI 改寫的「用哪顆腦袋」會在 body 帶 `brain`（`cloud`／`api:<連線 id>`；不帶＝本機），API 頁對照表「AI 改寫」有指定時以對照表為準。WeiLin 的 danbooru 翻譯（只收原本對照表沒有的）也接進了 `/api/tags` 的中文搜尋和 `/api/tags/zh`：一般 tag 照收；角色的翻譯 WeiLin 錯很多（看起來是 AI 編的），每條都拿 Danbooru wiki 的別名和 Bangumi 的中文名校對過，對不上的換掉、查不到的不收（`tools\weilin_tags.mjs`、`tools\weilin_chars.mjs`）。
+
+**衣姿抽屜（服裝、姿勢參考圖，2026-11-21）**：生成頁提示詞框右上「衣」打開右側抽屜（左緣可拖寬）。素材是日本作者ギア 的 AI 圖庫：動畫服裝 1320 套、寫實服裝 1407 套（灰底平鋪整套衣服＋英文關鍵字）、姿勢 288 組×5 個角度（人偶線稿；另有同 id 的深度圖，近白遠黑，跟 Anima 深度 LLLite 同一種）。原站規矩：一張一張當生成參考可以、商用可以；**禁止大量下載（含工具自動抓）與轉載**——所以縮圖由網頁直接連原站，原圖只在拖放／按按鈕時抓那一張，不要寫迴圈整批抓。中文、英文提示詞改自 posewear（MIT，授權在 `resources\posewear\LICENSE.txt`）。拖放：縮圖拖到提示詞框＝加英文描述（已有的詞不重複）；姿勢拖到構圖控制＝深度圖（Anima：類型深度、不前處理；MOSS 文生圖：只照深度、不照色塊）；拖到多圖參考＝加參考圖，角色自動設「服裝」／「姿勢」（姿勢給深度圖）。每格也有「＋詞」「參考」「控制」按鈕。API：`GET /api/posewear/index?lib=anime|costume|pose[&refresh=1]` → `{lib, fetched, stale, error, items}`（服裝 `{id, cat, cat_en, kw, zh, en, title, thumb}`；姿勢一組一筆 `{id, no, line, line_en, cat, ja, zh, en, angles:[{key, zh, en, item, thumb}]}`；目錄快取在 `<資料>\data\posewear\`，7 天重抓，抓不到用舊的並 `stale:true`）；`POST /api/posewear/use {lib: anime|costume|pose|depth, id}` → `{name, width, height}`（跟 `/api/upload` 一樣，可直接當 `init_image`、`control.image`、`refs[].image` 用；`id` 一定要在目錄裡，姿勢／深度用單張 id 例如 `full_sexy_P001_front`；存成 ComfyUI input 的 `pw_<lib>_<id>.png`，同一張不重抓、不重存）。
+
+**衣姿整頁（posewear 官網原樣，2026-11-22）**：頂列「全部功能」裡的「05 衣姿」＝把 posewear 官網（posewear.pages.dev，MIT）的前端原樣搬進來，12 個分類（姿勢、深度姿勢、服裝、動畫服裝、人像、表情、髮型、歷代、場景、光影、道具、家具）、收藏、最近、組合、18+ 開關、試穿工作台都跟官網一樣。頂部多一顆「繁／簡」：繁體（預設，台灣用語）或簡體（官網原樣），選擇存在頁面的 localStorage `pw-zh`。詳情面板多三顆「➜ 加到提示詞／當參考／當構圖控制」（構圖控制只有姿勢、深度），按了切到生成頁放進去（角色：服裝類＝服裝、姿勢類＝姿勢、人像／表情／髮型＝人物、場景／光影＝場景、道具／家具＝物件）。資料：`GET /api/posewear/spa/<poses|costumes|anime|portraits|depths|expressions|hair|dynasties|scenes|lights|props|furniture>` → 官網正在用的資料檔本體（後端從官網首頁→app.js 找檔名，快取 7 天，抓不到用舊的；ギア 四庫的圖片網址改回原站，大圖 i／m 接上官網網址）。`POST /api/posewear/use` 多收 `{url}`（ギア 以外的素材；網址要在已快取的資料檔裡、主機在白名單），存成 `pw_url_<crc32>.png`。試穿工作台的雲端介面（OpenAI、Gemini、豆包 Seedream、自訂中轉）要使用者自己的金鑰、按張付費；火山方舟不准瀏覽器跨網域，走繪匣的 `/api/proxy`（照搬官網的 Cloudflare Function，只轉官方網域與固定路徑）。頁面檔在 `ui\posewear\`，由 `tools\posewear_vendor.py <posewear repo>` 產生（`index.s.html`＝簡體原樣、`index.html`＋`*.tw.js`＝繁體），`zh.js`、`loader.js`、`bridge.js` 是手寫的。
+**執行時跟官網同步（2026-11-22）**：衣姿頁先問 `GET /api/posewear/front/status` → `{source:"live"|"cache"|"builtin", hash, fetched_at, checked_at, failed_rule, error, builtin}`。後端從 posewear.pages.dev 首頁抓正在用的 `app／studio／extras／zip.js`、`style.css`（只准 HTTPS＋這個主機、轉址到別處不跟、單檔 2MB），套上跟搬家腳本同義的替換規則，存在 `<資料>\posewear\front\`，7 天重抓；`GET /api/posewear/front/file/<那 5 個檔名>` 拿套好的檔（現在用內建版時回 404），`GET /api/posewear/front/refresh` 強制重抓（頁面左下角「檢查官網更新」）。任何一條規則次數不對（官網改版）就整套退回安裝檔內建版，左下角寫「官網改版了，暫時用內建版本」，7 天後或手動才再試；離線時有舊快取用舊的（source＝cache），沒有就內建版，10 分鐘內不重試。官網版跑起來出錯，loader 記 sessionStorage `pw-front-bad`、重新整理改走內建版。繁體頁的同步檔在瀏覽器裡用 `zh.js` 的 `twText` 轉繁（跟搬家時一樣只轉中文字元段）。
+**試穿工作台「➜ 交給繪匣」（2026-11-22）**：生成鍵旁邊。按了把這一套的原圖（人物照 → 服裝 → 姿勢每個一張 → 表情）連同工作台組好的提示詞，`postMessage {pw:"bundle", en, zh, pl, custom, items:[{blob, role, name}]}` 給生成頁（`studio.js` 的 `window.WB={` 在搬家／同步時被換成 `resources\share\posewear_bundle.js.txt`，多一個 `WB.bundle()`）。生成頁（`ui\js\posewear.js` 的 `onBundle`，純函式在 `ui\js\pw_handoff.js`）：目前是 Qwen 2.1 或 MiniMax H3 Image 就照用，不是的話有 MiniMax 模型切 MiniMax、沒有切 Qwen 2.1；張數超過上限（Qwen 10、MiniMax 16）擋下並說幾張；參考匣有圖先問「換掉現在的參考圖？」；切多圖參考、逐張上傳（角色：人物／服裝／姿勢，表情當人物），有一張失敗就停並說第幾張；提示詞 MiniMax 用英文版、Qwen 用工作台選的語言（手改過的優先），「image 1」「第 1 张」改成 `<image1>`／`<Picture 1>`。不會自動生成，使用者看過再按。
 
 **全形標點自動換半形**：生成頁的提示詞框（大框、分段小框、負面）在英文 tag 後面用中文輸入法打「，、：（）」，會自動換成「, : ( )」，不用切輸入法；前一個字是中文（在寫中文句子）就不動，Ctrl+Z 換回來。提示詞框右下「，→,」開關，記在瀏覽器（`aw_punctFix`，預設開）。只在網頁打字時作用，API 送進來的提示詞不改。
 
@@ -144,7 +151,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 ## 資產庫（角色、場景、道具…全站共用）
 
-資產跟提示詞庫是同一張表（`/api/lib`），`kind` 多了 `char`（角色）、`scene`（場景）、`frame`（首幀／姿勢）、`outfit`（服裝）、`prop`（道具）、`fx`（特效）、`sound`（聲音）、`shot`（拍攝單範本）。左側欄「03 資產庫」管理；生成、導演分鏡、H3 影片台、漫畫、助手的文字框上面有「資產」抽屜。
+資產跟提示詞庫是同一張表（`/api/lib`），`kind` 多了 `char`（角色）、`scene`（場景）、`frame`（首幀／姿勢）、`outfit`（服裝）、`prop`（道具）、`fx`（特效）、`sound`（聲音）、`shot`（拍攝單範本）。頂列「04 資產庫」管理；生成、導演分鏡、H3 影片台、漫畫、助手的文字框上面有「資產」抽屜。
 - 新增／修改：`POST /api/lib {kind:"char", name, data:{look_zh?, look_en?, tags_anima?:[…], voice?, lang?, layout?:{top,bottom,left,right,fg,mid,bg,light}, text?}}`。不認得的鍵會丟掉；`tags_anima` 自動轉小寫、底線換空白，回應的 `unverified` 列出 tag 表裡找不到的（照樣存）。角色會自動配一個 `cid`（導演台用的角色 id）。
 - 加檔：`POST /api/assets/<id>/file {input:"input 裡的檔名" | gallery_id, role}`；role 是圖片用途 `src`（原圖）、`portrait`（正面特寫；鎖定角色只拿 portrait＋sheet 當參考）、`sheet`（多視圖・穿衣）、`face`（臉部特寫表）、`sheet_nude`、`detail`、`pose`、`outfit`、`other`，`"audio"`＝音檔（mp3、wav、flac、ogg、m4a）。檔案存在 `data\assets\<id>_<n>.<副檔名>`，第一張圖自動當縮圖。加 `replace:true` 時換掉這個用途的第一張（舊的搬待刪除），不是再加一張。
 - 拿掉檔：`POST /api/assets/<id>/file/remove {file}`；讀檔：`GET /api/assets/file/<file>`；放進 ComfyUI input：`POST /api/assets/<id>/to_input {file}` → `{name, width, height}`。
@@ -234,7 +241,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - 你自己就能做助手的事，通常直接用 `anima_generate` 比較好控制；使用者想看助手跑時才用它。
 
 ## 影片台（拍攝單＋H3 短片／長片）
-導演頁的「影片」分頁（2026-10-24 起，原本的「H3 影片」「長片」兩個分頁合成一個）：上面是**拍攝單**，下面是短片（1 段）或長片（2 段以上）。拍攝單填角色、首幀、參考圖、場景、鏡位、聲音、每段的時間軸，程式照固定結構組成 H3 提示詞，再套用到下面。
+導演頁的「影片」分頁（2026-10-24 起，原本的「H3 影片」「長片」兩個分頁合成一個；2026-11-22 起改成中央舞台版面）：頂上一排是「短片／長片」切換、「拍攝單 ▸」和狀態燈；**拍攝單**是按「拍攝單 ▸」從右邊滑出的抽屜，下面是短片（1 段）或長片（2 段以上）。短片：中間播最新成品，底下提示詞卡＝點子＋長度／比例／畫質／支數＋「開始做影片」，起手式、素材板、分鏡、在哪跑、進階收在膠囊；長片：中間是段落，底下是在哪拍／比例／畫質＋「開拍整條」，長片清單、整條共用設定收在膠囊。元素 id 沒變（`#h3Go`、`#hcRun`、`#shBody`…）。拍攝單填角色、首幀、參考圖、場景、鏡位、聲音、每段的時間軸，程式照固定結構組成 H3 提示詞，再套用到下面。
 
 - 拍攝單格式：`{v:1, title, lang:"zh"|"en", cast:[{asset_id, speaker:"S1".., name, look_zh, look_en, voice, lang}]（最多 4）, first:{file, asset_id, gallery_id}, refs:{on, items:[{file, asset_id, who}]}（最多 8，預設不送）, scene:{text, layout:{top,bottom,left,right,fg,mid,bg,light}}, style, camera, sound:{ambient, music}, early（自動提早 1 秒，預設 true）, segments:[{secs(5～15), beats:[{from, to, action, who, lang, line, sfx}], prompt, mirror, manual}]（最多 30）}`。檔名都是 input 裡的檔名（先 `/api/to_input` 或 `/api/assets/{id}/to_input` 放進去）。
 - 時間規則：第 2 段起開頭 1.6 秒是上一段的尾巴（寫「延續上一段的同一個動作」）；後面還有段的話，最後 0.7 秒是交棒區（寫「動作繼續」）。這兩塊不放新動作。`early` 開著時每一截往前挪 1 秒（H3 的動作常晚出來），夾在能放的範圍內。
@@ -301,7 +308,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 ## API 頁：大模型連線、誰用哪顆腦袋、指令預設（2026-11-02）
 
-左邊選單「API」。腦袋只負責寫字或回功能要的小 JSON，畫圖照舊由繪匣後端組節點圖送本機 ComfyUI，大模型不碰 ComfyUI 工作流。跟 MCP 的差別：MCP 是腦袋在外面（你這種 agent）操作繪匣；API 是腦袋接進繪匣，在繪匣自己的頁面打字。
+頂列「全部功能」裡的「12 API」（2026-11-22 起頁面左邊有段落目錄；設定頁的段落依「一般、連線、模型、AI、系統」重排，各段的 id 不變）。腦袋只負責寫字或回功能要的小 JSON，畫圖照舊由繪匣後端組節點圖送本機 ComfyUI，大模型不碰 ComfyUI 工作流。跟 MCP 的差別：MCP 是腦袋在外面（你這種 agent）操作繪匣；API 是腦袋接進繪匣，在繪匣自己的頁面打字。
 
 - 總覽：`GET /api/llm` → `{profiles:[{id,name,provider,url,model,has_key,vision,ready}], default, presets:[{id,name}], routes:{功能:{brain,preset}}, features:[{id,name}], providers:[{id,name,url}]}`。金鑰只說有沒有填。
 - 連線：`POST /api/llm/profile {id?, name, provider, url, model, key?}`（沒 id＝新增；key 沒帶＝不動、空字串＝清掉）；`POST /api/llm/profile/delete {id}`；`POST /api/llm/profile/test {id}`（花一點 token，回 `vision`＋`msg`）；`POST /api/llm/profile/models {id}` → `{models:[...]}`（OpenAI 相容的 GET /models）。服務商預設：DeepSeek、智譜 GLM、Z.ai、OpenAI、Anthropic、Gemini、Kimi、通義千問、OpenRouter、自訂。
@@ -326,7 +333,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 
 安裝精靈、`/api/models/fetch_listed` 這類下載安裝清單裡的檔時，每個檔有好幾個來源照順序試：原本的網址 → Hugging Face 鏡像 hf-mirror.com（只有 HF 的檔）→ 繪匣放在魔搭的備份（`sressky/PaintDeck-models`：模型，路徑跟安裝清單一樣；`sressky/PaintDeck-tools`：ComfyUI 免安裝包、llama.cpp、ffmpeg、Node.js）。備份成功過一次之後先用備份。對照表在 `resources\share\mirrors.json`（原始網址 → 魔搭網址），打包進程式。少數成人向 LoRA 沒有放備份。下載中心（搜尋 C 站／魔搭下載任意模型）不走這張表。
 
-## 訓練台：煉 LoRA（2026-11-11）
+## 訓練台：煉 LoRA（2026-11-21）
 
 選單「訓練」。一個專案＝一包訓練圖＋描述＋參數，六步：專案 → 訓練圖 → 描述 → 參數 → 在哪煉 → 訓練與驗收。資料在 `<資料>\data\train\<代號>\`（`project.json`、`images\`、`captions\`、`out\`），代號是 `t`＋12 位十六進位。訓練圖一律複製進專案，原圖不動。
 
@@ -335,11 +342,26 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - `GET /api/train/{id}` → `{project, report, captions, running, family}`；`POST /api/train/{id} {name?, kind?, trigger?, level?: light|std|full, params?, samples?}`；`DELETE /api/train/{id} {confirm:true}`（搬到 `待刪除\訓練專案\`，煉好的 LoRA 不動）。
 - 訓練圖：`POST /api/train/{id}/images {paths:[檔或資料夾]} | {gallery_ids:[…]} | {file_name, data_b64}` → 多回 `added`、`skipped:[{name, why}]`；圖會縮到約 100 萬像素（不放大）、存成 `0001.png`…。`…/images/set {files, off}`（先不用這張）、`…/images/remove {files}`。`report` 有張數、偏小的、幾乎一樣的圖（`dupes`）、長寬比分布和提醒。
 - 描述：`POST /api/train/{id}/caption {mode: auto|tags|sentence, only_empty}` 背景打標（tag＝站內反推＋自動整理；句子＝站內語言模型看圖寫）；`POST /api/train/{id}/captions {file, text} | {add} | {drop:[…]}`（觸發詞自動留在最前面）；`GET /api/train/{id}/traits`（角色每張都有的固定外觀，建議拿掉）。
-- 參數：`GET /api/train/{id}/params?level=` → 自動算的 `params`（步數＝張數 × 每張看幾次，畫風 20、角色 30、概念 25；`why` 是那句算式）和 4 句樣張提示詞，不存檔；要存用上面的 `POST /api/train/{id}`。
+- ai-toolkit 參數：`GET /api/train/{id}/params?level=` → 自動算的 `params`（步數＝張數 × 每張看幾次，畫風 20、角色 30、概念 25；`why` 是那句算式）和 4 句樣張提示詞，不存檔；要存用上面的 `POST /api/train/{id}`。
 - 報價：`POST /api/train/{id}/quote {target:"runpod"}` → 每張雲端顯卡的估計時數和價錢；`{target:"civitai", upload_ok:true}` → C 站試算要幾 Buzz（**會先把訓練圖和描述上傳到 C 站**，試算本身不扣點）。
-- 開始：`POST /api/train/{id}/start {target, …}`（**先問使用者**）。`local`（要先 `POST /api/train/trainer/install` 裝訓練器，約 8GB；`model`＝SDXL 整包模型的檔名，其他家族用官方底模、第一次會下載）、`remote {url, token}`（自己的訓練機，跑 `resources\train\agent.py`）、`runpod {gpu, confirm:true}`（租機、煉完自動關機）、`civitai {confirm:true, max_cost}`、`modelscope {confirm:true}`（只在本機包好資料集壓縮檔，回 `{manual:true, zip, url}`，要到魔塔網頁送出）。`POST /api/train/{id}/stop` 停止（沒在跑時＝把還開著的 RunPod 訓練機關掉）。
+- 開始：`POST /api/train/{id}/start {target, …}`（**先問使用者**）。`local`（KohakuMoss 見下段。ai-toolkit 要先 `POST /api/train/trainer/install` 裝訓練器，約 8GB；`model`＝SDXL 整包模型的檔名，其他家族用官方底模、第一次會下載）、`remote {url, token}`（自己的訓練機，跑 `resources\train\agent.py`）、`runpod {gpu, confirm:true}`（租機、煉完自動關機）、`civitai {confirm:true, max_cost}`、`modelscope {confirm:true}`（只在本機包好資料集壓縮檔，回 `{manual:true, zip, url}`，要到魔塔網頁送出）。`POST /api/train/{id}/stop` 停止（沒在跑時＝把還開著的 RunPod 訓練機關掉）。
 - 進度：websocket `{"type":"train", id, phase:"caption|train|install", state:"running|done|error|stopped", step, total, loss, log, msg, new}`。每存好一版就抓回 `loras\<家族資料夾>\<觸發詞>\<觸發詞>_e<N>.safetensors`，樣張在 `GET /api/train/{id}/sample/{file}`。專案的 `run.state` 另有 `interrupted`（本機訓練時繪匣被關掉）和 `detached`（雲端／C 站還在外面跑，再按開始會接回去）。
-- 驗收：`POST /api/train/{id}/compare {params, strengths?, epochs?}`（`params`＝一組生圖參數；每一版 × 每個強度、同種子各排一張，回 `cells:[{epoch, strength, job}]`）；`POST /api/train/{id}/adopt {epoch, strength}`（寫好 LoRA 資訊：觸發詞、建議強度、底模）。
+- 驗收：`POST /api/train/{id}/compare {params, strengths?, epochs?, baseline?}`。`params` 用生成頁目前的設定，每一版配每個強度各畫一張。`baseline` 預設 true，先用同種子畫一張「不掛（對照）」，所有版本共用。回應 `cells` 的第一格為 `{epoch:0, strength:0, seed, job}`。設 false 可略過對照組，每次最多 60 張，對照組算一張；`POST /api/train/{id}/adopt {epoch, strength}`（寫好 LoRA 資訊：觸發詞、建議強度、底模）。
+
+### MOSS 本機訓練（8GB 顯卡可煉）
+
+新建 MOSS 專案，選本機就會使用 **KohakuMoss 引擎（作者 KBlueLeaf）**。在「參數」選底模、輕／標準／充分及顯存模式。heal 是實測過的訓練底模，煉好的 LoRA 可在 SFT、Base、Slivani 出圖。舊專案缺少 `engine` 欄位時繼續用 ai-toolkit，雲端也沿用原流程。要切換，可在「在哪煉 → 本機顯卡」按「改用舊引擎（ai-toolkit，需要 16GB）」；API 可用 `POST /api/train/{id} {"engine":"kohakumoss"}` 把 MOSS 專案切回來。其他家族只接受 `"toolkit"`。
+
+- 參數用 `GET /api/train/{id}/params?level=std` 查。KohakuMoss 回應的 `params` 是推薦值，`saved` 是已儲存的 `kohaku_params`，`bases` 列底模（tested、missing），`gpu` 和 `vram_layer` 是這台的顯卡與自動檔位。存回用 `POST /api/train/{id} {level, kohaku_params}`。角色以每張看 16 次推算步數，夾在 400～2000 步，預計存四版。畫風、概念的預設值和 6GB 模式待實測。
+- 準備清單用 `GET /api/train/kohaku/checks?base=<底模檔名>`。回 `{ok_to_start, rows}`，紅燈要先處理，黃燈可以開始。每列的 `fix.action` 指向安裝引擎、下載 heal、安裝 C++ 工具、開官方網址或去下載中心找文字編碼器。C++ Build Tools 沒裝時編譯會比較慢，慢多少待實測。
+- 安裝前先問使用者。引擎約下載 3GB、占 6GB、需 15～30 分鐘。`POST /api/train/kohaku/install` 開始，`POST /api/train/kohaku/cancel` 取消，下次會從已完成的階段接續，兩個端點都可以送 `{}`。查 `GET /api/train/trainer` 的 `engines.toolkit`、`engines.kohakumoss`；後者包含 stage、stages_done、log、commit、speed。即時安裝事件為 `type:"train", phase:"install", engine:"kohakumoss"`。
+- 下載 heal（5.4GB）需 `POST /api/train/kohaku/download_heal {"confirm":true}`，拿回 id 後在 `GET /api/models/downloads` 看進度。安裝 C++ 工具需 `POST /api/train/kohaku/buildtools {"confirm":true}`，會叫起微軟安裝程式（約下載 2～6GB、有系統權限確認），回 `{ok:false,url}` 時改開官方網站。移除訓練器用 `POST /api/train/trainer/remove {engine, confirm:true}`，省略 engine 會選 toolkit。
+- `POST /api/train/{id}/start {"target":"local","wait_queue":true}` 開新輪。預設等 ComfyUI 佇列清空，等待中 `run.state="waiting"`、`run.queue` 是還有幾張，可按停止取消。選「現在就開始」送 `wait_queue:false`。訓練分整理描述、整理圖片、訓練三段；進入訓練後，第一次編譯顯卡程式可能要 1～5 分鐘。進度在 `run.phase`（text／latents／train）、`phase_index`（1～3）、step、total、loss、sec_per_step、vram。用 `POST /api/generate` 送到本機的工作，遇上本機訓練會在 `jobs[].notes` 提醒出圖可能很慢或讓訓練失敗。
+- 續訓送 `{target:"local",resume:true}`。找到完整 checkpoint 會沿用 `run.run_no`、已收集的版本和快取，從 latest 接續；沒有完整存檔就開新輪。新輪會把舊輪的 `{run_no,epochs,ended}` 放到專案頂層 `runs_history`。目前各版在 `run.epochs[]`，有 n、step、file、src。第 2 輪起 LoRA 名字帶 _r2 等輪次後綴。已採用的檔案會保留。
+- 打包時將圖和同名 .txt 配對，設定要用 `txt_as: "nl"` 讀英文句子；預設 tags 會把句子打散。小幫手按專案代號和輪次分目錄。收檔只看本輪 `checkpoints\step_XXXXXXXX\export\*-comfy.safetensors`，最外層 `export\` 與最後一版重複。兩份設定會存進專案的 `out\train.py` 和 `out\data.py`。
+- 出錯時看 `run.error` 與 `run.error_kind`。oom 可改 6GB 省顯存模式重來，missing_model 回健檢找缺檔，driver 先更新 NVIDIA 驅動，disk 先清空間，other 查看最後幾行 log。診斷資訊裡顯示「（沒有）」的設定檔，可到專案 out 資料夾查看。
+
+KohakuMoss 採 Apache 2.0 加命名條款，衍生產品名稱須含 Kohaku，內部工具及輸出物豁免。繪匣只下載引擎並呼叫其指令列，發行檔未包含引擎程式碼。[原專案](https://github.com/KohakuBlueleaf/KohakuMossTrainer) · [授權說明](https://github.com/KohakuBlueleaf/KohakuMossTrainer/blob/main/LICENSE)
 
 ## 系統、設定、雲端
 
@@ -426,7 +448,7 @@ ComfyUI 只讀它自己 input 資料夾裡的檔：
 - `POST /api/app/update/preferences {auto_check: true|false}`：自動檢查開關。修改前須使用者同意。
 - `POST /api/app/update/install {version: "查到的完整版本", confirm: true}`：使用者看過新版說明、同意下載安裝並重開後才呼叫；MCP 頂層也要 `confirm:true`。後端會重新查版本、檢查工作與驗證簽章；正在生圖、拍影片、改寫、下載模型、安裝或準備雲端時會擋住。
 - 私人版及沒有桌面外殼的測試站 `enabled=false`，後端拒絕安裝公開版。不要改頻道或繞過保護，私人版請使用私人安裝檔。
-- 日期版號為 `年.月日.包次`（例如 26.1024.1、26.1024.2），狀態列仍顯示 V261024；完整版本看設定頁。26.10.24 等舊版要先手動安裝支援更新的版本一次。
+- 日期版號為 `年.月日.包次`（例如 26.1024.1、26.1024.2），頂列狀態條的「⋯」裡顯示 V261024；完整版本看設定頁。26.10.24 等舊版要先手動安裝支援更新的版本一次。
 - 若改寫提示「找不到 AI 改寫用的通用模型」：到「安裝與修復」勾「AI 改寫、生圖助手」下載通用 9B（官方 PE 已經不支援）。缺讀圖檔可以 `POST /api/pe/mmproj {brain?:"9b"|"35b"}` 補下載。已有模型可加入 LLM 外部資料夾，不必重新下載；模型與讀圖檔會逐一搜尋所有 LLM 來源及子資料夾。
 
 - 直接打 `/api/generate` 缺參數會回 400（`anima_generate` 會照家族補，`anima_api` 直接打時要自己給）：txt2img 要 `width`、`height`、`steps`、`cfg`；img2img、inpaint、outpaint、multiref、detail 要 `steps`、`cfg`（2026-11-13 起也擋，以前會靜默組出 0 步、CFG 0 的圖；走 `image_workflow` 工作流組時不擋，沒給就用工作流裡的值）。

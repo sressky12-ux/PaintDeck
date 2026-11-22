@@ -47,11 +47,11 @@ export function init() {
   // 介面語言（i18n.js）：存起來、重新整理頁面
   $("#setLang").value = i18n.current();
   $("#setLang").onchange = () => i18n.choose($("#setLang").value);
-  // 自由版面（dock.js）：每頁的面板位置、大小、浮動、隱藏全部恢復預設
+  // 固定版面（dock.js）：每頁收起來的區、面板全部展開
   $("#dockReset").onclick = () => {
-    if (!confirm("把所有頁面的面板位置、大小都恢復成預設？")) return;
+    if (!confirm("把所有頁面收起來的區塊都展開？")) return;
     resetDock();
-    toast("版面都恢復成預設了", "ok");
+    toast("全部展開了", "ok");
   };
   mountTavern();
   // 儲存失敗要講出來（不然按了沒反應，使用者以為存好了）

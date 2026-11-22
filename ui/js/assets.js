@@ -90,7 +90,7 @@ function paint() {
       el("div", { class: "t" }, (it.fav ? "★ " : "") + it.name),
       el("div", { class: "row wrap as-tags" }, el("span", { class: "badge-s" }, KIND_NAME[it.kind] || it.kind),
         ...(it.tags || []).slice(0, 3).map((t) => el("span", { class: "muted sm" }, "#" + t)))))));
-  if (!shown.length) g.append(el("div", { class: "muted sm pad" }, items.length ? "沒有符合的資產" : "還沒有資產：按右上「＋ 新增」"));
+  if (!shown.length) g.append(el("div", { class: "empty-span muted sm pad" }, items.length ? "沒有符合的資產" : "還沒有資產：按右上「＋ 新增」"));
 }
 
 // ---------------------------------------------------------------- 右邊：編輯區

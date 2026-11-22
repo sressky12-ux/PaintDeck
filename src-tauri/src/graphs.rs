@@ -37,6 +37,7 @@ pub const MOSS_4B_ADAPTER: &str = "moss_qwen35_4b_to_9b_1600_train.safetensors";
 pub const MOSS_VAE: &str = "flux2-vae.safetensors";
 /// Krea 2（Comfy-Org/Krea-2 的 ComfyUI 版檔案，ComfyUI 0.43 內建支援）：Qwen3-VL-4B 文字編碼器（CLIPLoader type krea2）＋
 /// 跟 Anima 同一顆 qwen_image_vae。官方 Turbo 範本：8 步、CFG 1、euler＋simple、負面＝ConditioningZeroOut（shift 1.15 是模型預設，不用另外接）
+pub const MMIMG_MAX_REFS: usize = 16;
 pub const KREA2_TE: &str = "qwen3vl_4b_int8_convrot.safetensors";
 /// SDXL 系（Illustrious、NoobAI、Pony）的預設負面詞：NoobAI-XL 1.1 官方說明的負面詞，拿掉 nsfw 和防獸人的那幾個
 pub const SDXL_NEG: &str = "worst quality, old, early, low quality, lowres, signature, username, logo, bad hands, mutated hands";
@@ -331,6 +332,9 @@ impl Graph {
     }
     fn moss(&self) -> bool {
         self.family == "moss"
+    }
+    fn mmimage(&self) -> bool {
+        self.family == crate::families::MMIMG
     }
     fn krea2(&self) -> bool {
         self.family == "krea2"
@@ -931,6 +935,94 @@ fn mask_bbox(path: &Path) -> R<Option<(i64, i64, i64, i64)>> {
 }
 
 /// 回傳 (nodes, info)。info 是實際使用的提示詞、種子、尺寸，存進圖庫。
+/// ComfyUI v0.46.2 的 image_minimax_h3_image_t2i／edit 共用同一組條件與取樣節點。
+fn mmimage_graph(g: &mut Graph, p: &Value, mode: &str, prompt: &str, seed: i64) -> R<(Ref, i64, i64)> {
+    let edit = match mode {
+        "txt2img" => false,
+        "multiref" => true,
+        _ => return err("MiniMax H3 Image 支援文生圖和多圖參考"),
+    };
+    let refs = p["refs"].as_array().map(Vec::as_slice).unwrap_or_default();
+    if edit && (refs.is_empty() || refs.len() > MMIMG_MAX_REFS) {
+        return err(format!("MiniMax H3 Image 多圖參考需要 1～{MMIMG_MAX_REFS} 張圖，目前有 {} 張", refs.len()));
+    }
+
+    // UNETLoader 與生成頁共用 LoRA 堆疊。
+    let model = model_chain(g, p, vec![]);
+    // CLIPLoader (2/30)：圖像條件和擴寫器都使用 minimax 類型。
+    let loader = |g: &mut Graph, name: &str| g.add("CLIPLoader", json!({"clip_name": name, "type":"minimax", "device":"default"}));
+    let te = p["mm_te"].as_str().filter(|s| !s.is_empty()).unwrap_or(crate::h3::TE);
+    let clip = loader(g, te);
+    // VAELoader (3/31)：同一顆 VAE 編碼參考圖、解碼成品。
+    let vae = g.add("VAELoader", json!({"vae_name":"minimax_h3_image_vae_fp16.safetensors"}));
+    let (mut w, mut h) = (snap(f(p.get("width"), 2048.0), 32, 32), snap(f(p.get("height"), 2048.0), 32, 32));
+    let mut cond = json!({"clip":clip,"vae":vae,"width":w,"height":h,"prompt":prompt});
+    let mut images = vec![];
+    if edit {
+        for (index, r) in refs.iter().enumerate() {
+            let Some(name) = r["image"].as_str().filter(|s| !s.is_empty()) else {
+                return err(format!("第 {} 張參考圖沒有檔名", index + 1));
+            };
+            // LoadImage (45)：按參考匣順序接入各自的輸入。
+            let mut img = g.add("LoadImage", json!({"image":name}));
+            if index == 0 {
+                // ResizeImageMaskNode (56、48)：先縮放至 4MP，再對齊 32。
+                img = g.add("ResizeImageMaskNode", json!({"input":img,"resize_type":"scale total pixels","resize_type.megapixels":4,"scale_method":"area"}));
+                img = g.add("ResizeImageMaskNode", json!({"input":img,"resize_type":"scale to multiple","resize_type.multiple":32,"scale_method":"area"}));
+                if s(p.get("size_mode"), "auto") == "auto" {
+                    // GetImageSize (50)：自動尺寸直接取縮放後的底圖。
+                    let size = g.add("GetImageSize", json!({"image":img}));
+                    cond["width"] = size.clone();
+                    cond["height"] = Graph::slot(&size, 1);
+                    let (rw, rh) = (f(r.get("width"), 0.0), f(r.get("height"), 0.0));
+                    if rw > 0.0 && rh > 0.0 {
+                        let scale = (4194304.0 / (rw * rh)).sqrt();
+                        (w, h) = ((rw * scale).round() as i64 / 32 * 32, (rh * scale).round() as i64 / 32 * 32);
+                    } else { (w, h) = (0, 0); }
+                }
+            }
+            cond[format!("images.image_{}", index + 1)] = img.clone();
+            images.push(img);
+        }
+    }
+    if let Some(pe) = p["mm_pe"].as_str().filter(|s| !s.is_empty()) {
+        // PrimitiveStringMultiline、StringReplace：原樣保留範本提示，只替換使用者的指令。
+        let (system, instruction) = if edit {
+            (include_str!("../../resources/share/mmimage_pe_edit.txt"), include_str!("../../resources/share/mmimage_instruction_edit.txt"))
+        } else {
+            (include_str!("../../resources/share/mmimage_pe_t2i.txt"), include_str!("../../resources/share/mmimage_instruction_t2i.txt"))
+        };
+        // TextGenerateV2 (15/34)：動態選項的欄位帶 sampling_mode 前綴。
+        let mut inputs = json!({"clip":loader(g, pe),"system_prompt":system,"prompt":instruction.replace("{input text}", prompt),
+            "max_length":if edit {8196} else {8192},"sampling_mode":"on","sampling_mode.temperature":1.0,
+            "sampling_mode.top_k":20,"sampling_mode.top_p":0.95,"sampling_mode.min_p":0.0,
+            "sampling_mode.repetition_penalty":1.0,"sampling_mode.presence_penalty":0.0,"sampling_mode.seed":0,
+            "thinking":true,"use_default_template":true,"mtp":"auto"});
+        for (index, img) in images.into_iter().enumerate() {
+            inputs[format!("images.image{}", index + 1)] = img;
+        }
+        let generated = g.add("TextGenerateV2", inputs);
+        // JsonExtractString (26/44)：只把 expanded_caption 交給生圖模型。
+        cond["prompt"] = g.add("JsonExtractString", json!({"json_string":generated,"key":"expanded_caption"}));
+    }
+    // MiniMaxH3ImageConditioning (5/32)：輸出正面條件和 latent。
+    let positive = g.add("MiniMaxH3ImageConditioning", cond);
+    // ConditioningZeroOut (6/33)：負面條件沿用歸零的正面條件。
+    let negative = g.add("ConditioningZeroOut", json!({"conditioning":positive}));
+    // KSampler (7/38)：文生圖與改圖都是完整的六步取樣。
+    let samples = g.add("KSampler", json!({"model":model,"positive":positive,"negative":negative,
+        "latent_image":Graph::slot(&positive,1),"seed":seed,"steps":i(p.get("steps"),6),"cfg":f(p.get("cfg"),1.0),
+        "sampler_name":s(p.get("sampler"),"euler"),"scheduler":s(p.get("scheduler"),"simple"),"denoise":1.0}));
+    // VAEDecode (8/42)：顯存較小時可改分塊解碼。
+    let tile = i(p.get("vae_tiled"), 0);
+    let image = if tile > 0 {
+        g.add("VAEDecodeTiled", json!({"samples":samples,"vae":vae,"tile_size":tile,"overlap":64,"temporal_size":64,"temporal_overlap":8}))
+    } else {
+        g.add("VAEDecode", json!({"samples":samples,"vae":vae}))
+    };
+    Ok((image, w, h))
+}
+
 pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Value>, Value)> {
     // 內建影片 2026-10-30 起是 MiniMax H3（h3::build，經 server\api_h3.rs），LTX 的節點圖拿掉了
     if s(p.get("mode"), "") == "video" {
@@ -956,6 +1048,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
 
     let (img, w, h);
     match mode.as_str() {
+        _ if g.mmimage() => (img, w, h) = mmimage_graph(&mut g, p, &mode, &prompt, seed)?,
         "txt2img" => {
             let (w0, h0) = (
                 snap(f(p.get("width"), 0.0), step, 256),
@@ -1601,6 +1694,81 @@ mod tests {
         let (n1, _) = build(&p1, &dir, 0).unwrap();
         assert!(!n1.values().any(|v| v["class_type"] == "SkipLayerGuidanceDiTSimple"));
         assert!(n1.values().any(|v| v["class_type"] == "ModelSamplingAuraFlow"));
+    }
+
+    fn mm_case(count: usize) -> Value {
+        let refs: Vec<_> = (1..=count).map(|i| json!({"image": format!("{i}.png")})).collect();
+        json!({"family":"mmimage", "model":"main.safetensors", "prompt":"change the scene",
+               "mode": if count == 0 { "txt2img" } else { "multiref" }, "refs":refs, "width":2048, "height":2304})
+    }
+
+    #[test]
+    fn mmimage_txt2img_graph() {
+        let (n, _) = build(&mm_case(0), Path::new("."), 0).unwrap();
+        let input = |c| by_class(&n, c)[0]["inputs"].clone();
+        assert_eq!(input("UNETLoader")["unet_name"], "main.safetensors");
+        assert_eq!(input("VAELoader")["vae_name"], "minimax_h3_image_vae_fp16.safetensors");
+        assert_eq!(input("CLIPLoader")["type"], "minimax");
+        assert_eq!(input("CLIPLoader")["clip_name"], crate::h3::TE);
+        let c = input("MiniMaxH3ImageConditioning");
+        assert_eq!((&c["width"], &c["height"]), (&json!(2048), &json!(2304)));
+        assert!(c.get("images.image_1").is_none());
+        let k = input("KSampler");
+        assert_eq!((&k["steps"], &k["cfg"], &k["denoise"]), (&json!(6), &json!(1.0), &json!(1.0)));
+        assert_eq!((&k["sampler_name"], &k["scheduler"]), (&json!("euler"), &json!("simple")));
+        assert_eq!(n[k["negative"][0].as_str().unwrap()]["class_type"], "ConditioningZeroOut");
+        assert_eq!(input("ConditioningZeroOut")["conditioning"], k["positive"]);
+    }
+
+    #[test]
+    fn mmimage_multiref_16() {
+        let (n, _) = build(&mm_case(16), Path::new("."), 0).unwrap();
+        let c = &by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"];
+        for i in 1..=16 {
+            let mut node = &n[c[format!("images.image_{i}")][0].as_str().unwrap()];
+            if i == 1 {
+                for (k, v) in [("resize_type.multiple", 32), ("resize_type.megapixels", 4)] {
+                    assert_eq!(node["class_type"], "ResizeImageMaskNode");
+                    assert_eq!(node["inputs"][k], v);
+                    node = &n[node["inputs"]["input"][0].as_str().unwrap()];
+                }
+            }
+            assert_eq!(node["inputs"]["image"], format!("{i}.png"));
+        }
+    }
+
+    #[test]
+    fn mmimage_refs_over_limit() {
+        assert!(build(&mm_case(17), Path::new("."), 0).unwrap_err().0.contains("16"));
+    }
+
+    #[test]
+    fn mmimage_pe_on() {
+        for count in [0, 3] {
+            let mut p = mm_case(count);
+            p["mm_pe"] = json!("pe.safetensors");
+            let (n, _) = build(&p, Path::new("."), 0).unwrap();
+            let c = &by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"];
+            let extract = &n[c["prompt"][0].as_str().unwrap()];
+            assert_eq!(extract["class_type"], "JsonExtractString");
+            assert_eq!(extract["inputs"]["key"], "expanded_caption");
+            let gen = &n[extract["inputs"]["json_string"][0].as_str().unwrap()];
+            assert_eq!(gen["class_type"], "TextGenerateV2");
+            assert_eq!(n[gen["inputs"]["clip"][0].as_str().unwrap()]["inputs"]["clip_name"], "pe.safetensors");
+            for i in 1..=count {
+                assert_eq!(gen["inputs"][format!("images.image{i}")], c[format!("images.image_{i}")]);
+            }
+        }
+    }
+
+    #[test]
+    fn mmimage_tiled_decode() {
+        let mut p = mm_case(0);
+        let (plain, _) = build(&p, Path::new("."), 0).unwrap();
+        assert_eq!(by_class(&plain, "VAEDecode").len(), 1);
+        p["vae_tiled"] = json!(512);
+        let (n, _) = build(&p, Path::new("."), 0).unwrap();
+        assert_eq!(by_class(&n, "VAEDecodeTiled")[0]["inputs"]["tile_size"], 512);
     }
 
     #[test]

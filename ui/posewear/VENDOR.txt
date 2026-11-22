@@ -1,0 +1,2 @@
+posewear 前端（MIT，https://github.com/atuizz/posewear），commit 70f48e7。
+由 tools/posewear_vendor.py 產生，不要手改（zh.js、loader.js、bridge.js 除外）；上游改版時重跑那支腳本。

@@ -11,7 +11,7 @@
 //!
 //! 存檔：data\agent\sessions\<id>.json（設定＋事件清單；事件同時是畫面上的對話和下一次給模型的上下文）
 use crate::director::{json_in, tx, valid_id, write_atomic};
-use crate::families::{ANIMA, KREA2, MOSS, QWEN21};
+use crate::families::{ANIMA, KREA2, MMIMG, MOSS, QWEN21};
 use crate::py::{now, truthy};
 use regex::Regex;
 use serde_json::{json, Map, Value};
@@ -79,7 +79,7 @@ pub fn default_text(id: &str) -> Option<&'static str> {
 /// 這個家族用哪一份寫法說明
 pub fn guide_id(family: &str) -> &'static str {
     match family {
-        QWEN21 | KREA2 => "agent_qwen21",
+        QWEN21 | KREA2 | MMIMG => "agent_qwen21",
         MOSS => "agent_moss",
         ANIMA => "agent_anima",
         _ => "agent_other",
@@ -117,7 +117,7 @@ pub fn guides_list() -> String {
 pub fn family_guide(family: &str) -> &'static str {
     match family {
         // Krea 2 的文字編碼器也是 Qwen3-VL、吃完整英文句子：先借 Qwen 2.1 文生圖的寫法
-        QWEN21 | KREA2 => "qwen",
+        QWEN21 | KREA2 | MMIMG => "qwen",
         MOSS => "moss",
         ANIMA => "anima",
         _ => "other",

@@ -799,6 +799,16 @@ pub fn friendly(msg: &str) -> String {
         return String::new();
     }
     let low = msg.to_lowercase();
+    // 只看缺少的選項，後面的可選檔清單也可能含有 MiniMax，不可誤報。
+    let failed = low.split(" not in [").next().unwrap_or(&low);
+    let hint = if failed.contains("value not in list: unet_name:") && failed.contains("minimax_h3_image_pruned_") {
+        Some("MiniMax H3 Image 的主模型還沒下載，到下載中心找『MiniMax H3 Image』")
+    } else if failed.contains("value not in list: vae_name:") && failed.contains("minimax_h3_image_vae_") {
+        Some("MiniMax H3 Image 的 VAE 還沒下載，到下載中心找『MiniMax H3 Image』")
+    } else if low.contains("minimaxh3imageconditioning") && ["not found", "does not exist", "missing_node_type", "not installed"].iter().any(|s| low.contains(s)) {
+        Some("ComfyUI 版本太舊，要 0.45 以上才有 MiniMax H3 Image")
+    } else { None };
+    if let Some(text) = hint { return format!("{text}\n（原始訊息：{}）", head(msg, 300)); }
     for (keys, text) in FRIENDLY {
         if keys.iter().any(|k| low.contains(k)) {
             return format!("{text}\n（原始訊息：{}）", head(msg, 300));
@@ -972,6 +982,15 @@ async fn fix_loaders(comfy: &Comfy, nodes: &mut Value) -> Result<(), ComfyError>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mmimage_friendly_errors() {
+        for (msg, want) in [
+            ("Value not in list: unet_name: 'minimax_h3_image_pruned_w4a8.safetensors'", "MiniMax H3 Image 的主模型還沒下載"),
+            ("Value not in list: vae_name: 'minimax_h3_image_vae_fp16.safetensors'", "MiniMax H3 Image 的 VAE 還沒下載"),
+            ("Cannot execute because node MiniMaxH3ImageConditioning does not exist", "ComfyUI 版本太舊，要 0.45 以上才有 MiniMax H3 Image"),
+        ] { assert!(super::friendly(msg).contains(want), "{msg}"); }
+    }
+
     #[test]
     fn test_stations_get_their_own_client_id() {
         assert_eq!(client_id_for(None), "anima-web");

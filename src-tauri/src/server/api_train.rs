@@ -61,6 +61,10 @@ pub(super) fn load(app: &Shared, id: &str) -> Result<Value, ApiError> {
     train::load(&root(app), id).map_err(not_found)
 }
 
+pub(crate) fn engine_of(p: &Value) -> &str {
+    if p["family"] == "moss" && p["engine"] == "kohakumoss" { "kohakumoss" } else { "toolkit" }
+}
+
 pub(super) fn fam_of(p: &Value) -> Result<&'static Fam, ApiError> {
     train::fam(p["family"].as_str().unwrap_or("")).ok_or_else(|| bad("這個專案的模型家族不認得"))
 }
@@ -155,11 +159,20 @@ fn fam_view(f: &Fam) -> Value {
     })
 }
 
+fn shown_project(p: &Value, id: &str) -> Value {
+    let mut shown = p.clone();
+    let tracking = job_kind(id) == Some("train");
+    if !tracking && shown["run"]["state"] == "waiting" {
+        shown["run"]["state"] = json!("interrupted");
+    }
+    train::fix_stale(&mut shown, tracking);
+    shown
+}
+
 fn view(app: &Shared, p: &Value) -> Value {
     let id = p["id"].as_str().unwrap_or("");
     let dir = pdir(app, id);
-    let mut shown = p.clone();
-    train::fix_stale(&mut shown, job_kind(id) == Some("train"));
+    let shown = shown_project(p,id);
     json!({
         "project": shown,
         "report": train::dataset_report(images(p), p["kind"].as_str().unwrap_or("style")),
@@ -171,8 +184,7 @@ fn view(app: &Shared, p: &Value) -> Value {
 
 fn summary(p: &Value) -> Value {
     let id = p["id"].as_str().unwrap_or("");
-    let mut shown = p.clone();
-    train::fix_stale(&mut shown, job_kind(id) == Some("train"));
+    let shown = shown_project(p,id);
     let p = &shown;
     json!({
         "id": id, "name": p["name"], "kind": p["kind"], "family": p["family"], "trigger": p["trigger"],
@@ -186,6 +198,16 @@ fn summary(p: &Value) -> Value {
 pub(super) fn vram_gb() -> f64 {
     let (gpus, _) = crate::gpu::detect(false);
     gpus.iter().filter(|g| g["vendor"] == "nvidia").filter_map(|g| g["vram_mb"].as_f64()).fold(0.0, f64::max) / 1024.0
+}
+
+pub(super) fn kohaku_gpu() -> (String, f64) {
+    let (cards, _) = crate::gpu::detect(false);
+    cards
+        .iter()
+        .filter(|g| g["vendor"] == "nvidia")
+        .max_by_key(|g| g["vram_mb"].as_u64().unwrap_or(0))
+        .map(|g| (tx(&g["name"]), g["vram_mb"].as_f64().unwrap_or(0.0) / 1024.0))
+        .unwrap_or_default()
 }
 
 pub async fn list(State(app): State<Shared>) -> ApiResult {
@@ -249,6 +271,39 @@ fn merge_params(base: &mut Value, user: &Value) {
     }
 }
 
+pub(super) fn kohaku_defaults(p: &Value, level: &str) -> Value {
+    train::kohaku_auto_params(p["kind"].as_str().unwrap_or("style"), live(p).len(), level)
+}
+
+fn merge_kohaku_params(auto: &mut Value, user: &Value) -> Result<(), String> {
+    for (key, lo, hi) in [("steps", 1, 20000), ("dim", 1, 128)] {
+        if let Some(value) = user[key].as_u64() {
+            auto[key] = json!(value.clamp(lo, hi));
+        }
+    }
+    for (key, lo, hi) in [("alpha", 1.0, 128.0), ("lr", 1e-6, 1e-2)] {
+        if let Some(value) = user[key].as_f64() {
+            auto[key] = json!(value.clamp(lo, hi));
+        }
+    }
+    if let Some(base) = user["base"].as_str() {
+        if base.contains(['/', '\\', ':']) || !base.to_ascii_lowercase().ends_with(".safetensors") {
+            return Err("底模請選 diffusion_models 裡的 safetensors 檔".into());
+        }
+        auto["base"] = json!(base);
+    }
+    if let Some(vram) = user["vram"].as_str() {
+        if !matches!(vram, "auto" | "vram_6g" | "vram_8g" | "vram_12g" | "vram_16g" | "vram_24g") {
+            return Err("不認得這個顯存模式".into());
+        }
+        auto["vram"] = json!(vram);
+    }
+    if let Some(flip) = user["flip"].as_bool() {
+        auto["flip"] = json!(flip);
+    }
+    Ok(())
+}
+
 pub async fn set(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b): Body) -> ApiResult {
     busy(&id)?;
     let dir = pdir(&app, &id);
@@ -267,6 +322,12 @@ pub async fn set(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b
             p["kind"] = json!(k);
         }
         let f = train::fam(p["family"].as_str().unwrap_or("")).ok_or("這個專案的模型家族不認得")?;
+        if let Some(engine) = b.get("engine") {
+            if engine != "toolkit" && !(engine == "kohakumoss" && f.id == "moss") {
+                return Err("引擎只能選 ai-toolkit，MOSS 也可以選 KohakuMoss".into());
+            }
+            p["engine"] = engine.clone();
+        }
         if let Some(t) = b.get("trigger").and_then(Value::as_str) {
             if !train::trigger_ok(t) {
                 return Err("觸發詞只能用英文、數字、底線、連字號，2～32 個字".into());
@@ -288,7 +349,20 @@ pub async fn set(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b
         if let Some(l) = b.get("level").and_then(Value::as_str).filter(|l| ["light", "std", "full"].contains(l)) {
             p["level"] = json!(l);
         }
-        if b.get("params").is_some() || b.get("level").is_some() {
+        if b.get("kohaku_params").is_some() || (b.get("level").is_some() && engine_of(p) == "kohakumoss") {
+            if engine_of(p) != "kohakumoss" {
+                return Err("只有 KohakuMoss 專案能存這組參數".into());
+            }
+            let mut auto = kohaku_defaults(p, p["level"].as_str().unwrap_or("std"));
+            let steps = auto["steps"].clone();
+            merge_kohaku_params(&mut auto, &b["kohaku_params"])?;
+            if auto["steps"] != steps {
+                let n = auto["steps"].as_u64().unwrap();
+                auto["why"] = json!(format!("你自己設的：{n} 步，每 {} 步存一版", n.div_ceil(4)));
+            }
+            p["kohaku_params"] = auto;
+        }
+        if b.get("params").is_some() || (b.get("level").is_some() && engine_of(p) == "toolkit") {
             let n = live(p).len();
             let mut auto = train::auto_params(f, p["kind"].as_str().unwrap_or("style"), n, p["level"].as_str().unwrap_or("std"));
             if let Some(u) = b.get("params").filter(|u| u.is_object()) {
@@ -545,6 +619,28 @@ pub async fn params(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Que
     let f = fam_of(&p)?;
     let kind = p["kind"].as_str().unwrap_or("style");
     let level = q.get("level").map(String::as_str).filter(|l| ["light", "std", "full"].contains(l)).unwrap_or_else(|| p["level"].as_str().unwrap_or("std"));
+    if engine_of(&p) == "kohakumoss" {
+        let dir = super::api_models::models_root(&app).join("diffusion_models");
+        let (bases, gpu, gb) = blocking(move || {
+            let mut bases = Vec::new();
+            for entry in std::fs::read_dir(dir).into_iter().flatten().flatten() {
+                let file = entry.file_name().to_string_lossy().into_owned();
+                if file.to_ascii_lowercase().ends_with(".safetensors") && crate::families::detect(&entry.path()) == "moss" {
+                    let tested = file.eq_ignore_ascii_case(train::HEAL_FILE);
+                    bases.push(json!({"file":file,"label":file,"tested":tested}));
+                }
+            }
+            bases.sort_by(|a, b| a["file"].as_str().cmp(&b["file"].as_str()));
+            if !bases.iter().any(|b| b["tested"] == true) {
+                bases.push(json!({"file":train::HEAL_FILE,"label":"heal（推薦）","tested":true,"missing":true}));
+            }
+            let (gpu, gb) = kohaku_gpu();
+            (bases, gpu, gb)
+        })
+        .await;
+        return ok(json!({"engine":"kohakumoss", "level":level, "params":kohaku_defaults(&p,level),
+            "saved":p["kohaku_params"], "bases":bases, "gpu":gpu, "vram_layer":train::kohaku_vram_layer(gb)}));
+    }
     ok(json!({
         "level": level,
         "params": train::auto_params(f, kind, live(&p).len(), level),
@@ -663,5 +759,17 @@ pub async fn stop(State(app): State<Shared>, UrlPath(id): UrlPath<String>) -> Ap
             ok(json!({"ok": true}))
         }
         None => super::train_run::stop_remote(&app, &id).await,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn old_project_defaults_to_toolkit() {
+        assert_eq!(engine_of(&json!({"family":"moss"})), "toolkit");
+        let p = train::new_project("測試", "character", "moss", "xk").unwrap();
+        assert_eq!(engine_of(&p), "kohakumoss");
+        assert_eq!(engine_of(&json!({"family":"anima","engine":"kohakumoss"})), "toolkit");
     }
 }

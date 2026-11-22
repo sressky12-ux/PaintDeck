@@ -2,6 +2,7 @@
 import { $, el, api, toast, store, fmtBytes, GB, typing, openModal } from "./util.js";
 import { app } from "./state.js";
 import { setComfyNote, restartComfy } from "./deck.js";
+import { altPage } from "./topbar.js";
 import { displayVersion } from "./updates.js";
 
 const F = (id) => $("#" + id);
@@ -43,14 +44,10 @@ export function openHelp() {
 }
 
 // ---------------------------------------------------------------- 全域快捷鍵
-// 跟左邊功能鍵上的編號一樣：Alt+1～8；Alt+9 任務面板（09 訓練還沒有，任務照舊用 9）、Alt+0 設定
-const PAGES = { 1: "gen", 2: "gallery", 3: "assets", 4: "loras", 5: "civitai", 6: "director", 7: "comic", 8: "agent", 0: "settings" };
 function globalKeys(e) {
   if (e.altKey && !e.ctrlKey && /^[0-9]$/.test(e.key) && !typing(e)) {
-    if (e.key === "9") { e.preventDefault(); import("./queue.js").then((q) => q.toggle()); return; }
-    // 助手改成獨立視窗（頂列「✦ 助手」）：Alt＋8 也是開視窗，不在主畫面切頁
-    if (PAGES[e.key] === "agent") { e.preventDefault(); F("assistBtn").click(); }
-    else if (PAGES[e.key]) { e.preventDefault(); app.showPage(PAGES[e.key]); }
+    const page = altPage(e.key);
+    if (page) { e.preventDefault(); app.showPage(page); }
     return;
   }
   if (e.key === "Escape") {

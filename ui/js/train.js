@@ -3,6 +3,7 @@
 import { el, api, toast } from "./util.js";
 import { app } from "./state.js";
 import * as gen from "./gen.js";
+import * as kohaku from "./trainkohaku.js";
 import { pickFromGallery } from "./gallery.js";
 
 const STEPS = ["專案", "訓練圖", "描述", "參數", "在哪煉", "訓練與驗收"];
@@ -54,7 +55,8 @@ export function startBody(target, opts, confirmed) {
 export function applyEvent(run, m) {
   const r = { state: "", step: 0, total: 0, loss: null, log: [], ...(run || {}) };
   if (m.state) r.state = m.state;
-  for (const k of ["step", "total", "loss", "log"]) if (m[k] !== undefined && m[k] !== null) r[k] = m[k];
+  for (const k of ["step", "total", "loss", "log", "phase_index", "sec_per_step", "vram", "queue"]) if (m[k] !== undefined && m[k] !== null) r[k] = m[k];
+  if (m.phase_index != null) r.phase = m.phase || "";
   r.msg = m.msg || "";
   return r;
 }
@@ -65,7 +67,7 @@ export function percent(run) {
 }
 
 export function stateName(s) {
-  const names = { starting: "準備中", running: "訓練中", done: "煉好了", error: "失敗", stopped: "停止了", interrupted: "中斷了", detached: "還在外面跑" };
+  const names = { waiting: "等 ComfyUI 畫完", starting: "準備中", running: "訓練中", done: "煉好了", error: "失敗", stopped: "停止了", interrupted: "中斷了", detached: "還在外面跑" };
   return s ? names[s] || s : "還沒開始";
 }
 
@@ -92,8 +94,12 @@ async function loadList() {
   Object.assign(S, { list: r.projects, fams: r.families, trainer: r.trainer, vram: r.vram_gb, loaded: true });
 }
 
+let openRequest = 0;
 async function open(id, step) {
+  const request = ++openRequest;
   const v = id ? await call(`/api/train/${id}`) : null;
+  if (request !== openRequest) return;
+  if (id !== pid()) { S.checks = null; S.waitQueue = true; }
   S.v = v;
   S.prog = v && v.project.run ? applyEvent(null, v.project.run) : null;
   S.quote = null; S.cmp = null; S.traits = null; S.auto = null;
@@ -105,7 +111,7 @@ async function open(id, step) {
 // 打開專案時停在哪一步：做到哪就到哪
 function firstOpenStep(v) {
   if (v.project.run) return 6;
-  for (const s of [5, 4, 3, 2]) if (!blockReason(s, v)) return s === 5 && !v.project.params ? 4 : s;
+  for (const s of [5, 4, 3, 2]) if (!blockReason(s, v)) return s === 5 && !(v.project.engine === "kohakumoss" ? v.project.kohaku_params : v.project.params) ? 4 : s;
   return 2;
 }
 
@@ -153,7 +159,7 @@ function renderList() {
         el("span", { class: "muted sm" }, `${f ? f.label : p.family}・${p.images} ${f && f.video ? "段" : "張"}・${stateName(p.state)}${p.adopted ? "・已採用" : ""}`));
     }),
   );
-  if (!S.list.length) box.append(el("div", { class: "muted sm" }, "還沒有訓練專案。按上面的「新專案」開始。"));
+  if (!S.list.length) box.append(el("div", { class: "empty-span muted sm" }, "還沒有訓練專案。按上面的「新專案」開始。"));
 }
 
 function renderSteps() {
@@ -191,7 +197,7 @@ function step1() {
     box("專案名字", name),
     box("煉什麼", keys(KINDS, d.kind, (k) => save({ kind: k })), note(KINDS.find((k) => k[0] === d.kind)[2])),
     box("用在哪個模型", famSel,
-      f ? note(`${f.base_note}。描述用${f.caption === "tags" ? " Danbooru tag" : "英文句子"}；本機至少要 ${f.min_vram_gb}GB 顯存${S.vram ? `（這台 ${S.vram}GB）` : ""}。`) : null,
+      d.family === "moss" && (!p || p.engine === "kohakumoss") ? note("本機用 KohakuMoss 引擎（作者 KBlueLeaf），8GB 顯卡就能煉，實測 51 張約 1 小時 20 分。") : f ? note(`${f.base_note}。描述用${f.caption === "tags" ? " Danbooru tag" : "英文句子"}；本機至少要 ${f.min_vram_gb}GB 顯存${S.vram ? `（這台 ${S.vram}GB）` : ""}。`) : null,
       p ? note("模型家族建好就不能改（訓練圖的整理方式和描述寫法都跟著它）。") : null),
     box("觸發詞", trig, note("生圖時打這個詞就會叫出這顆 LoRA。只能用英文、數字、底線、連字號；要夠怪，不要用常見的字（會跟模型本來認得的東西打架）。")),
   ];
@@ -325,9 +331,18 @@ function step3() {
 
 // ---------------------------------------------------------------- 4 參數
 async function loadAuto(level) {
-  const r = await call(`/api/train/${pid()}/params?level=${level}`);
-  if (!r) return;
+  const id = pid();
+  const r = await call(`/api/train/${id}/params?level=${level}`);
+  if (!r || id !== pid() || (r.engine === "kohakumoss") !== (cur().engine === "kohakumoss")) return;
   S.auto = r;
+  if (r.engine === "kohakumoss") {
+    if (!cur().kohaku_params && !busyKind()) {
+      const v = await call(`/api/train/${id}`, {level, kohaku_params:{base:kohaku.defaultBase(r)}});
+      if (id === pid() && v) setView(v);
+      else if (id === pid()) render();
+    } else render();
+    return;
+  }
   // 還沒存過就先存自動算的，之後使用者改什麼存什麼
   if (!cur().params) setView(await call(`/api/train/${pid()}`, { level, params: {}, samples: r.samples }));
   else render();
@@ -336,6 +351,14 @@ async function loadAuto(level) {
 function step4() {
   const p = cur();
   if (!S.auto) { loadAuto(p.level || "std"); return [note("計算中…")]; }
+  if (p.engine === "kohakumoss") {
+    const save = async patch => {
+      const v = await call(`/api/train/${p.id}`,patch);
+      if (v && pid() === p.id) setView(v);
+    };
+    return kohaku.paramPanel(p,S.auto,S.trainer?.engines?.kohakumoss,!!busyKind(),save,
+      () => pid() === p.id && loadAuto(cur().level || "std"));
+  }
   const par = p.params || S.auto.params;
   const lock = !!busyKind();
   const save = async (patch) => setView(await call(`/api/train/${p.id}`, patch));
@@ -405,7 +428,17 @@ function step5() {
   const running = busyKind() === "train";
   const cards = el("div", { class: "tr-targets" }, ...TARGETS.map(([id, name, tip]) => el("button", { type: "button", class: `tr-target${S.target === id ? " on" : ""}`, onclick: () => { S.target = id; S.quote = null; render(); } }, el("b", {}, name), el("span", { class: "muted sm" }, tip))));
   let detail;
-  if (S.target === "local") {
+  if (S.target === "local" && p.engine === "kohakumoss") {
+    detail = kohaku.engineCard(p,S.trainer?.engines?.kohakumoss,!!busyKind(), {
+      wait:S.waitQueue !== false, setWait:v => { S.waitQueue = v; },
+      start:() => startTrain("local",{wait_queue:S.waitQueue !== false}, "開始新一輪本機訓練？訓練會占用顯卡，之前的版本會保留。"),
+      switchEngine:async () => {
+        const v = await call(`/api/train/${p.id}`,{engine:"toolkit"});
+        if (v && p.id === pid()) { S.auto = null; setView(v); }
+      },
+      reloadTrainer:refreshKohakuTrainer, onChecks:checks => { S.checks = checks; },
+    });
+  } else if (S.target === "local") {
     const enough = !S.vram || S.vram + 0.5 >= f.min_vram_gb;
     const force = !enough && S.vram + 2 >= f.min_vram_gb;
     const warning = force ? `這台 ${S.vram}GB 顯存，比煉 ${f.label} 建議的 ${f.min_vram_gb}GB 少。還是可以煉，但會很慢（8GB 實測 Anima 1550 步約 4～5 小時），訓練時顯卡會被占滿。` : "";
@@ -464,7 +497,7 @@ function step5() {
         el("button", { class: "akey", type: "button", disabled: !f.modelscope, onclick: () => startTrain("modelscope", {}, "這一步只會在你的電腦上把資料集包成壓縮檔，不會上傳、不花錢。要包嗎？") }, ms ? "重新打包" : "打包資料集"),
         ms ? el("a", { class: "akey sm", href: ms.url, target: "_blank", rel: "noopener" }, "開魔塔訓練頁") : null));
   }
-  return [box("在哪煉", cards, running ? el("div", { class: "tr-warn" }, "這個專案正在訓練，到最後一步看進度。") : null), detail];
+  return [box("在哪煉", cards, p.engine === "kohakumoss" && S.target !== "local" ? note("雲端用 ai-toolkit 煉") : null, running ? el("div", { class: "tr-warn" }, "這個專案正在訓練，到最後一步看進度。") : null), detail];
 }
 
 // ---------------------------------------------------------------- 6 訓練與驗收
@@ -479,47 +512,72 @@ function step6() {
   const every = p.params && p.params.steps && p.params.epochs ? Math.max(1, Math.floor(p.params.steps / p.params.epochs)) : 0;
   const strength = el("select", {}, ...[0.6, 0.7, 0.8, 0.9, 1.0].map((s) => el("option", { value: s, selected: s === 0.8 }, `強度 ${s}`)));
   const where = { local: "本機", remote: "自己的訓練機", runpod: "RunPod", civitai: "C 站" }[run.target] || "";
-  const head = box(`${where}・${stateName(prog.state)}`,
+  const isKohaku = p.engine === "kohakumoss" && run.engine === "kohakumoss" && run.target === "local";
+  const restart = () => startTrain(run.target,{wait_queue:S.waitQueue !== false},"要保留舊版本並重新開始一輪訓練嗎？");
+  const head = box(`${where}・${stateName(prog.state)}${isKohaku ? `・第 ${run.run_no} 輪` : ""}`,
+    isKohaku ? kohaku.progressRows(prog,S.checks) : null,
     el("div", { class: "tr-bar" }, el("div", { style: `width:${pc}%` })),
     el("div", { class: "toolbar" },
       el("span", { class: "vfd g", id: "trProgText" }, prog.total ? `${prog.step} / ${prog.total}${prog.loss != null ? `　loss ${Number(prog.loss).toFixed(4)}` : ""}` : prog.msg || ""),
       el("span", { class: "grow" }),
       running ? el("button", { class: "akey sm warn", type: "button", onclick: async () => { if (confirm("要停掉這次訓練嗎？已經存好的版本會留著。")) await call(`/api/train/${p.id}/stop`, {}); } }, "停止") : null,
+      running && isKohaku ? note("停止後可以按『接著煉』從最近一版接下去") : null,
+      isKohaku && !running && ["interrupted","error","stopped"].includes(prog.state) ? el("button",{class:"akey",type:"button",
+        onclick:() => startTrain(run.target,{resume:true,wait_queue:S.waitQueue !== false},"要從最近一個完整存檔接著煉嗎？找不到存檔會開始新的一輪。")}, "接著煉") : null,
       !running && run.remote && run.remote.pod ? el("button", { class: "akey sm warn", type: "button", onclick: async () => { const r = await call(`/api/train/${p.id}/stop`, {}); if (r) { toast(r.msg || "好了"); open(p.id, 6); } } }, "關掉訓練機") : null,
       !running && ["detached", "interrupted", "error", "stopped"].includes(prog.state) ? el("button", { class: "akey sm", type: "button", onclick: () => { S.step = 5; render(); } }, prog.state === "detached" ? "回去接上" : "回去重來") : null),
-    prog.state === "error" && (prog.msg || run.error) ? el("div", { class: "tr-warn" }, prog.msg || run.error) : null,
+    !isKohaku && prog.state === "error" && (prog.msg || run.error) ? el("div", { class: "tr-warn" }, prog.msg || run.error) : null,
     prog.state === "interrupted" ? el("div", { class: "tr-warn" }, "繪匣中途被關掉，這次訓練沒有跑完。已經存好的版本還在。") : null,
     prog.state === "detached" ? el("div", { class: "tr-warn" }, "訓練還在外面跑（或訓練機還開著、還在計費）。回上一步按開始就會接回去。") : null,
     (prog.log || []).length ? el("pre", { class: "tr-log", id: "trRunLog" }, prog.log.slice(-12).join("\n")) : null);
   const cards = el("div", { class: "tr-epochs" }, ...epochs.map((e) => {
     const mine = samples.filter((s) => every && Math.round(s.step / every) === e.n);
-    const adopted = p.adopted && p.adopted.epoch === e.n;
+    const adopted = p.adopted && p.adopted.file === e.file;
     return el("div", { class: `tr-epoch${adopted ? " on" : ""}` },
-      el("b", {}, `第 ${e.n} 版${adopted ? "（採用中）" : ""}`),
+      el("b", {}, `第 ${e.n} 版${e.step ? `（${e.step} 步）` : ""}${adopted ? "（採用中）" : ""}`),
       el("div", { class: "muted sm" }, e.file),
       mine.length ? el("div", { class: "tr-samples" }, ...mine.map((s) => el("img", { src: `/api/train/${p.id}/sample/${s.file}`, loading: "lazy", alt: `第 ${e.n} 版樣張` }))) : null,
       el("button", { class: "akey sm", type: "button", onclick: async () => { const r = await call(`/api/train/${p.id}/adopt`, { epoch: e.n, strength: Number(strength.value) }); if (r) { toast(`第 ${e.n} 版已經放進 LoRA 卡匣，觸發詞 ${p.trigger}`); S.v.project = r.project; render(); loadList().then(renderList); } } }, "就用這版"));
   }));
   const prompt = el("input", { type: "text", spellcheck: "false", value: (S.cmp && S.cmp.prompt) || (p.samples && p.samples[0]) || p.trigger });
-  const cmp = S.cmp && S.cmp.cells ? el("div", { class: "tr-cmp", style: `grid-template-columns: auto repeat(${S.cmp.strengths.length}, 1fr)` },
-    el("span", {}), ...S.cmp.strengths.map((s) => el("b", {}, `強度 ${s}`)),
-    ...S.cmp.epochs.flatMap((n) => [el("b", {}, `第 ${n} 版`), ...S.cmp.strengths.map((s) => {
+  const baseline = S.cmp?.cells?.find(c => c.epoch === 0);
+  const cmp = S.cmp && S.cmp.cells ? el("div", { class: "tr-cmp", style: `grid-template-columns: auto repeat(${S.cmp.strengths.length + (baseline ? 1 : 0)}, 1fr)` },
+    el("span", {}), baseline ? el("b", {}, "不掛（對照）") : null, ...S.cmp.strengths.map((s) => el("b", {}, `強度 ${s}`)),
+    ...S.cmp.epochs.flatMap((n) => [el("b", {}, `第 ${n} 版`), baseline ? el("div", {class:"tr-cell"}, baseline.image ? el("img", {src:`/thumb/${baseline.image}`,alt:"不掛（對照）"}) : "…") : null, ...S.cmp.strengths.map((s) => {
       const c = S.cmp.cells.find((x) => x.epoch === n && x.strength === s);
       return el("div", { class: "tr-cell" }, c && c.image ? el("img", { src: `/thumb/${c.image}`, alt: `第 ${n} 版 強度 ${s}` }) : "…");
     })])) : null;
   return [
     head,
+    ...(isKohaku && prog.state === "error" ? [kohaku.errorPanel(p,{...run,...prog},{
+      check:() => { S.step = 5; S.target = "local"; render(); },retry:restart,
+      economy:async () => {
+        if (!confirm("改用 6GB 模式並重開一輪？會比較慢，之前存好的版本會保留。")) return;
+        const v = await call(`/api/train/${p.id}`,{kohaku_params:{...p.kohaku_params,vram:"vram_6g"}});
+        if (v && pid() === p.id) { setView(v); await startTrain(run.target,{wait_queue:S.waitQueue !== false}); }
+      },
+    })] : []),
+    ...(p.engine === "kohakumoss" && p.runs_history?.length ? [kohaku.historyPanel(p.runs_history)] : []),
     box(`煉好的版本（${epochs.length}）`,
       epochs.length ? el("div", { class: "toolbar" }, el("span", { class: "muted sm" }, "採用時的建議強度"), strength) : note("每存好一版就會出現在這裡，檔案同時放進 LoRA 資料夾。"),
       cards),
     box("對照表",
+      isKohaku && /heal/i.test(p.kohaku_params?.base) ? note("出圖建議用 SFT 或你常用的 MOSS 模型，不一定要 heal。") : null,
       note("同一句提示詞、同一個種子，把每一版配幾個強度各畫一張，排成表來挑。用的是生成頁現在選的模型和設定：先到生成頁選好這個家族的模型。"),
       el("label", { class: "tr-f" }, "提示詞", prompt),
       el("div", { class: "toolbar" }, el("button", { class: "akey", type: "button", disabled: running || !epochs.length, onclick: async () => {
         const base = { ...gen.collectParams(), mode: "txt2img", prompt: prompt.value.trim(), loras: [] };
         for (const k of ["init_image", "mask", "control", "pose_control", "refs"]) delete base[k];
+        if (isKohaku && !confirm(`要用同一個種子畫 ${epochs.length * 3 + 1} 張對照圖嗎？會加入出圖佇列。`)) return;
+        const pending = new Map();
+        S.compareImages = pending;
         const r = await call(`/api/train/${p.id}/compare`, { params: base, strengths: [0.6, 0.8, 1.0] });
-        if (r) { S.cmp = { ...r, prompt: prompt.value.trim() }; render(); }
+        if (S.compareImages !== pending) return;
+        S.compareImages = null;
+        if (r && pid() === p.id) {
+          for (const cell of r.cells) if (pending.has(cell.job)) cell.image = pending.get(cell.job);
+          S.cmp = { ...r, prompt: prompt.value.trim() }; render();
+        }
       } }, "出對照表")),
       cmp),
   ];
@@ -527,7 +585,34 @@ function step6() {
 
 // ================================================================ 事件
 
+function paintKohakuInstall() {
+  const panel = F("trKInstall");
+  if (!panel) return;
+  const detailsOpen = panel.querySelector("details")?.open;
+  const replacement = kohaku.installProgress(S.trainer?.engines?.kohakumoss);
+  if (detailsOpen && replacement.querySelector("details")) replacement.querySelector("details").open = true;
+  panel.replaceWith(replacement);
+}
+
+async function refreshKohakuTrainer() {
+  const t = await call("/api/train/trainer");
+  if (t) { S.trainer = t; paintKohakuInstall(); }
+}
+
 export function onEvent(m) {
+  gen.onTraining(m);
+  if (m.phase === "install" && m.engine === "kohakumoss") {
+    const view = S.trainer?.engines?.kohakumoss;
+    if (m.state === "running" && view) {
+      if (m.stage !== "buildtools") { view.busy = true; view.stage = m.stage; }
+      view.log = [...(view.log || []),m.msg].slice(-15);
+      paintKohakuInstall();
+    } else if (m.state !== "running") {
+      refreshKohakuTrainer().then(() => { if (app.page === "train" && pid() && S.step === 5) render(); });
+      toast(m.msg || "健檢已更新",m.state === "error" ? "err" : "");
+    }
+    return;
+  }
   if (m.phase === "install") {
     if (!S.trainer) return;
     if (m.state === "running") {
@@ -542,7 +627,7 @@ export function onEvent(m) {
     return;
   }
   if (m.id !== pid()) {
-    if (m.state !== "running" && S.loaded) loadList().then(() => app.page === "train" && renderList());
+    if (!["running","waiting"].includes(m.state) && S.loaded) loadList().then(() => app.page === "train" && renderList());
     return;
   }
   if (m.phase === "caption") {
@@ -557,7 +642,7 @@ export function onEvent(m) {
     return;
   }
   S.prog = applyEvent(S.prog, m);
-  if (m.state !== "running" || m.new) {
+  if (!["running","waiting"].includes(m.state) || m.new) {
     // 有新版本、或結束了：重讀專案（版本清單、樣張在專案檔裡）
     open(pid(), S.step).then(() => loadList().then(renderList));
     if (m.state === "done") toast("LoRA 煉好了，到「訓練與驗收」挑一版");
@@ -566,6 +651,8 @@ export function onEvent(m) {
   }
   if (app.page !== "train") return;
   if (S.step === 6) {
+    const stages = F("trKProgress");
+    if (stages) stages.replaceWith(kohaku.progressRows(S.prog,S.checks));
     const t = F("trProgText"), bar = document.querySelector("#trBody .tr-bar > div"), log = F("trRunLog");
     if (t) t.textContent = S.prog.total ? `${S.prog.step} / ${S.prog.total}${S.prog.loss != null ? `　loss ${Number(S.prog.loss).toFixed(4)}` : ""}` : S.prog.msg;
     if (bar) bar.style.width = `${percent(S.prog)}%`;
@@ -578,6 +665,7 @@ export function onEvent(m) {
 
 // 對照表的格子：生圖完成的事件進來，把圖填進對應的那格
 export function onImage(job, rec) {
+  if (rec && S.compareImages) S.compareImages.set(job, rec.id);
   const c = S.cmp && S.cmp.cells && S.cmp.cells.find((x) => x.job === job);
   if (!c || !rec) return;
   c.image = rec.id;
@@ -585,7 +673,7 @@ export function onImage(job, rec) {
 }
 
 export function init() {
-  F("trNew").onclick = () => { S.v = null; S.prog = null; S.step = 1; render(); };
+  F("trNew").onclick = () => { openRequest++; S.v = null; S.prog = null; S.step = 1; render(); };
   F("trPrev").onclick = () => { if (S.step > 1) { S.step--; render(); } };
   F("trNext").onclick = () => { if (S.step < 6 && !blockReason(S.step + 1, S.v)) { S.step++; render(); } };
   F("trDel").onclick = async () => {

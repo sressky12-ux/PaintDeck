@@ -10,7 +10,13 @@ let jobs = [], running = null, avgFallback = null, queued = 0;
 let nodesCache = [], nodesAt = 0;  // GET /api/nodes 的節點清單（refresh 時順便更新，任務列要標「送到哪台」）
 const prog = new Map();     // job → { t0, v0, value, max, stage, t } 用來算這一段的速度
 let batchDone = [];          // 這一批畫好的圖（全部畫完時一起通知）
-const STATUS = { queued: "排隊中", running: "執行中", done: "完成", error: "失敗", cancelled: "已取消", lost: "遺失" };
+const jobListeners = new Set();
+let refreshSeq = 0;
+export function onJobs(callback) {
+  jobListeners.add(callback);
+  refresh();
+}
+export const STATUS = { queued: "排隊中", running: "執行中", done: "完成", error: "失敗", cancelled: "已取消", lost: "遺失" };
 
 export function init() {
   F("queueInfo").onclick = toggle;
@@ -50,19 +56,24 @@ export function toggle() {
 }
 
 export const refresh = debounce(async () => {
-  if (F("jobsDrawer").hidden) return;
+  if (F("jobsDrawer").hidden && !jobListeners.size) return;
+  const seq = ++refreshSeq;
   try {
     const r = await api("/api/jobs?limit=80");
+    if (seq !== refreshSeq) return;
     jobs = r.jobs;
     running = r.running;
     if (r.progress && running) noteProgress(running, r.progress.value, r.progress.max);
     avgFallback = jobs.find((j) => j.avg_seconds)?.avg_seconds ?? null;
+    for (const callback of jobListeners) callback(jobs);
+    if (F("jobsDrawer").hidden) return;
     if (Date.now() - nodesAt > 10000) {  // 節點名稱不常變：最多 10 秒問一次
       nodesAt = Date.now();
       api("/api/nodes").then((n) => { nodesCache = n.nodes || []; render(); }).catch(() => { nodesCache = []; });
     }
     render();
   } catch (e) {
+    if (seq !== refreshSeq) return;
     F("jobsList").innerHTML = "";
     F("jobsList").append(el("div", { class: "empty-state err" }, "讀不到任務：" + e.message));
   }
@@ -79,8 +90,7 @@ export function onStart(job) {
 
 export function onProgress(m) {
   noteProgress(m.job, m.value, m.max);
-  const card = F("jobsList").querySelector(`[data-job="${m.job}"]`);
-  if (card) paintProgress(card, m.job);
+  for (const card of document.querySelectorAll(`.job[data-job="${CSS.escape(m.job)}"]`)) paintProgress(card, m.job);
   tick();
 }
 
@@ -215,7 +225,7 @@ function timeText(j) {
   return d.toDateString() === new Date().toDateString() ? d.toLocaleTimeString(document.documentElement.lang, { hour: "2-digit", minute: "2-digit" }) : d.toLocaleDateString(document.documentElement.lang);
 }
 
-function paintProgress(c, id) {
+export function paintProgress(c, id) {
   const j = jobs.find((x) => x.id === id) || { id };
   const e = etaOf(j);
   const bar = c.querySelector(".job-prog .bar > div"), t = c.querySelector(".job-eta");
@@ -224,7 +234,7 @@ function paintProgress(c, id) {
   t.textContent = e ? `${Math.round(e.pct * 100)}%` + (e.stage ? `（第 ${e.stage + 1} 段）` : "") + (e.left != null ? `・約剩 ${fmtSecs(e.left)}` : "") : "載入模型中…";
 }
 
-async function cancel(j) {
+export async function cancel(j) {
   try { await api("/api/cancel", { json: { job: j.id } }); toast("已取消", "ok"); } catch (e) { toast(e.message, "err"); }
   refresh();
 }

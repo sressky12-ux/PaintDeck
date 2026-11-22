@@ -39,6 +39,7 @@ pub mod nodes;
 pub mod paths;
 pub mod pe;
 pub mod poses;
+pub mod posewear;
 pub mod py;
 pub mod pyrandom;
 pub mod refmod;

@@ -20,6 +20,7 @@ import * as play from "./play.js";
 import * as wfpanel from "./wfpanel.js";
 import * as models from "./models.js";
 import * as drawer from "./assetdrawer.js";
+import * as posewear from "./posewear.js";
 import * as lk from "./lockedchips.js";
 import * as imgmeta from "./imgmeta.js";
 import { refreshGenNode } from "./nodes.js";
@@ -75,9 +76,18 @@ const onGenPage = () => app.page === "gen" || app.page === "taglib";
 const num = (id) => parseFloat(F(id).value);
 // 模型家族由伺服器看檔頭判斷（anima／qwen21／moss）；LoRA 只能用在同家族的模型上
 // 內建畫得出來的模型家族（families.rs 的 BUILTIN）；SDXL、Flux、SD1.5 這些靠匯入的工作流組
-const BUILTIN_FAMS = ["anima", "qwen21", "moss", "krea2", "sdxl"];
+const BUILTIN_FAMS = ["anima", "qwen21", "moss", "krea2", "mmimage", "sdxl"];
 // 設定頁匯入的生圖工作流組（值是 wf:<id>）算 custom：模型照工作流，步數、CFG 預設也照工作流（可勾「用生成頁的」）
 const fam = (name = F("model").value) => (name || "").startsWith("wf:") ? "custom" : app.state?.models?.unet_family?.[name] || "anima";
+/** 這台電腦上某個家族要用哪顆模型：Qwen 2.1 先官方 Turbo、再其他 Turbo（turboOnly 時到此為止）、再任何一顆；MiniMax 先 w4a8（8GB 能跑） */
+function familyModel(f, turboOnly = false) {
+  const ms = Object.entries(app.state?.models?.unet_family || {}).filter(([, x]) => x === f).map(([n]) => n);
+  if (f === "qwen21") {
+    const turbo = ms.filter((n) => /turbo/i.test(n));
+    return turbo.find((n) => OFFICIAL_TURBO.test(n)) || turbo[0] || (turboOnly ? undefined : ms[0]);
+  }
+  return ms.find((n) => /w4a8/i.test(n)) || ms[0];
+}
 // 選到的工作流組（/api/state 的 models.image_workflows 其中一筆：{id, name, modes, family, options}）；不是工作流或找不到就是 null
 const wfSet = (name = F("model").value) => ((name || "").startsWith("wf:") ? (app.state?.models?.image_workflows || []).find((w) => w.id === name) || null : null);
 // 工作流組的模型家族（看檔頭；認不出來＝null：LoRA 就都不篩）
@@ -100,13 +110,15 @@ const pickerFam = () => (fam() !== "custom" ? fam() : wfFam() ? (l) => !l.family
 let assetDrawer = null;  // 提示詞上面的資產抽屜（assetdrawer.js）
 
 export function init() {
+  document.querySelector("#page-gen .dock-main")?.prepend(el("div",{id:"genTrainingNotice",class:"tr-warn",role:"status",hidden:true}));
+  initialTraining = refreshTraining();
   // 資產：Anima 的圖可以當底圖或構圖控制；Qwen 2.1 的圖放進多圖參考（會切到多圖參考模式）
   assetDrawer = drawer.mount(F("genAssets"), {
     family: () => fam(), insert: appendPrompt,
     images: {
       base: (r) => useInput("img2img", r),
       control: (r) => setCtrl(r),
-      ref: { add: (r) => { if (S.mode !== "multiref") setMode("multiref"); return refs.add(r); }, count: () => refs.get().length, max: refs.MAX,
+      ref: { add: (r) => { if (S.mode !== "multiref") setMode("multiref"); return refs.add(r); }, count: () => refs.get().length, get max() { return refs.maxRefs(); },
         has: (name) => refs.get().some((x) => x.name === name) },
     },
     lock: (chip) => { S.locked = lk.addChip(S.locked, chip); renderLocked(); save(); },
@@ -116,6 +128,11 @@ export function init() {
   $("#modeSeg").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); });
 
   // 尺寸
+  for (const id of ["mmRatio", "mmMp"]) F(id).onchange = () => { mmDimensions(); save(); };
+  F("mmPreset8g").onclick = () => {
+    F("mmMp").value = "4"; F("mmPe").value = ""; F("mmTiled").value = "512";
+    mmDimensions(); save();
+  };
   const chips = F("sizeChips");
   for (const [label, w, h] of SIZES) chips.append(el("button", { class: "chip", "data-w": w, "data-h": h, onclick: () => { F("width").value = w; F("height").value = h; syncSize(); save(); } }, label));
   F("swapWH").onclick = () => { [F("width").value, F("height").value] = [F("height").value, F("width").value]; syncSize(); save(); };
@@ -145,7 +162,30 @@ export function init() {
   const pfShow = () => { pf.classList.toggle("on", punctFixOn()); pf.setAttribute("aria-pressed", String(punctFixOn())); };
   pf.onclick = () => { store.set("punctFix", !punctFixOn()); pfShow(); toast(punctFixOn() ? "英文 tag 後面的全形標點會自動換成半形" : "全形標點不再自動換"); };
   pfShow();
-  taglib.init({ box: F("tagLib"), btn: F("tagLibBtn"), main: F("prompt"), watch: [F("promptSecs"), F("negative").parentElement] });
+  taglib.init({ box: F("tagLib"), btn: F("tagLibBtn"), main: F("prompt"), watch: [F("promptSecs"), F("negative").parentElement], sheet: { anchor: F("promptBox") } });
+  // 衣姿抽屜（posewear.js）：姿勢的深度圖進構圖控制（MOSS 只照深度、不照色塊）；服裝／姿勢進多圖參考時角色自動設好
+  posewear.init({
+    btn: F("pwBtn"), family: () => fam(),
+    control: (r) => {
+      if (fam() === "moss") { F("ctrlMossDepth").checked = true; F("ctrlMossColor").checked = false; if (S.mode !== "txt2img") setMode("txt2img"); }
+      setCtrl(r, { type: "depth", preprocess: "none", invert: false });
+    },
+    ref: (r, role) => { if (S.mode !== "multiref") setMode("multiref"); return refs.add(r, true, role); },
+    // 衣姿整頁試穿工作台「交給繪匣」的整套（posewear.js onBundle）
+    handoff: {
+      hasFamily: (f) => !!familyModel(f),
+      refsNow: () => refs.get().length,
+      prepare: (f) => {
+        if (fam() !== f) { const m = familyModel(f); if (!m) return false; F("model").value = m; modelDefaults(); familySwitch(); }
+        if (S.mode !== "multiref") setMode("multiref");
+        refs.set([]); save();
+        return true;
+      },
+      add: (r, role) => refs.add(r, false, role),
+      done: () => { refs.render(); save(); },
+      setPrompt: (t) => { F("prompt").value = t; F("prompt").dispatchEvent(new Event("input", { bubbles: true })); save(); },
+    },
+  });
 
   // 滑桿數值顯示
   const outs = [["denoise", "denoiseOut"], ["ipGrow", "ipGrowOut"], ["ipBlur", "ipBlurOut"], ["ipPad", "ipPadOut"], ["upDenoise", "upDenoiseOut"],
@@ -222,7 +262,7 @@ export function init() {
   });
 
   // 多圖參考
-  refs.init({ prompt: F("prompt"), save: () => save(), onChange: () => familyUI() });
+  refs.init({ family: () => fam(), prompt: F("prompt"), save: () => save(), onChange: () => familyUI() });
 
   // AI 改寫提示詞
   pe.init({
@@ -236,8 +276,7 @@ export function init() {
     },
   });
   F("refSwitchModel").onclick = () => {
-    const ms = Object.entries(app.state?.models?.unet_family || {}).filter(([n, f]) => f === "qwen21" && /turbo/i.test(n)).map(([n]) => n);
-    const m = ms.find((n) => OFFICIAL_TURBO.test(n)) || ms[0];  // 先用官方 Turbo（2026-10 起只留這顆），沒有才用其他 Turbo
+    const m = familyModel("qwen21", true);
     if (!m) return toast("找不到 Qwen 2.1 Turbo 模型", "err");
     F("model").value = m; modelDefaults(); familySwitch(); save();
   };
@@ -249,7 +288,7 @@ export function init() {
   F("ctrlImg").onclick = () => { S.ctrl = null; showCtrl(); save(); };
 
   // LoRA
-  F("addLora").onclick = () => loras.openPicker((l, triggers) => addLora(l, triggers), pickerFam());
+  F("addLora").onclick = () => loras.openPicker((l, triggers) => addLora(l, triggers), pickerFam(), { multi: true, have: new Set(S.loras.map((x) => x.name)) });
 
   // 種子、提示詞庫的整套設定
   F("seedRandom").onclick = () => { F("seed").value = ""; save(); };
@@ -287,9 +326,9 @@ export function init() {
     if (b && S.current && b.dataset.act !== "download") imageAction(b.dataset.act, S.current, b);
   });
 
-  // 隨機頁借走生成頁面板時，面板裡的改動冒泡到隨機頁：兩頁都要聽（borrow.js）
+  // 隨機頁借走生成頁面板時，面板裡的改動冒泡到隨機頁；膠囊彈出窗（#capLayer，dock.js）暫借面板時冒泡到浮層：三個都要聽（borrow.js）
   const saveSoon = debounce(save, 400), saveNow = debounce(save, 100);
-  for (const pg of [F("page-gen"), F("page-taglib")]) { pg.addEventListener("input", saveSoon); pg.addEventListener("change", saveNow); }
+  for (const pg of [F("page-gen"), F("page-taglib"), F("capLayer")].filter(Boolean)) { pg.addEventListener("input", saveSoon); pg.addEventListener("change", saveNow); }
   restore();
   seedRecent();
 
@@ -324,6 +363,7 @@ async function seedRecent() {
 export function onState(st) {
   const m = st.models || {};
   fillModels(m);
+  mmEncoders(m.text_encoders || []);
   assetDrawer?.refresh();
   if (S.family === undefined) S.family = fam();
   fillSelect(F("sampler"), m.samplers || ["euler"], store.get("form", {}).sampler || "euler");
@@ -578,6 +618,34 @@ function setMossFast(on) {
 }
 
 // 換模型：負面詞若還是某個模型的預設值，就換成新模型的預設（自己改過的不動）；換家族時圖生圖重繪幅度也換成建議值
+export function mmSize(ratio, mp) {
+  const [a, b] = ratio.split(":").map(Number);
+  const scale = Math.sqrt(mp * 1024 * 1024 / (a * b));
+  return { w: Math.round(a * scale / 32) * 32, h: Math.round(b * scale / 32) * 32 };
+}
+
+function mmDimensions() {
+  const { w, h } = mmSize(F("mmRatio").value, +F("mmMp").value);
+  F("width").value = w;
+  F("height").value = h;
+  syncSize();
+}
+
+function mmEncoders(names) {
+  const files = (pattern) => names.filter((n) => pattern.test(n.split(/[\\\\/]/).pop()));
+  const te = files(/^qwen3vl_32b_minimax_h3_(nvfp4_awq|int8_convrot)\.safetensors$/i);
+  const pe = files(/^(qwen3\.5_9b_w4a8_gptq|qwen3\.8_27b_minimax_h3_image_pe_w4a8_gptq)\.safetensors$/i);
+  const prior = F("mmPe").options.length ? F("mmPe").value : store.get("form", {}).mmPe;
+  fillSelect(F("mmTe"), te, pendingSel.mmTe || te.find((n) => n.includes("nvfp4")));
+  F("mmPe").replaceChildren(el("option", {value:""}, "關"), ...pe.map((n) => el("option", {value:n}, n.includes("27b") ? "27B PE" : "9B")));
+  F("mmPe").value = pe.includes(prior) ? prior : prior === "" || S.mode !== "multiref" ? "" : pe[0] || "";
+}
+
+function mmDefaultPe() {
+  const sel = F("mmPe");
+  sel.selectedIndex = S.mode === "multiref" && sel.options.length > 1 ? 1 : 0;
+}
+
 function familySwitch() {
   const f = fam();
   const neg = F("negative").value.trim();
@@ -591,6 +659,12 @@ function familySwitch() {
     const off = S.loras.filter(mismatch).length;
     if (off) toast(`清單裡有 ${off} 個 LoRA 不適用這個模型，生成時會略過（劃掉的那幾個）`);
     renderLoras();
+  }
+  if (S.family !== f) {
+    if (f === "mmimage") { mmDimensions(); mmDefaultPe(); }
+    syncSize();
+    if (refs.get().length > refs.maxRefs()) toast(`目前有 ${refs.get().length} 張參考圖，新家族最多 ${refs.maxRefs()} 張，請先移除多出的圖。`, "err");
+    refs.render();
   }
   S.family = f;
   S.wfModel = f === "custom" ? F("model").value : null;
@@ -624,6 +698,7 @@ function modelDefaults() {
   if (fam() === "moss") { F("steps").value = fastOn() ? MOSS_FAST.steps : MOSS_FAST.normal; F("cfg").value = 3; pick("sampler", "euler"); pick("scheduler", "sgm_uniform"); }
   else if (fam() === "qwen21") { F("steps").value = isOfficialTurbo() ? 8 : isTurboModel() ? 6 : 25; F("cfg").value = isOfficialTurbo() || isTurboModel() ? 1 : 3; }
   // Krea 2 Turbo：ComfyUI 內建範本 8 步、CFG 1、euler＋simple。Raw（沒蒸餾）沒有官方建議值：先給一般 DiT 的 30 步、CFG 4
+  else if (fam() === "mmimage") { F("steps").value = 6; F("cfg").value = 1; pick("sampler", "euler"); pick("scheduler", "simple"); }
   else if (fam() === "krea2") { F("steps").value = isTurboModel() ? 8 : 30; F("cfg").value = isTurboModel() ? 1 : 4; pick("sampler", "euler"); pick("scheduler", "simple"); }
   // SDXL：NoobAI 官方建議 25～30 步、CFG 5～6、Euler a；加速版 8 步、CFG 1.5（各家建議不一樣，畫不好再照模型頁調）
   else if (fam() === "sdxl") { F("steps").value = isFastSdxl() ? 8 : 28; F("cfg").value = isFastSdxl() ? 1.5 : 5; pick("sampler", "euler_ancestral"); pick("scheduler", isFastSdxl() ? "sgm_uniform" : "normal"); }
@@ -670,6 +745,7 @@ function modelHint() {
       ? "MOSS 快速開著：加速 LoRA 0.35＋10 步（CFG 3、euler＋sgm_uniform 照舊），3070 一張約 16 秒。構圖畫風跟 25 步接近，衣服花紋、小配件等細節會換樣子；要最細的那張就取消快速、用 25 步。"
       : "MOSS-Image：25 步、CFG 3、euler＋sgm_uniform（官方 50 步；實測 25 步看不出差別、快一倍。負面提示詞有效）。3070 一張 1024 約 40 秒。") +
       "擅長排版和畫字（中英文都行），提示詞用完整句子描述；要畫的字放在引號裡。不支援 Anima 的 LoRA、構圖控制。"
+    : fam() === "mmimage" ? "MiniMax H3 Image 支援文生圖及最多 16 張參考圖。用英文描述畫面，以 <Picture 1> 指名第一張圖。"
     : fam() === "krea2"
     ? (isTurboModel()
       ? "Krea 2 Turbo：8 步、CFG 1、euler＋simple（ComfyUI 官方範本；負面提示詞無效）。寫實照片、插畫、各種畫風都行，提示詞用英文完整句子描述畫面。可以疊 Krea 2 的 LoRA（官方畫風 LoRA 要寫觸發詞）。"
@@ -706,13 +782,14 @@ function syncWf() {
   for (const b of $$("#modeSeg button")) {
     if (b.dataset.t0 === undefined) b.dataset.t0 = b.title || "";
     const m = b.dataset.mode;
-    const off = wf && !!w && !w.modes.includes(m);
+    const off = fam() === "mmimage" ? !["txt2img", "multiref"].includes(m) : wf && !!w && !w.modes.includes(m);
     b.disabled = off;
-    b.title = !off ? b.dataset.t0
+    b.title = !off ? b.dataset.t0 : fam() === "mmimage" ? "MiniMax H3 Image 支援文生圖和多圖參考"
       : ["txt2img", "img2img", "inpaint", "multiref", "upscale"].includes(m)
         ? `「${w.name}」這組工作流沒有${modeName[m]}的工作流。到「設定 → 模型與工作流」，在匯入時選「${modeName[m]}」、放進「${w.name}」就能補上。`
         : "匯入的工作流沒有這個功能（只有文生圖、圖生圖、局部重繪、放大、多圖參考）：想用它請換回一般模型。";
   }
+  if (fam() === "mmimage" && !["txt2img", "multiref"].includes(S.mode)) { setMode("txt2img"); return; }
   // 匯出成 ComfyUI 工作流：只有工作流組也有的那幾種模式匯得出來（匯回去才有地方放）
   const eb = F("exportGraph"), canExp = ["txt2img", "img2img", "inpaint", "upscale", "multiref"].includes(S.mode);
   if (eb.dataset.t0 === undefined) eb.dataset.t0 = eb.title;
@@ -795,6 +872,14 @@ function layAspect() {
 
 // LLLite 只有 Anima 有：Qwen 2.1、MOSS-Image 的構圖控制、LLLite 重繪都不適用
 function familyUI() {
+  const mm = fam() === "mmimage";
+  F("negDetails").hidden = mm;
+  F("mmOptions").hidden = !mm;
+  F("mmCanvas").hidden = !mm || (S.mode === "multiref" && F("autoSize").checked);
+  if (S.mode === "multiref") F("autoSizeRow").lastChild.textContent = mm ? " 跟底圖一樣比例（約 4MP）" : " " + SIZE_AUTO_TEXT.multiref;
+  F("refTagHint").textContent = mm ? "<Picture 1>" : "<image1>";
+  F("refPixels").hidden = mm;
+  F("refPixels").previousElementSibling.hidden = mm;
   const q = fam() === "qwen21", noLllite = fam() !== "anima";
   F("layBox").hidden = !layOn();
   // MOSS：文生圖用色彩／深度控制（另一套欄位，graphs.rs moss_control）
@@ -802,9 +887,9 @@ function familyUI() {
   F("controlBox").hidden = !mossCtl && (noLllite || !(S.mode === "txt2img" || S.mode === "img2img"));
   for (const id of ["ctrlTypeWrap", "ctrlPreWrap", "ctrlInvertRow"]) F(id).hidden = mossCtl;
   F("ctrlMossRow").hidden = !mossCtl;
-  F("hiresBox").hidden = fam() === "custom" || !(S.mode === "txt2img" || S.mode === "img2img");
+  F("hiresBox").hidden = mm || fam() === "custom" || !(S.mode === "txt2img" || S.mode === "img2img");
   F("ipMethodRow").hidden = noLllite;
-  F("refFamilyWarn").hidden = q || fam() === "custom" || S.mode !== "multiref";
+  F("refFamilyWarn").hidden = q || mm || fam() === "custom" || S.mode !== "multiref";
   // 工作流組：寬高只有文生圖照生成頁；遮罩擴張／柔化、放大模型這些都在工作流裡（「工作流參數」改），生成頁這幾塊沒作用就藏起來
   const cw = fam() === "custom";
   F("sizeBox").hidden = ["inpaint", "upscale", "strip", "sheet", "outpaint"].includes(S.mode) || (cw && S.mode !== "txt2img");
@@ -819,7 +904,9 @@ function familyUI() {
 
 // ---------------------------------------------------------------- 模式
 function setMode(mode) {
+  const modeChanged = S.mode !== mode;
   S.mode = mode;
+  if (fam() === "mmimage" && modeChanged) mmDefaultPe();
   $$("#modeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
   const needInit = mode !== "txt2img" && mode !== "multiref";
   F("refBox").hidden = mode !== "multiref";
@@ -890,8 +977,10 @@ function opPreview() {
 
 function syncSize() {
   const auto = (S.mode === "img2img" || S.mode === "multiref") && F("autoSize").checked;
-  F("sizeInputs").hidden = auto;
-  F("sizeChips").hidden = auto;
+  const mm = fam() === "mmimage";
+  F("mmCanvas").hidden = !mm || auto;
+  F("sizeInputs").hidden = mm || auto;
+  F("sizeChips").hidden = mm || auto;
   const w = +F("width").value, h = +F("height").value;
   $$("#sizeChips .chip").forEach((c) => c.classList.toggle("on", +c.dataset.w === w && +c.dataset.h === h));
   F("sizeInfo").textContent = auto ? (S.mode === "multiref" ? "跟底圖一樣" : "依輸入圖比例") : `${((w * h) / 1e6).toFixed(2)} MP`;
@@ -1010,15 +1099,17 @@ function renderLoras() {
         ? `這個 LoRA 是 ${famShort(loraFam(l))} 用的，工作流「${wfSet()?.name || ""}」是 ${famShort(wfFam())} 的，用不了，生成時會略過。`
         : `這個 LoRA 是 ${famLabel(loraFam(l))} 用的，目前的模型用不了，生成時會略過。`)
       : meta[l.name]?.note || "";
-    const row = el("div", { class: "lora-item" + (l.enabled && !bad ? "" : " off") + (bad ? " mismatch" : "") },
+    // 兩行卡（固定舞台 A 案）：第一行勾選、全名（太長換行，下面一行小字是檔名）、✕；第二行拉桿、數字、⇆
+    const nm = loras.loraNames(l.title, l.name);
+    const row = el("div", { class: "lora-item two" + (l.enabled && !bad ? "" : " off") + (bad ? " mismatch" : "") },
       el("input", { type: "checkbox", checked: l.enabled, title: "暫時停用", onchange: (e) => { l.enabled = e.target.checked; renderLoras(); save(); } }),
-      el("span", { class: "nm", title: (note ? note + "\n\n" : "") + l.name }, l.title || l.name.replace(/\.safetensors$/, "")),
+      el("div", { class: "nmw", title: (note ? note + "\n\n" : "") + l.name }, el("b", { class: "nm" }, nm.name), nm.file ? el("small", { class: "fn" }, nm.file) : null),
+      el("button", { class: "icon lx", title: "移除", onclick: () => { S.loras.splice(i, 1); renderLoras(); save(); } }, "✕"),
       el("input", { type: "range", min: l.min ?? -1, max: l.max ?? 2, step: 0.05, value: l.strength, title: "左右拖曳調整強度",
         oninput: (e) => { l.strength = +e.target.value; row.querySelector("input[type=number]").value = l.strength; save(); } }),
       el("input", { type: "number", min: l.min ?? -2, max: l.max ?? 3, step: 0.05, value: l.strength,
         onchange: (e) => { l.strength = clamp(+e.target.value, l.min ?? -2, l.max ?? 3); renderLoras(); save(); } }),
       el("button", { class: "icon", title: "強度對照：同一個種子，用幾種強度各畫一張", onclick: () => sweep(l) }, "⇆"),
-      el("button", { class: "icon", title: "移除", onclick: () => { S.loras.splice(i, 1); renderLoras(); save(); } }, "✕"),
       note ? el("div", { class: "lora-note" + (S.openNotes.has(l.name) ? " open" : ""), title: "點一下展開／收合",
         onclick: (e) => { S.openNotes.has(l.name) ? S.openNotes.delete(l.name) : S.openNotes.add(l.name); e.currentTarget.classList.toggle("open"); } }, note) : null);
     box.append(row);
@@ -1189,6 +1280,14 @@ export function collectParams() {
     width: +F("width").value, height: +F("height").value,
     loras: S.loras.filter((l) => l.enabled && !mismatch(l)).map((l) => ({ name: l.name, strength: l.strength })),
   };
+  if (fam() === "mmimage") {
+    Object.assign(p, {mm_te: F("mmTe").value, mm_pe: F("mmPe").value, vae_tiled: +F("mmTiled").value, negative:""});
+    p.mm_ratio = F("mmRatio").value;
+    p.mm_mp = +F("mmMp").value;
+    const { w, h } = mmSize(p.mm_ratio, p.mm_mp);
+    p.width = w;
+    p.height = h;
+  }
   Object.assign(p, pe.paramsFor(p.prompt));  // AI 改寫：原始想法與改寫結果一起存進圖庫
   if (S.mode !== "txt2img" && S.mode !== "multiref") p.init_image = S.init?.name;
   if (S.mode === "multiref") {
@@ -1239,7 +1338,7 @@ export function baseParams() {
     sampler: p.sampler, scheduler: p.scheduler, loras: p.loras, family: fam() };
 }
 
-const FORM_IDS = ["prompt", "negative", "width", "height", "autoSize", "denoise", "ipMethod", "ipArea", "ipGrow", "ipBlur", "ipPad", "upModel", "upScale", "upRefine", "upDenoise",
+const FORM_IDS = ["mmRatio", "mmMp", "mmTiled", "mmTe", "mmPe", "prompt", "negative", "width", "height", "autoSize", "denoise", "ipMethod", "ipArea", "ipGrow", "ipBlur", "ipPad", "upModel", "upScale", "upRefine", "upDenoise",
   "hiresOn", "hiresScale", "hiresDenoise", "hiresUpscaler", "ctrlOn", "ctrlType", "ctrlPre", "ctrlStr", "ctrlEnd", "ctrlInvert", "ctrlMossDepth", "ctrlMossColor", "mossTe", "model", "steps", "cfg", "sampler", "scheduler", "turboLora", "seed", "count", "refPixels",
   "stripTarget", "stripKeep", "stripRefine", "stripDenoise", "stripMerge", "stripExtra", "stripTags", "sheetReq",
   "opTop", "opBottom", "opLeft", "opRight", "opFeather", "autoDetail", "detailDenoise", "batchLines"];
@@ -1269,7 +1368,7 @@ function applyForm(f) {
   if (f.sheetRef !== undefined) { S.sheetRef = f.sheetRef; showSheetRef(); }
   if (f.layout !== undefined) { lay.set(f.layout); layCount(); }
   if (f.locked !== undefined) { S.locked = Array.isArray(f.locked) ? f.locked : []; renderLocked(); }
-  for (const o of $$("#page-gen output, #page-taglib output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
+  for (const o of $$("#page-gen output, #page-taglib output, #capLayer output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
   F("upRefineRow").hidden = !F("upRefine").checked;
   F("stripRefineRow").hidden = !F("stripRefine").checked;
   F("ipPadRow").hidden = F("ipArea").value !== "masked";
@@ -1352,10 +1451,16 @@ export function applyParams(p, withMode = true) {
   lay.set(p.layout || []); layCount();  // 重用參數＝重現那張圖：沒有框的圖會把框清掉
   if (p.layout?.length) F("layBox").open = true;
   renderLoras(); modelHint();
-  for (const o of $$("#page-gen output, #page-taglib output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
+  for (const o of $$("#page-gen output, #page-taglib output, #capLayer output")) { const inp = o.closest("div, section")?.querySelector("input[type=range]"); if (inp) o.textContent = inp.value; }
   if (p.mode === "multiref" && p.refs) refs.set(p.refs.map((r) => ({ name: r.image, width: r.width, height: r.height, role: r.role || "person" })));
   // 文生圖、ComfyUI 匯入的、沒標模式的 → 文生圖；其餘（圖生圖、局部重繪、放大、一鍵脫衣、四視圖、多圖參考）照原模式還原（輸入圖要自己再放一次）
   if (withMode) setMode(["img2img", "inpaint", "outpaint", "upscale", "strip", "sheet", "multiref"].includes(p.mode) ? p.mode : "txt2img");
+  if (fam() === "mmimage") {
+    set("mmTe", p.mm_te); set("mmPe", p.mm_pe); set("mmTiled", p.vae_tiled);
+    set("mmRatio", p.mm_ratio); set("mmMp", p.mm_mp);
+    if (p.size_mode) F("autoSize").checked = p.size_mode === "auto";
+    mmDimensions();
+  }
   pe.restore(p);
   save();
   if (modelMissing) toast(`已套用參數，但模型「${String(p.model).replace(/\.safetensors$/, "")}」不在這台電腦：維持目前的模型，步數和 CFG 是那顆模型的，可能不合`, "err");
@@ -1394,6 +1499,8 @@ function paramsToForm(p) {
   const keepMode = ["multiref", "img2img", "inpaint", "outpaint", "upscale", "strip", "sheet"].includes(p.mode);
   const f = { mode: keepMode ? p.mode : "txt2img", loras: (p.loras || []).map((l) => ({ ...l, enabled: true })) };
   const put = (k, v) => { if (v !== undefined && v !== null) f[k] = v; };
+  put("mmTe", p.mm_te); put("mmPe", p.mm_pe); put("mmTiled", p.vae_tiled);
+  put("mmRatio", p.mm_ratio); put("mmMp", p.mm_mp);
   put("prompt", p.prompt); put("negative", p.negative); put("steps", p.steps); put("cfg", p.cfg);
   put("sampler", p.sampler); put("scheduler", p.scheduler); put("model", p.model);
   if (p.width && p.height && p.mode !== "upscale") { f.width = p.width; f.height = p.height; }
@@ -1413,7 +1520,52 @@ function paramsToForm(p) {
 }
 
 // ---------------------------------------------------------------- 生成
+let localTraining = null;
+let trainingRevision = 0;
+let initialTraining = null;
+export function confirmGenWhileTraining(state) {
+  if (state?.target !== "local" || !["starting","waiting","running"].includes(state.state)) return "";
+  return "本機正在訓練 LoRA，出圖可能很慢或讓訓練失敗。仍要出圖嗎？";
+}
+
+function paintTrainingBanner() {
+  const banner = F("genTrainingNotice");
+  if (!banner) return;
+  banner.hidden = !confirmGenWhileTraining(localTraining);
+  if (!banner.hidden) banner.textContent = localTraining.total ? `本機正在煉 LoRA（第 ${localTraining.step || 0}/${localTraining.total} 步）` :
+    localTraining.state === "waiting" ? "本機 LoRA 訓練正在等 ComfyUI 畫完" : "本機正在煉 LoRA（準備中）";
+}
+
+async function refreshTraining() {
+  const revision = ++trainingRevision;
+  try {
+    const r = await api("/api/train");
+    if (revision !== trainingRevision) return;
+    localTraining = r.projects.find(p => p.target === "local" && p.running === "train") || null;
+    paintTrainingBanner();
+  } catch { /* 下次連線或訓練事件再更新。 */ }
+}
+
+export function onTraining(m) {
+  if (!m.id || ["caption","install"].includes(m.phase)) return;
+  if (["done","stopped","error"].includes(m.state)) {
+    if (!localTraining || m.id === localTraining.id) {
+      trainingRevision++;
+      localTraining = null;
+      paintTrainingBanner();
+    }
+    return;
+  }
+  if (m.target !== "local" && m.id !== localTraining?.id) return;
+  trainingRevision++;
+  localTraining = { ...(localTraining?.id === m.id ? localTraining : {}), ...m, target:"local" };
+  paintTrainingBanner();
+}
+
 async function generate() {
+  await initialTraining;
+  const warning = confirmGenWhileTraining(localTraining);
+  if (warning && !confirm(warning)) return;
   refreshGenNode();  // 排隊數隨時在變：按生成前先更新一次（不用等）
   if (F("genBtn").disabled) return;  // 連按兩下：第一下還在等狀態、等 AI 改寫
   if (!app.state) {  // 剛打開網頁、狀態還沒讀到
@@ -1444,11 +1596,12 @@ async function generate() {
   // 一鍵脫衣、四視圖沒有提示詞框，不接
   const full = (text) => (F("promptBox").hidden ? text : lk.withLocked(text, S.locked, fam(), refNames()));
   if (S.mode === "multiref") {
+    if (refs.get().length > refs.maxRefs()) return toast(`目前有 ${refs.get().length} 張參考圖，這個家族最多 ${refs.maxRefs()} 張`, "err");
     if (fam() === "custom") {
       // 工作流組：參考圖放進標了 {{ref1}}、{{ref2}}… 的 Load Image，提示詞不用 <image1> 標記
       if (!refs.get().length) return toast("請先加入至少一張參考圖", "err");
     } else {
-      if (fam() !== "qwen21") return toast("多圖參考只支援 Qwen 2.1 模型：在參考圖區按「換成 Qwen 2.1 Turbo」", "err");
+      if (!["qwen21", "mmimage"].includes(fam())) return toast("多圖參考支援 Qwen 2.1 和 MiniMax H3 Image：在參考圖區按「換成 Qwen 2.1 Turbo」", "err");
       const bad = refs.check(full(p.prompt));
       if (bad) return toast(bad, "err");
     }
@@ -1542,6 +1695,7 @@ export function onImage(job, rec) {
 /** ws 斷線重連後跟後端的任務清單對帳：斷線那段時間跑完的任務，finish／image 事件收不到，
  *  「等待中」的格子和「生成中」標記會永遠卡著（2026-11-10 以前只能按「全停」，那會真的清掉佇列） */
 export async function reconcile() {
+  initialTraining = refreshTraining();
   if (!S.pending.size) return;
   let jobs;
   try { jobs = (await api("/api/jobs?limit=300")).jobs; } catch { return; }

@@ -9,13 +9,15 @@ const vm = require('node:vm');
 const SRC = fs.readFileSync(path.join(__dirname, '../ui/js/train.js'), 'utf8');
 const UTIL = fs.readFileSync(path.join(__dirname, '../ui/js/util.js'), 'utf8').replace(/^export /gm, '');
 
-function grab(head) {
-  const i = SRC.indexOf(head);
+function grab(head) { return grabFrom(SRC, head); }
+
+function grabFrom(source, head) {
+  const i = source.indexOf(head);
   assert.ok(i >= 0, `train.js 找不到 ${head}`);
   let depth = 0;
-  for (let k = SRC.indexOf('{', i); k < SRC.length; k++) {
-    if (SRC[k] === '{') depth++;
-    else if (SRC[k] === '}' && --depth === 0) return SRC.slice(i, k + 1).replace(/^export /, '');
+  for (let k = source.indexOf('{', i); k < source.length; k++) {
+    if (source[k] === '{') depth++;
+    else if (source[k] === '}' && --depth === 0) return source.slice(i, k + 1).replace(/^export /, '');
   }
   throw new Error(`${head} 大括號沒配對`);
 }
@@ -156,4 +158,80 @@ test('狀態有中文名字，沒看過的原樣顯示', () => {
   assert.equal(T.stateName('detached'), '還在外面跑');
   assert.equal(T.stateName(''), '還沒開始');
   assert.equal(T.stateName('weird'), 'weird');
+});
+
+function kohakuFn(name, file = 'trainkohaku.js') {
+  const src = fs.readFileSync(path.join(__dirname, '../ui/js', file), 'utf8');
+  return vm.runInNewContext(grabFrom(src, 'export function ' + name + '(') + '\n' + name);
+}
+
+test('安裝六階段保留斷點並標示進行中的階段', () => {
+  const rows = kohakuFn('kohakuStageRows')({ busy: true, stage: 'torch', stages_done: ['uv','source','venv'] });
+  assert.equal(rows.length, 6);
+  assert.equal(rows[2].state, 'done');
+  assert.equal(rows[3].state, 'running');
+  assert.equal(rows[4].state, 'todo');
+});
+
+test('健檢黃燈可煉，紅燈與尚未取得健檢時不能開始', () => {
+  const lights = kohakuFn('checkLights');
+  assert.equal(lights({rows:[{state:'warn'}]}).canStart, true);
+  assert.equal(lights({rows:[{state:'bad'}]}).canStart, false);
+  assert.equal(lights(null).canStart, false);
+});
+
+test('三段進度分別呈現，訓練尚未出第一步時提醒編譯', () => {
+  const rows = kohakuFn('phaseRows')({phase:'train',phase_index:3,step:0,state:'running'});
+  assert.deepEqual(Array.from(rows, r => r.label), ['整理描述','整理圖片','訓練']);
+  assert.equal(rows[0].state, 'done');
+  assert.match(rows[2].text, /第一次要編譯顯卡程式/);
+});
+
+test('剩餘時間取當次速度優先，沒有資料就留白', () => {
+  const eta = kohakuFn('etaText');
+  assert.match(eta({step:400,total:800},5.8), /3[89] 分鐘/);
+  assert.match(eta({step:400,total:800,sec_per_step:3},5.8), /20 分鐘/);
+  assert.equal(eta({step:0,total:800}), '');
+});
+
+test('只有本機訓練才確認出圖', () => {
+  const ask = kohakuFn('confirmGenWhileTraining', 'gen.js');
+  assert.ok(ask({target:'local',state:'running'}));
+  assert.equal(ask({target:'runpod',state:'running'}), '');
+  assert.equal(ask({target:'local',state:'done'}), '');
+  assert.equal(ask(null), '');
+});
+
+test('五種健檢修正先確認，網址與下載中心走各自的入口', async () => {
+  const src = fs.readFileSync(path.join(__dirname,'../ui/js/trainkohaku.js'),'utf8');
+  let accepted = false;
+  const calls = [], questions = [], urls = [], pages = [];
+  const repair = vm.runInNewContext(grabFrom(src,'async function repair(') + '\nrepair', {
+    installConfirm:'安裝引擎', confirm:q => (questions.push(q),accepted),
+    post:async (path,body) => { calls.push([path,body]); return {ok:false,url:'https://example.invalid/tools',id:1}; },
+    api:async () => ({downloads:[{id:1,status:'done'}]}),
+    window:{open:url => urls.push(url)}, app:{showPage:page => pages.push(page)},
+  });
+  for (const action of ['install_engine','install_buildtools','download_heal','open_url','open_hub']) {
+    const fix = {action, url:'https://example.invalid/driver',confirm:'確認修正'};
+    accepted = false;
+    const before = calls.length + urls.length + pages.length;
+    await repair(fix, () => {});
+    assert.equal(calls.length + urls.length + pages.length,before);
+    accepted = true;
+    await repair(fix, () => {});
+  }
+  assert.equal(questions.length,10);
+  assert.deepEqual(calls.map(([path]) => path),['/api/train/kohaku/install','/api/train/kohaku/buildtools','/api/train/kohaku/download_heal']);
+  assert.ok(calls[1][1].confirm && calls[2][1].confirm);
+  assert.deepEqual(urls,['https://example.invalid/tools','https://example.invalid/driver']);
+  assert.deepEqual(pages,['civitai']);
+});
+
+test('缺少 heal 時優先用現有 Base，保留可下載的 heal 選項', () => {
+  const choose = kohakuFn('defaultBase');
+  const data = {bases:[{file:'heal',tested:true,missing:true},{file:'MOSS-Base'}],params:{base:'heal'}};
+  assert.equal(choose(data),'MOSS-Base');
+  data.bases[0].missing = false;
+  assert.equal(choose(data),'heal');
 });

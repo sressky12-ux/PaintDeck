@@ -36,7 +36,7 @@ pub struct Family {
 /// 2026-10-29 照 C 站 /api/v1/enums 查的名稱（MOSS Image Base 是舊名稱，現在 C 站只剩 MOSS Image，留著搜得到舊的）。
 /// 魔塔 2026-10-30 改照網頁版的底模清單（GET /api/v1/muse/predict/unauth/defaultTemplateV2 → IMAGE／VIDEO 的 supportSDVersionList 的 sub_value）：
 /// 以前用大底模（vision_foundation）篩，Qwen-Image-2.1 的正式寫法是「大底模 QWEN_IMAGE_20_B＋子底模 QWEN_IMAGE_2_1」，漏掉四成（1968／3309）
-pub const FAMILIES: [Family; 9] = [
+pub const FAMILIES: [Family; 10] = [
     Family { id: "anima", label: "Anima（動漫）", civitai: &["Anima"], modelscope: None, usable: true },
     Family { id: "qwen21", label: "Qwen 2.1（編輯）", civitai: &["Qwen 2.1"], modelscope: Some(&["QWEN_IMAGE_2_1", "QWEN_IMAGE_2_1_TURBO"]), usable: true },
     Family { id: "moss", label: "MOSS-Image（文生圖繪圖）", civitai: &["MOSS Image", "MOSS Image Base"], modelscope: Some(&["MOSS_IMAGE_SFT"]), usable: true },
@@ -46,6 +46,8 @@ pub const FAMILIES: [Family; 9] = [
     Family { id: "krea2", label: "Krea 2", civitai: &["Krea 2", "Krea 2 Turbo"], modelscope: Some(&["KREA_2_TURBO"]), usable: true },
     Family { id: "ltx", label: "LTX-2.3（影片）", civitai: &["LTXV 2.3", "LTXV2", "LTXV"], modelscope: Some(&["LTX_VIDEO_2_3"]), usable: false },
     Family { id: "h3", label: "MiniMax H3（影片）", civitai: &["MiniMax H3"], modelscope: Some(&["MINIMAX_H3"]), usable: true },
+    // 2026-11-22 MiniMax H3 Image（文生圖、多圖改圖）：C 站底模名稱照官方命名；魔塔網頁版的底模清單還沒有它的代號，先不篩
+    Family { id: "mmimage", label: "MiniMax H3 Image（圖片）", civitai: &["MiniMax H3 Image"], modelscope: None, usable: true },
 ];
 
 pub fn family(id: &str) -> Option<&'static Family> {
@@ -509,6 +511,15 @@ pub fn rh_items(v: &Value) -> Result<(Vec<Value>, u64), String> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn mmimage_is_a_separate_download_family() {
+        assert!(super::family("mmimage").is_some_and(|f| f.usable));
+        assert_eq!(super::family_of_civitai("MiniMax H3 Image"), Some("mmimage"));
+        assert_eq!(super::family_of_civitai("MiniMax H3"), Some("h3"));
+        assert_eq!(crate::families::from_base_model("MiniMax H3 Image"), Some("mmimage"));
+        assert_eq!(crate::setup::pack_of("vae/minimax_h3_image_vae_fp16.safetensors"), "mmimage");
+    }
+
     use super::*;
 
     #[test]

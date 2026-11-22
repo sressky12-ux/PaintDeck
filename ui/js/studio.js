@@ -15,15 +15,18 @@ let videoSub = store.get("videoSub", "short");
 // ================================================================ 分頁
 export function init() {
   $("#dirTabs").addEventListener("click", (e) => { const b = e.target.closest("button[data-t]"); if (b) setTab(b.dataset.t); });
-  // 拍攝單標題列上的「短片／長片」：按鈕在 <summary> 裡，別讓它順便收合
+  // 頁首列的「短片／長片」
   $("#videoSub").addEventListener("click", (e) => { const b = e.target.closest("button[data-sub]"); if (!b) return; e.preventDefault(); openVideo(b.dataset.sub); });
   F("stAiOpen").onclick = openAi;
   // 標題列的「AI MCP」：每一頁都看得到（同樣開這個視窗）
   const top = F("aiBtn");
   if (top) top.onclick = openAi;
   // 第一次開程式的一次性導引（按「知道了」或開過視窗就不再跳）
-  if (F("aiHint") && !store.get(AI_HINT_KEY, false)) F("aiHint").hidden = false;
-  if (F("aiHintOpen")) F("aiHintOpen").onclick = () => openAi();
+  if (!store.get(AI_HINT_KEY, false)) {
+    F("aiHint").hidden = false;
+    F("aiBtn").classList.add("pip");
+  }
+  if (F("aiHintOpen")) F("aiHintOpen").onclick = () => F("stAiMcp").focus();
   if (F("aiHintHide")) F("aiHintHide").onclick = hideAiHint;
   // AI MCP 燈號：開程式先問一次，之後每 10 秒問（MCP 伺服器 15 秒一次心跳）
   refreshAiLink();
@@ -53,6 +56,9 @@ function setTab(t, quiet = false) {
   store.set("videoSub", videoSub);
   $$("#dirTabs button").forEach((b) => { const on = b.dataset.t === t; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
   $$("#videoSub button").forEach((b) => { const on = b.dataset.sub === videoSub; b.classList.toggle("on", on); b.setAttribute("aria-selected", String(on)); });
+  // 頁首列只亮目前這一種的狀態燈
+  F("h3Status").hidden = videoSub !== "short";
+  F("hcStatus").hidden = videoSub !== "long";
   $$("#page-director > section[data-tab]").forEach((s) => (s.hidden = s.dataset.tab !== t || (t === "video" && s.dataset.sub !== "sheet" && s.dataset.sub !== videoSub)));
   $("#page-director").classList.toggle("video", t === "video");
   if (t !== "frames") stopPlay();
@@ -235,6 +241,7 @@ const AI_HINT_KEY = "aiHintSeen";
 function hideAiHint() {
   const h = F("aiHint");
   if (h) h.hidden = true;
+  F("aiBtn").classList.remove("pip");
   store.set(AI_HINT_KEY, true);
 }
 
@@ -257,7 +264,6 @@ async function refreshAiLink() {
 
 /** 「給 AI 操作」視窗（影音工作台、設定頁、標題列的 AI MCP 共用） */
 export async function openAi() {
-  hideAiHint();
   refreshAiLink();
   openModal("#stAiModal");
   F("stAiNote").textContent = "";

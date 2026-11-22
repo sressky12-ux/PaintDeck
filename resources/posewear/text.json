@@ -1,0 +1,2080 @@
+{
+ "source": "posewear（MIT，github.com/atuizz/posewear）的 tr_pose.txt、build.py、costume_text.py；由 tools/posewear_text.py＋posewear_text.mjs 產生，不要手改",
+ "tr_pose": {
+  "M字開脚（両肘をついて後ろに倒れる）": [
+   "M字開腿（雙肘撐地向後仰）",
+   "M-shaped spread legs, leaning back on both elbows"
+  ],
+  "M字開脚（座位・両手を膝に）": [
+   "M字開腿（坐姿·雙手放膝上）",
+   "sitting in M-shaped spread legs, both hands on knees"
+  ],
+  "M字開脚（座位・後ろ手）": [
+   "M字開腿（坐姿·雙手後撐）",
+   "sitting in M-shaped spread legs, hands propped behind"
+  ],
+  "S字立ち・腰を横に突き出す": [
+   "S形站姿·胯部側頂",
+   "S-curve standing pose, hip pushed out to the side"
+  ],
+  "あくび伸び（片手を口元）": [
+   "打哈欠伸懶腰（一手掩口）",
+   "yawning stretch, one hand at mouth"
+  ],
+  "あぐらの上で抱き合う": [
+   "盤腿相擁",
+   "hugging while sitting on partner's crossed legs"
+  ],
+  "あごの下でダブルピース": [
+   "下巴下比雙剪刀手",
+   "double peace sign under the chin"
+  ],
+  "うさみみポーズ": [
+   "兔耳手勢",
+   "bunny ears pose with hands on head"
+  ],
+  "うつ伏せから上体を起こして大きく反る": [
+   "俯臥撐起上身大幅後仰",
+   "lying prone, upper body raised in a deep backbend"
+  ],
+  "うつ伏せでお尻を高く上げる": [
+   "俯臥高抬臀部",
+   "lying face down with hips raised high"
+  ],
+  "うつ伏せでカエル脚（膝を横に開く）": [
+   "俯臥青蛙腿（雙膝向外開啟）",
+   "lying prone in frog-leg position, knees spread to the sides"
+  ],
+  "うつ伏せで振り返り片膝を横に曲げる": [
+   "俯臥回眸·單膝側屈",
+   "lying prone looking back, one knee bent to the side"
+  ],
+  "うつ伏せで片手で胸を持ち上げる": [
+   "俯臥單手託胸",
+   "lying prone, lifting chest with one hand"
+  ],
+  "うつ伏せで片脚を持ち上げる": [
+   "俯臥抬起一條腿",
+   "lying prone, lifting one leg"
+  ],
+  "うつ伏せで肘をつき脚を伸ばして少し開く": [
+   "俯臥撐肘·雙腿伸直微張",
+   "lying prone on elbows, legs straight and slightly apart"
+  ],
+  "うつ伏せで頬杖をつき両足を上げる": [
+   "俯臥托腮·雙腳上翹",
+   "lying prone with chin in hands, both feet kicked up"
+  ],
+  "うつ伏せで頬杖・片脚を上げる": [
+   "俯臥托腮·抬起一腿",
+   "lying prone with chin in hand, one leg raised"
+  ],
+  "うつ伏せ・腕枕": [
+   "俯臥·枕臂",
+   "lying prone, head resting on arms"
+  ],
+  "うつ伏せ・足を上げる": [
+   "俯臥·雙腳上翹",
+   "lying prone with feet up"
+  ],
+  "うつ伏せ肘つきで胸を寄せる": [
+   "俯臥撐肘擠胸",
+   "lying prone on elbows, squeezing chest together"
+  ],
+  "お願いポーズ（両手を合わせる）": [
+   "拜託姿勢（雙手合十）",
+   "pleading pose, palms pressed together"
+  ],
+  "がおーポーズ": [
+   "嗷嗚怪獸爪姿勢",
+   "playful \"rawr\" monster claw pose"
+  ],
+  "しゃがみ・つま先立ちで両手を床に": [
+   "踮腳蹲·雙手撐地",
+   "squatting on tiptoes, both hands on the floor"
+  ],
+  "しゃがみ・振り向く": [
+   "蹲姿·回頭",
+   "squatting, looking back over shoulder"
+  ],
+  "しゃがみ・片手を床に": [
+   "蹲姿·單手撐地",
+   "squatting, one hand on the floor"
+  ],
+  "しゃがみ・膝に手": [
+   "蹲姿·手放膝上",
+   "squatting, hands on knees"
+  ],
+  "しゃがみ・頬杖": [
+   "蹲姿·托腮",
+   "squatting, chin resting on hand"
+  ],
+  "しゃがみ・髪に手": [
+   "蹲姿·手撫頭髮",
+   "squatting, hand in hair"
+  ],
+  "しゃがみ開脚・両手を頭の後ろ": [
+   "開腿蹲·雙手抱頭",
+   "wide-leg squat, hands behind head"
+  ],
+  "しゃがみ開脚（ヤンキー座り）": [
+   "開腿蹲（不良少年蹲）",
+   "deep wide squat, delinquent-style"
+  ],
+  "しーっ（人差し指を唇）": [
+   "噓（食指抵唇）",
+   "shush gesture, index finger on lips"
+  ],
+  "だっちゅーの（前屈みで胸寄せ）": [
+   "前傾擠胸",
+   "leaning forward, squeezing chest together with arms"
+  ],
+  "つま先立ちでしゃがみ開脚・両手を床へ": [
+   "踮腳開腿蹲·雙手觸地",
+   "tiptoe wide squat, both hands to the floor"
+  ],
+  "のけぞり・両腕を上げて反る": [
+   "後仰·雙臂上舉",
+   "arching back with both arms raised"
+  ],
+  "のけぞり・立ち姿勢で反る": [
+   "站姿後仰",
+   "standing backbend"
+  ],
+  "ひねり・座って上体をひねる": [
+   "扭身·坐姿扭轉上身",
+   "seated, twisting the upper body"
+  ],
+  "ひねり・立ち姿勢で腕を広げる": [
+   "扭身·站立展臂",
+   "standing twist with arms spread"
+  ],
+  "ひねり・膝立ちで振り向く": [
+   "扭身·跪立回頭",
+   "kneeling upright, twisting to look back"
+  ],
+  "ぺたん座りで両手を前につきバストを寄せる": [
+   "鴨子坐雙手前撐擠胸",
+   "W-sitting, hands on floor in front, squeezing bust"
+  ],
+  "まんぐり返し（横から・太ももを抱える）": [
+   "摺疊仰臥（側面·抱大腿）",
+   "lying on back folded, legs over head, hugging thighs, side view"
+  ],
+  "まんぐり返し（横から・脚を頭の先へ伸ばす）": [
+   "摺疊仰臥（側面·腿伸過頭頂）",
+   "plow pose, legs extended past head, side view"
+  ],
+  "まんぐり返し（横から・膝を頭の横の床へ）": [
+   "摺疊仰臥（側面·膝蓋貼地於頭側）",
+   "deep plow pose, knees on floor beside head, side view"
+  ],
+  "カメラを指差す": [
+   "指向鏡頭",
+   "pointing at the camera"
+  ],
+  "ギャルピース（手の甲ピース）": [
+   "辣妹剪刀手（手背朝外）",
+   "gyaru peace sign, back of hand facing out"
+  ],
+  "グー手ほっぺ（ぶりっ子）": [
+   "握拳貼臉（裝可愛）",
+   "fists on cheeks, cutesy pose"
+  ],
+  "シャワー中を思わせる髪かき上げ": [
+   "淋浴感撩發",
+   "running hands through hair like in the shower"
+  ],
+  "スタンディングスプリット（前屈で片脚を高く後ろへ）": [
+   "站立劈叉（前屈一腿高抬向後）",
+   "standing split, bending forward with one leg raised high behind"
+  ],
+  "テーブルに胸を乗せる": [
+   "胸部倚在桌上",
+   "resting chest on a table"
+  ],
+  "ブリッジで腰を高く上げ膝を開く": [
+   "橋式高抬腰·雙膝開啟",
+   "bridge pose with hips high and knees apart"
+  ],
+  "ブリッジ（両手両足）": [
+   "下腰橋（手腳撐地）",
+   "full backbend bridge on hands and feet"
+  ],
+  "ベッドで横寝のお誘いポーズ": [
+   "床上側臥邀約姿勢",
+   "lying on side in bed, inviting pose"
+  ],
+  "三角座り・膝を左へ傾ける": [
+   "抱膝坐·膝蓋倒向左側",
+   "sitting with knees up, knees tilted to the left"
+  ],
+  "上げた片脚を抱きしめる": [
+   "抱住抬起的一條腿",
+   "hugging one raised leg"
+  ],
+  "上に重なり脚を伸ばす": [
+   "疊躺在上·雙腿伸直",
+   "lying on top of partner with legs extended"
+  ],
+  "上に重なる互い違い": [
+   "上下交錯相疊",
+   "lying on top of each other in opposite directions"
+  ],
+  "両手でくびれをつかみ胸を張る": [
+   "雙手掐腰挺胸",
+   "hands gripping waist, chest pushed out"
+  ],
+  "両手でほっぺを包む": [
+   "雙手捧臉",
+   "cupping cheeks with both hands"
+  ],
+  "両手で下から持ち上げる": [
+   "雙手由下托起胸部",
+   "lifting breasts from below with both hands"
+  ],
+  "両手で寄せて突き出す": [
+   "雙手擠胸前挺",
+   "squeezing chest together and pushing forward"
+  ],
+  "両手で横から胸を寄せる": [
+   "雙手從兩側擠胸",
+   "pressing breasts together from the sides with both hands"
+  ],
+  "両手で胸を包む": [
+   "雙手捂胸",
+   "covering breasts with both hands"
+  ],
+  "両手で胸を揉む": [
+   "雙手揉胸",
+   "groping own breasts with both hands"
+  ],
+  "両手で髪をかき上げて大きく反る": [
+   "雙手撩發大幅後仰",
+   "both hands sweeping hair up, deep back arch"
+  ],
+  "両手のひらにあご乗せ（花ポーズ）": [
+   "雙手託下巴（花朵姿勢）",
+   "chin resting on both palms, flower pose"
+  ],
+  "両手の指の隙間からのぞく": [
+   "從指縫間偷看",
+   "peeking through fingers"
+  ],
+  "両手を胸の上部に添えて寄せる": [
+   "雙手按在胸口上方聚攏",
+   "hands on upper chest, pressing together"
+  ],
+  "両手を頭の後ろで脇見せ": [
+   "雙手抱頭露腋",
+   "hands behind head showing armpits"
+  ],
+  "両手後ろ支え・胸を張る": [
+   "雙手後撐·挺胸",
+   "hands propped behind, chest pushed out"
+  ],
+  "両手頭の後ろ・胸反り": [
+   "雙手抱頭·挺胸後仰",
+   "hands behind head, chest arched"
+  ],
+  "両手首を頭上で押さえる": [
+   "雙手腕被按在頭頂",
+   "wrists pinned above head"
+  ],
+  "両肘ついて寝そべり座り": [
+   "雙肘撐地半躺",
+   "reclining on both elbows"
+  ],
+  "両脚を浮かせた後ろ寄りかかり": [
+   "後仰雙腿懸空",
+   "leaning back with both legs lifted"
+  ],
+  "両脚を肩にかけて覆いかぶさる": [
+   "雙腿架肩俯身壓上",
+   "partner leaning over with legs on shoulders"
+  ],
+  "両腕で胸を抱え込む": [
+   "雙臂環抱胸部",
+   "hugging chest with both arms"
+  ],
+  "両腕を上に伸ばして背伸び・腰をひねる": [
+   "雙臂上伸伸懶腰·扭腰",
+   "stretching both arms overhead, twisting waist"
+  ],
+  "両膝を胸に引き寄せる": [
+   "雙膝抱向胸前",
+   "pulling both knees to chest"
+  ],
+  "人差し指でほっぺをツン": [
+   "食指戳臉頰",
+   "poking cheek with index finger"
+  ],
+  "仰け反り座り・片膝立て": [
+   "後仰坐·單膝立起",
+   "sitting leaning back, one knee raised"
+  ],
+  "仰向けV字開脚（脚を上げる）": [
+   "仰臥V字開腿（抬腿）",
+   "lying on back, legs raised in a V"
+  ],
+  "仰向けで両手を胸に": [
+   "仰臥雙手放胸前",
+   "lying on back, both hands on chest"
+  ],
+  "仰向けで両腕を上に反る": [
+   "仰臥雙臂上伸後仰",
+   "lying on back, arms stretched overhead, arching"
+  ],
+  "仰向けで両膝をそろえて横に倒す": [
+   "仰臥並膝倒向一側",
+   "lying on back, knees together tilted to one side"
+  ],
+  "仰向けで両膝を立て片腕を頭上へ": [
+   "仰臥屈雙膝·一臂舉過頭頂",
+   "lying on back, knees up, one arm overhead"
+  ],
+  "仰向けで両膝を胸に引き寄せる": [
+   "仰臥抱雙膝至胸",
+   "lying on back, knees pulled to chest"
+  ],
+  "仰向けで片膝を外に倒して開く": [
+   "仰臥單膝外展",
+   "lying on back, one knee dropped open to the side"
+  ],
+  "仰向けで背中を反らし両腕を頭上へ": [
+   "仰臥拱背·雙臂舉過頭頂",
+   "lying on back, back arched, arms overhead"
+  ],
+  "仰向けで背中を浮かせ片脚を高く上げる": [
+   "仰臥拱背·高抬一腿",
+   "lying on back, back lifted, one leg raised high"
+  ],
+  "仰向け・両脚を真上に": [
+   "仰臥·雙腿垂直向上",
+   "lying on back, both legs straight up"
+  ],
+  "仰向け・両腕を頭上へ": [
+   "仰臥·雙臂舉過頭頂",
+   "lying on back, arms overhead"
+  ],
+  "仰向け・片膝を立てる": [
+   "仰臥·單膝立起",
+   "lying on back, one knee bent up"
+  ],
+  "仰向け・胸を反らす": [
+   "仰臥·挺胸",
+   "lying on back, chest arched up"
+  ],
+  "体育座りから膝を少し開く": [
+   "抱膝坐·膝蓋微張",
+   "sitting with knees hugged, knees slightly apart"
+  ],
+  "前かがみで手を太ももの内側へ": [
+   "前傾·手放大腿內側",
+   "leaning forward, hands on inner thighs"
+  ],
+  "前かがみで膝に手を置く": [
+   "前傾·手扶膝蓋",
+   "leaning forward, hands on knees"
+  ],
+  "前かがみ・すねに触れる": [
+   "前傾·手觸小腿",
+   "bending forward, touching shins"
+  ],
+  "前かがみ・片手を腰・見上げる": [
+   "前傾·一手叉腰·仰視",
+   "leaning forward, hand on hip, looking up"
+  ],
+  "前かがみ・片脚を後ろに上げる": [
+   "前傾·一腿後抬",
+   "leaning forward, one leg kicked back"
+  ],
+  "前かがみ・腕をだらりと下げる": [
+   "前傾·雙臂自然下垂",
+   "bending forward, arms hanging loose"
+  ],
+  "前かがみ・腿に手・腰を引く": [
+   "前傾·手扶大腿·收臀",
+   "leaning forward, hands on thighs, hips pushed back"
+  ],
+  "前かがみ・膝に手": [
+   "前傾·手放膝上",
+   "leaning forward, hands on knees"
+  ],
+  "前屈みの腰を後ろから支える": [
+   "從後扶住前傾者的腰",
+   "holding a bent-over partner's waist from behind"
+  ],
+  "前後開脚（スプリット）で上体を反らす": [
+   "前後劈叉·上身後仰",
+   "front split with upper body arched back"
+  ],
+  "前腕を縦にして左右から挟む": [
+   "前臂豎起從兩側夾胸",
+   "forearms vertical, squeezing chest from both sides"
+  ],
+  "反って両腕で挟む": [
+   "後仰雙臂夾胸",
+   "arching back, squeezing chest with both arms"
+  ],
+  "口元に指＋片手で胸": [
+   "手指抵唇＋一手放胸",
+   "finger to lips, other hand on chest"
+  ],
+  "右へ傾く・肘支え": [
+   "向右傾斜·手肘支撐",
+   "leaning right, propped on elbow"
+  ],
+  "向き合い片膝を抱え上げる": [
+   "面對面抱起對方一膝",
+   "facing each other, lifting partner's knee"
+  ],
+  "向き合って腰の上に座る": [
+   "面對面坐在對方腰上",
+   "sitting on partner's lap facing them"
+  ],
+  "四つん這いで反って見上げる": [
+   "四肢著地塌腰仰視",
+   "on all fours, back arched, looking up"
+  ],
+  "四つん這いで片手を胸元": [
+   "四肢著地·一手放胸前",
+   "on all fours, one hand at chest"
+  ],
+  "四つん這いで片脚を後ろに高く上げる": [
+   "四肢著地·一腿高抬向後",
+   "on all fours, one leg raised high behind"
+  ],
+  "四つん這いで背中を反らし前を見る": [
+   "四肢著地塌腰·目視前方",
+   "on all fours, back arched, looking forward"
+  ],
+  "四つん這いの後ろで膝立ち": [
+   "在四肢著地者身後跪立",
+   "kneeling upright behind a partner on all fours"
+  ],
+  "四つん這い見下ろし（胸元）": [
+   "四肢著地俯視（胸前視角）",
+   "on all fours, high angle down the neckline"
+  ],
+  "壁に手をついて腰を突き出す（立ちバック待ち）": [
+   "手扶牆壁翹臀",
+   "hands on wall, hips pushed out back"
+  ],
+  "大きくV字開脚して後ろに手をつく": [
+   "大V字開腿·雙手後撐",
+   "wide V-split sitting, hands propped behind"
+  ],
+  "女の子座り・両手を腿に": [
+   "鴨子坐·雙手放腿上",
+   "W-sitting, hands on thighs"
+  ],
+  "女の子座り・両手を頭の後ろ": [
+   "鴨子坐·雙手抱頭",
+   "W-sitting, hands behind head"
+  ],
+  "女の子座り・前に手をつく": [
+   "鴨子坐·雙手前撐",
+   "W-sitting, hands on floor in front"
+  ],
+  "女の子座り・後ろに手をつく": [
+   "鴨子坐·雙手後撐",
+   "W-sitting, hands propped behind"
+  ],
+  "女の子座り・首元に手": [
+   "鴨子坐·手放頸間",
+   "W-sitting, hand at neck"
+  ],
+  "女豹の伸び（前から）": [
+   "貓式伸展（正面）",
+   "cat-like stretch, front view"
+  ],
+  "左右開脚（ベタ開脚）で上体を起こす": [
+   "左右一字馬坐·上身直立",
+   "side split on floor, upper body upright"
+  ],
+  "床に手をつき脚を抱えられる": [
+   "手撐地·雙腿被抱起",
+   "hands on floor, legs held up by partner"
+  ],
+  "座って片脚を高く伸ばし上げ足首を持つ": [
+   "坐姿高抬一腿手握腳踝",
+   "sitting, one leg extended high, holding ankle"
+  ],
+  "座って脚を抱えて開く": [
+   "坐姿抱腿開啟",
+   "sitting, holding legs open"
+  ],
+  "後ろでホックを外すしぐさ": [
+   "背手解開內衣釦",
+   "unhooking bra behind back"
+  ],
+  "後ろ向きで振り返りお尻を強調": [
+   "背身回眸·突出臀部",
+   "back to camera, looking over shoulder, emphasizing hips"
+  ],
+  "後ろ手で胸を張る": [
+   "背手挺胸",
+   "hands behind back, chest out"
+  ],
+  "後ろ手をついて胸を突き出す": [
+   "雙手後撐挺胸",
+   "propped on hands behind, chest pushed out"
+  ],
+  "後ろ手をついて脚を絡める": [
+   "雙手後撐·雙腿交纏",
+   "propped on hands behind, legs crossed"
+  ],
+  "後ろ手を組んで胸を張る": [
+   "背後十指相扣挺胸",
+   "hands clasped behind back, chest out"
+  ],
+  "手の甲にあごを乗せて前かがみ": [
+   "下巴擱在手背·前傾",
+   "leaning forward, chin resting on back of hands"
+  ],
+  "手ブラ（両手で隠す）": [
+   "手胸罩（雙手遮擋）",
+   "hand bra, covering chest with both hands"
+  ],
+  "手首を頭上で重ね膝を抱える": [
+   "手腕交疊頭頂·抱膝",
+   "wrists crossed overhead, hugging knees"
+  ],
+  "投げキッス": [
+   "飛吻",
+   "blowing a kiss"
+  ],
+  "抱き合い脚を絡める": [
+   "相擁雙腿交纏",
+   "hugging with legs intertwined"
+  ],
+  "招き猫の猫の手": [
+   "招財貓貓爪手",
+   "maneki-neko cat paw gesture"
+  ],
+  "指を口元にくわえる": [
+   "手指含在嘴邊",
+   "finger in mouth"
+  ],
+  "指フレーム": [
+   "手指取景框",
+   "finger frame gesture"
+  ],
+  "指先で胸の先を隠す": [
+   "指尖遮擋胸前",
+   "covering nipples with fingertips"
+  ],
+  "敬礼ポーズ": [
+   "敬禮姿勢",
+   "salute pose"
+  ],
+  "横向きで片脚を肩に預ける": [
+   "側身·一腿搭在對方肩上",
+   "side-on, one leg resting on partner's shoulder"
+  ],
+  "横向きに寝て腰のカーブを強調し片脚を曲げる": [
+   "側臥突出腰臀曲線·屈一腿",
+   "lying on side, emphasizing hip curve, one leg bent"
+  ],
+  "横向き寝・片腕を頭上": [
+   "側臥·一臂舉過頭頂",
+   "lying on side, one arm overhead"
+  ],
+  "横向き寝・腰のカーブ": [
+   "側臥·腰臀曲線",
+   "lying on side, showing waist curve"
+  ],
+  "横向き寝・頬杖": [
+   "側臥·托腮",
+   "lying on side, head propped on hand"
+  ],
+  "横寝そべりで胸を抱える": [
+   "側臥抱胸",
+   "lying on side hugging chest"
+  ],
+  "横寝で上の脚を高く上げて足首を持つ": [
+   "側臥高抬上方腿握腳踝",
+   "lying on side, top leg raised high, holding ankle"
+  ],
+  "横寝で腕を頭上に伸ばしS字を描く": [
+   "側臥舉臂呈S形",
+   "lying on side, arms overhead in an S-curve"
+  ],
+  "横座りで片手をつき体をしならせる": [
+   "側坐單手撐地·身體彎成弧線",
+   "side-sitting, one hand down, body curved"
+  ],
+  "横座りで片脚を高く伸ばす": [
+   "側坐高抬一腿",
+   "side-sitting, one leg extended high"
+  ],
+  "横座りで髪をかき上げる": [
+   "側坐撩發",
+   "side-sitting, sweeping hair up"
+  ],
+  "横座り・右に脚を流す": [
+   "側坐·雙腿斜向右側",
+   "side-sitting, legs swept to the right"
+  ],
+  "横座り・片腕を上に伸ばす": [
+   "側坐·一臂上伸",
+   "side-sitting, one arm stretched up"
+  ],
+  "横座り・頬に手": [
+   "側坐·手貼臉頰",
+   "side-sitting, hand on cheek"
+  ],
+  "横抱きにされて背を反らす": [
+   "被公主抱·背部後仰",
+   "carried bridal-style, back arched"
+  ],
+  "正座から胸を張って背中を反らす": [
+   "跪坐挺胸後仰",
+   "kneeling seiza, chest out, back arched"
+  ],
+  "正座で髪をかき上げる": [
+   "跪坐撩發",
+   "kneeling seiza, sweeping hair up"
+  ],
+  "深く前屈し床に手をつく": [
+   "深度前屈·手觸地面",
+   "deep forward bend, hands on floor"
+  ],
+  "片手で寄せて片手は髪": [
+   "一手擠胸一手撫發",
+   "one hand pressing chest, other in hair"
+  ],
+  "片手で胸を揉み片手で髪かき上げ": [
+   "一手揉胸一手撩發",
+   "one hand groping chest, other sweeping hair"
+  ],
+  "片手で胸・片手でお腹をなぞる": [
+   "一手放胸·一手撫過小腹",
+   "one hand on chest, other tracing belly"
+  ],
+  "片手で隠しもう片手は持ち上げ": [
+   "一手遮擋一手托起",
+   "one hand covering, other lifting"
+  ],
+  "片手で隠し片手は腰": [
+   "一手遮擋一手叉腰",
+   "one hand covering, other on hip"
+  ],
+  "片手ハート＋もう片手を胸": [
+   "單手比心＋另一手放胸前",
+   "one-hand heart, other hand on chest"
+  ],
+  "片手支え・脚前方流し": [
+   "單手支撐·雙腿前伸",
+   "propped on one hand, legs swept forward"
+  ],
+  "片肘を膝について頬杖": [
+   "單肘撐膝托腮",
+   "elbow on knee, chin in hand"
+  ],
+  "片肩を落として前のめり": [
+   "一肩下沉身體前傾",
+   "one shoulder dropped, leaning forward"
+  ],
+  "片脚だけ大きく開く座り（片M字）": [
+   "單腿大開坐（半M字）",
+   "sitting with one leg spread wide, half-M pose"
+  ],
+  "片脚ブリッジ（腰を上げて片脚を天井へ）": [
+   "單腿橋式（抬腰一腿指向天花板）",
+   "single-leg bridge, one leg toward ceiling"
+  ],
+  "片腕で胸をすくい上げる": [
+   "單臂托起胸部",
+   "scooping up chest with one arm"
+  ],
+  "片腕を腰に回し片手は首筋": [
+   "一臂環腰一手撫頸",
+   "one arm around waist, other hand on nape"
+  ],
+  "片膝を抱えて背中を反らす座り": [
+   "抱單膝後仰坐",
+   "sitting hugging one knee, back arched"
+  ],
+  "片膝を立てて後ろに手をつく": [
+   "單膝立起雙手後撐",
+   "one knee up, hands propped behind"
+  ],
+  "片膝立ちで太ももに手を置く": [
+   "單膝跪·手放大腿",
+   "half-kneeling, hand on thigh"
+  ],
+  "片膝立ち・膝に手": [
+   "單膝跪·手放膝上",
+   "half-kneeling, hand on knee"
+  ],
+  "片膝立ち・見上げる": [
+   "單膝跪·仰視",
+   "half-kneeling, looking up"
+  ],
+  "片膝立て・頬杖": [
+   "單膝立起·托腮",
+   "one knee up, chin in hand"
+  ],
+  "片膝立て・髪に手": [
+   "單膝立起·手撫發",
+   "one knee up, hand in hair"
+  ],
+  "猫のポーズ（胸を床に腰を高く・横から）": [
+   "貓式（胸貼地高抬腰·側面）",
+   "cat pose, chest to floor, hips high, side view"
+  ],
+  "立ちV字（片脚を横に高く上げる）": [
+   "站立V字（一腿側向高抬）",
+   "standing V, one leg raised high to the side"
+  ],
+  "立ち・うなじに両手": [
+   "站姿·雙手放後頸",
+   "standing, both hands on nape"
+  ],
+  "立ち・つま先立ちで両腕V字": [
+   "站姿·踮腳雙臂V字",
+   "standing on tiptoes, arms in a V"
+  ],
+  "立ち・コントラポスト腰に手": [
+   "站姿·對立式手叉腰",
+   "standing contrapposto, hand on hip"
+  ],
+  "立ち・両手で髪をかき上げ": [
+   "站姿·雙手撩發",
+   "standing, both hands sweeping hair up"
+  ],
+  "立ち・両手を腰に": [
+   "站姿·雙手叉腰",
+   "standing, hands on hips"
+  ],
+  "立ち・両腕を頭上に伸ばす": [
+   "站姿·雙臂舉過頭頂",
+   "standing, arms stretched overhead"
+  ],
+  "立ち・片手を後頭部に": [
+   "站姿·一手放後腦",
+   "standing, one hand behind head"
+  ],
+  "立ち・片脚を肩まで上げて足首を持つ（I字）": [
+   "站姿·一腿抬至肩握腳踝（I字）",
+   "standing I-balance, leg raised to shoulder holding ankle"
+  ],
+  "立ち・片腕を上げて腰を突き出す": [
+   "站姿·舉一臂頂胯",
+   "standing, one arm raised, hip pushed out"
+  ],
+  "立ち・片足を後ろに上げる": [
+   "站姿·一腳向後抬起",
+   "standing, one foot kicked up behind"
+  ],
+  "立ち・肩越しに振り向く": [
+   "站姿·越肩回眸",
+   "standing, looking back over shoulder"
+  ],
+  "立ち・脚を開いて両手を腰": [
+   "站姿·開腿雙手叉腰",
+   "standing legs apart, hands on hips"
+  ],
+  "立ち・腕を後ろに胸を張る": [
+   "站姿·手背後挺胸",
+   "standing, arms behind back, chest out"
+  ],
+  "立ち・首元と腿に手": [
+   "站姿·手放頸間與大腿",
+   "standing, hands on neck and thigh"
+  ],
+  "立ち・髪をなびかせる": [
+   "站姿·秀髮飄揚",
+   "standing, hair flowing in the wind"
+  ],
+  "立ち前屈でお尻を突き出し両手を床へ": [
+   "站立前屈翹臀雙手觸地",
+   "standing forward fold, hips out, hands to floor"
+  ],
+  "立ってバストを寄せる": [
+   "站立擠胸",
+   "standing, pressing bust together"
+  ],
+  "立って片膝を胸まで抱え上げ背中を反らす": [
+   "站立抱單膝至胸·後仰",
+   "standing, hugging one knee to chest, back arched"
+  ],
+  "立てた膝にもたれて座る": [
+   "坐姿倚靠立起的膝蓋",
+   "sitting leaning on raised knee"
+  ],
+  "耳元でささやき頬に触れる": [
+   "耳邊低語輕撫臉頰",
+   "whispering in ear, touching cheek"
+  ],
+  "肘で寄せて腰ひねり": [
+   "手肘擠胸扭腰",
+   "squeezing with elbows, twisting waist"
+  ],
+  "肘をついて上体を起こし片膝を立てる": [
+   "撐肘抬上身·單膝立起",
+   "propped on elbows, one knee up"
+  ],
+  "肘をついて隣から見下ろす": [
+   "撐肘從旁俯視",
+   "propped on elbow, looking down from beside"
+  ],
+  "肩ひもを外すしぐさ": [
+   "褪下肩帶",
+   "slipping off a shoulder strap"
+  ],
+  "肩をすくめて胸寄せ（手は下で重ねる）": [
+   "聳肩擠胸（雙手交疊於下）",
+   "shrugging shoulders to squeeze chest, hands clasped low"
+  ],
+  "肩立ちで脚をV字に開く": [
+   "肩倒立雙腿V字開啟",
+   "shoulder stand, legs open in a V"
+  ],
+  "背を向けて腰の上に座る": [
+   "背對坐在對方腰上",
+   "sitting on partner's hips facing away"
+  ],
+  "背を向けて膝の上でしゃがむ": [
+   "背對蹲在對方膝上",
+   "squatting on partner's lap facing away"
+  ],
+  "背中から抱いて膝に座らせる": [
+   "從背後抱坐膝上",
+   "hugged from behind, sitting on lap"
+  ],
+  "背中を反らし両手で髪をかき上げる": [
+   "拱背雙手撩發",
+   "back arched, both hands sweeping hair"
+  ],
+  "背中を預けて大きく膝を開く": [
+   "背靠對方大開雙膝",
+   "leaning back on partner, knees spread wide"
+  ],
+  "背中向きの横寝でお尻のライン": [
+   "背身側臥展示臀線",
+   "lying on side facing away, showing hip line"
+  ],
+  "背中越しに胸元へ手を添える": [
+   "從背後將手覆於胸前",
+   "reaching around from behind to the chest"
+  ],
+  "背伸びして片足を後ろへ": [
+   "踮腳伸展·一腳後抬",
+   "stretching on tiptoes, one foot back"
+  ],
+  "背後から胸元を抱きしめる": [
+   "從背後環抱胸前",
+   "embraced around the chest from behind"
+  ],
+  "胸の下を指でなぞる": [
+   "手指劃過胸下",
+   "tracing finger under chest"
+  ],
+  "胸の前で両手ハート": [
+   "胸前雙手比心",
+   "heart shape with both hands in front of chest"
+  ],
+  "胸の谷間に手を差し入れる": [
+   "手探入乳溝",
+   "slipping hand into cleavage"
+  ],
+  "胸を床につけ腰を上げる": [
+   "胸貼地抬臀",
+   "chest to floor, hips raised"
+  ],
+  "脚の間で四つん這いになる": [
+   "在對方雙腿間四肢著地",
+   "on all fours between partner's legs"
+  ],
+  "脚の間で頬杖をつく": [
+   "在對方雙腿間托腮",
+   "chin in hands between partner's legs"
+  ],
+  "脚の間にうつ伏せで寄り添う": [
+   "俯臥依偎在對方雙腿間",
+   "lying prone nestled between partner's legs"
+  ],
+  "脚をかけて添い寝する": [
+   "搭腿相擁而眠",
+   "lying together with a leg draped over"
+  ],
+  "脚を交差させ片脚を肩へ": [
+   "雙腿交叉·一腿搭肩",
+   "legs crossed, one leg on partner's shoulder"
+  ],
+  "脚を伸ばして横に肘をつく座り": [
+   "伸腿側撐肘坐",
+   "sitting legs extended, propped on elbow to the side"
+  ],
+  "脚を伸ばして重なり合う": [
+   "伸腿相疊",
+   "lying stacked with legs extended"
+  ],
+  "脚を前へ伸ばして座る": [
+   "伸腿向前坐",
+   "sitting with legs stretched forward"
+  ],
+  "脚を斜めに伸ばして腰に手": [
+   "斜伸雙腿手叉腰",
+   "legs extended diagonally, hand on hip"
+  ],
+  "脚を絡めて腕を引き合う": [
+   "雙腿交纏互拉手臂",
+   "legs entwined, pulling each other's arms"
+  ],
+  "脚を腰に絡めて抱き合う": [
+   "雙腿纏腰相擁",
+   "legs wrapped around waist, embracing"
+  ],
+  "脚を預けて膝の上にもたれる": [
+   "雙腿搭放倚靠對方膝上",
+   "legs draped, leaning on partner's lap"
+  ],
+  "腕を前に伸ばし腰を支えられる": [
+   "前伸手臂·腰被扶住",
+   "arms stretched forward, waist supported by partner"
+  ],
+  "腕を胸の下でクロスして持ち上げ": [
+   "雙臂胸下交叉托起",
+   "arms crossed under chest, lifting"
+  ],
+  "腕組みで胸を持ち上げる": [
+   "抱臂託胸",
+   "crossed arms lifting chest"
+  ],
+  "腰に両手・片膝を内に入れて反る": [
+   "雙手叉腰·單膝內扣後仰",
+   "hands on hips, one knee turned in, arching"
+  ],
+  "腰を突き出して振り返る": [
+   "翹臀回眸",
+   "hips pushed out, looking back"
+  ],
+  "腰を高く抱え上げる仰向け": [
+   "仰臥腰部被高高抱起",
+   "lying on back, hips lifted high by partner"
+  ],
+  "腰を高く持ち上げて顔を寄せる": [
+   "高抬腰部·貼近臉龐",
+   "hips lifted high, faces close"
+  ],
+  "膝で腰を持ち上げる仰向け": [
+   "仰臥·用膝托起腰部",
+   "lying on back, hips supported on partner's knees"
+  ],
+  "膝に手をつき前屈みで立つ": [
+   "手扶膝前傾站立",
+   "standing bent forward, hands on knees"
+  ],
+  "膝の上で前にもたれる": [
+   "坐膝上前傾",
+   "sitting on lap leaning forward"
+  ],
+  "膝の上で脚を腰に回す": [
+   "坐膝上雙腿環腰",
+   "on lap, legs wrapped around waist"
+  ],
+  "膝の上に横座りで抱かれる": [
+   "側坐膝上被擁抱",
+   "side-sitting on lap, being held"
+  ],
+  "膝を大きく開いた膝立ちで腰を落とす": [
+   "大開膝跪立沉腰",
+   "kneeling with knees wide, hips lowered"
+  ],
+  "膝を立てて両手を頭の後ろ": [
+   "屈膝雙手抱頭",
+   "knees up, hands behind head"
+  ],
+  "膝を肩まで引き寄せ足首を持つ": [
+   "膝拉至肩握腳踝",
+   "knees pulled to shoulders, holding ankles"
+  ],
+  "膝を開いた正座で前に両手をつく（おねだりポーズ）": [
+   "開膝跪坐雙手前撐（撒嬌姿勢）",
+   "kneeling with knees apart, hands on floor in front, begging pose"
+  ],
+  "膝立ちから後ろに反って両手を床へ": [
+   "跪立後仰雙手觸地",
+   "kneeling, bending back with hands to floor"
+  ],
+  "膝立ちから横に手をついて体をしならせる": [
+   "跪立側撐·身體呈弧形",
+   "kneeling, hand down to the side, body curved"
+  ],
+  "膝立ちで上体を反らし両手を後頭部": [
+   "跪立後仰·雙手抱後腦",
+   "kneeling, arching back, hands behind head"
+  ],
+  "膝立ちで両手を前につき寄せる": [
+   "跪立雙手前撐擠胸",
+   "kneeling, hands forward, squeezing chest"
+  ],
+  "膝立ちで両手後頭部": [
+   "跪立·雙手抱後腦",
+   "kneeling upright, hands behind head"
+  ],
+  "膝立ちで反ってかかとに手": [
+   "跪立後仰手觸腳跟",
+   "kneeling backbend, hands to heels"
+  ],
+  "膝立ちで大きく反り両手でかかとを持つ": [
+   "跪立大幅後仰雙手握腳跟",
+   "kneeling deep backbend, holding heels (camel pose)"
+  ],
+  "膝立ちで片手をかかとへ伸ばして反る": [
+   "跪立後仰單手觸腳跟",
+   "kneeling, arching, one hand reaching to heel"
+  ],
+  "膝立ちで腰をひねり片腕を上げる": [
+   "跪立扭腰舉一臂",
+   "kneeling, twisting waist, one arm raised"
+  ],
+  "膝立ちで腰を前に突き出す": [
+   "跪立向前頂胯",
+   "kneeling, hips pushed forward"
+  ],
+  "膝立ち・上体を反らす": [
+   "跪立·上身後仰",
+   "kneeling, upper body arched back"
+  ],
+  "膝立ち・両手を腿に": [
+   "跪立·雙手放大腿",
+   "kneeling upright, hands on thighs"
+  ],
+  "膝立ち・両手を頭の後ろ": [
+   "跪立·雙手抱頭",
+   "kneeling upright, hands behind head"
+  ],
+  "膝立ち・両腕を上に伸ばす": [
+   "跪立·雙臂上伸",
+   "kneeling upright, arms stretched up"
+  ],
+  "膝立ち・後ろに手をついて反る": [
+   "跪立·後撐後仰",
+   "kneeling, hands behind, arching back"
+  ],
+  "膝立ち・横に傾き床に手": [
+   "跪立·側傾手撐地",
+   "kneeling, leaning sideways, hand on floor"
+  ],
+  "膝立ち・片手で髪・片手は腰": [
+   "跪立·一手撫發一手叉腰",
+   "kneeling, one hand in hair, other on hip"
+  ],
+  "膝立ち・腰に手で反る": [
+   "跪立·手叉腰後仰",
+   "kneeling, hands on hips, arching"
+  ],
+  "膝立ち・腰を振って片腕を上げる": [
+   "跪立·擺腰舉一臂",
+   "kneeling, swaying hips, one arm raised"
+  ],
+  "膝裏を抱えて大きく開く": [
+   "抱住膝彎大幅開啟",
+   "holding behind knees, spreading wide"
+  ],
+  "自分を抱きしめる照れポーズ": [
+   "害羞自抱",
+   "shyly hugging oneself"
+  ],
+  "萌え袖風に両手で口元を隠す": [
+   "萌袖風雙手掩嘴",
+   "covering mouth with both hands, sweater-paw style"
+  ],
+  "覆いかぶさって胸元に口づけ": [
+   "俯身親吻胸口",
+   "leaning over, kissing the chest"
+  ],
+  "見下ろしで両手を胸に・上目遣い風": [
+   "俯拍雙手放胸·上目線",
+   "high angle, hands on chest, looking up through lashes"
+  ],
+  "見下ろし構図で両手を鎖骨に": [
+   "俯拍構圖雙手放鎖骨",
+   "high angle shot, hands on collarbone"
+  ],
+  "足首に手を添える": [
+   "手扶腳踝",
+   "hand on ankle"
+  ],
+  "足首を持ち上げV字に開く": [
+   "抓起腳踝V字開啟",
+   "holding ankles up, legs in a V"
+  ],
+  "足首を持つ片膝立て": [
+   "單膝立起手握腳踝",
+   "one knee up, holding ankle"
+  ],
+  "逆さに抱え上げる互い違い": [
+   "倒抱交錯",
+   "lifted upside down, opposite directions"
+  ],
+  "逆四つん這い（テーブルポーズ）で腰を突き上げる": [
+   "反向桌式撐地頂腰",
+   "reverse tabletop pose, hips thrust up"
+  ],
+  "雛ポーズ（両手を膝）": [
+   "雛偶坐姿（雙手放膝）",
+   "hina doll pose, hands on knees"
+  ],
+  "頬の横で指ハート": [
+   "臉頰旁比指尖心",
+   "finger heart beside cheek"
+  ],
+  "頭の上で両腕ハート": [
+   "頭頂雙臂比心",
+   "big heart with arms over head"
+  ],
+  "顔の上に膝立ちでまたがる": [
+   "跪跨在對方臉上方",
+   "kneeling astride above partner's face"
+  ],
+  "首かしげ＋片目に手（ウインク風）": [
+   "歪頭＋手遮一眼（眨眼風）",
+   "head tilt, hand over one eye, wink style"
+  ],
+  "首筋をつかんで反る": [
+   "抓住後頸後仰",
+   "gripping nape, arching back"
+  ],
+  "騎乗位風・膝を開いて腰を落とし髪をかき上げる": [
+   "跨坐風·開膝沉腰撩發",
+   "straddling pose, knees apart, hips lowered, sweeping hair"
+  ],
+  "騎乗位風・膝を開き前に手をついて腰を落とす": [
+   "跨坐風·開膝前撐沉腰",
+   "straddling pose, knees apart, hands forward, hips lowered"
+  ],
+  "髪を耳にかけるしぐさ": [
+   "將頭髮別到耳後",
+   "tucking hair behind ear"
+  ]
+ },
+ "line": {
+  "全身1人・セクシー系": [
+   "全身·性感",
+   "full body, solo, sexy"
+  ],
+  "全身1人・標準系": [
+   "全身·標準",
+   "full body, solo"
+  ],
+  "上半身1人": [
+   "上半身",
+   "upper body, solo"
+  ],
+  "2人絡み": [
+   "雙人互動",
+   "two people, couple"
+  ]
+ },
+ "cat": {
+  "寝そべり": "躺臥",
+  "セクシー・露骨寄り系": "性感·大膽",
+  "立ち": "站姿",
+  "座り": "坐姿",
+  "かわいい系": "可愛",
+  "胸寄せ・谷間強調系": "擠胸·乳溝",
+  "膝立ち・四つん這い": "跪立·趴姿",
+  "特殊": "特殊",
+  "正常位": "正面位",
+  "膝立ち": "跪立",
+  "横座り・女の子座り": "側坐·鴨子坐",
+  "後背位": "後入位",
+  "背面座位": "背面坐位",
+  "しゃがみ": "蹲姿",
+  "前かがみ": "前傾",
+  "顔寄せ系": "貼臉",
+  "騎乗位": "騎乘位",
+  "立位": "立位",
+  "立位密着": "立位貼身",
+  "のけぞり・反り": "後仰",
+  "ひねり": "扭身",
+  "側位": "側位",
+  "座位": "坐位",
+  "対面座位": "對面坐位",
+  "座位密着": "坐位貼身",
+  "密着": "貼身"
+ },
+ "ang": {
+  "正面": [
+   "正面",
+   "front view"
+  ],
+  "上から": [
+   "俯拍",
+   "high angle, from above"
+  ],
+  "下から": [
+   "仰拍",
+   "low angle, from below"
+  ],
+  "横": [
+   "側面",
+   "side view"
+  ],
+  "斜め": [
+   "斜側",
+   "three-quarter view"
+  ]
+ },
+ "cc": {
+  "春": [
+   "春季",
+   "spring"
+  ],
+  "夏": [
+   "夏季",
+   "summer"
+  ],
+  "秋": [
+   "秋季",
+   "autumn"
+  ],
+  "冬": [
+   "冬季",
+   "winter"
+  ],
+  "ランジェリー": [
+   "內衣",
+   "lingerie"
+  ],
+  "パーティ": [
+   "派對禮服",
+   "party"
+  ],
+  "水着": [
+   "泳裝",
+   "swimsuit"
+  ],
+  "セクシー": [
+   "性感",
+   "sexy"
+  ]
+ },
+ "fix": {
+  "pair60_P031": "坐位",
+  "pair60_P053": "立位貼身",
+  "pair60_P055": "側位",
+  "pair60_P058": "貼臉"
+ },
+ "col": {
+  "beige": "米色",
+  "black": "黑色",
+  "blue": "蓝色",
+  "brown": "棕色",
+  "burgundy": "酒红色",
+  "cream": "奶油色",
+  "gold": "金色",
+  "green": "绿色",
+  "grey": "灰色",
+  "ivory": "象牙白",
+  "khaki": "卡其色",
+  "lavender": "薰衣草紫",
+  "mint": "薄荷绿",
+  "navy": "藏青色",
+  "olive": "橄榄绿",
+  "orange": "橙色",
+  "pink": "粉色",
+  "purple": "紫色",
+  "red": "红色",
+  "silver": "银色",
+  "white": "白色",
+  "yellow": "黄色"
+ },
+ "mod": {
+  "chiffon": "雪纺",
+  "corduroy": "灯芯绒",
+  "denim": "牛仔",
+  "floral": "碎花",
+  "frill": "荷叶边",
+  "fur": "毛绒",
+  "knit": "针织",
+  "lace": "蕾丝",
+  "leather": "皮质",
+  "mesh": "网纱",
+  "pleated": "百褶",
+  "polka-dot": "波点",
+  "satin": "缎面",
+  "suede": "麂皮",
+  "tulle": "薄纱",
+  "velvet": "丝绒",
+  "wool": "羊毛",
+  "ribbon": "蝴蝶结",
+  "maxi": "长款",
+  "midi": "中长",
+  "mini": "迷你"
+ },
+ "n": {
+  "blouse": [
+   "衬衫",
+   "top"
+  ],
+  "camisole": [
+   "吊带",
+   "top"
+  ],
+  "shirt": [
+   "衬衣",
+   "top"
+  ],
+  "sweater": [
+   "毛衣",
+   "top"
+  ],
+  "turtleneck": [
+   "高领毛衣",
+   "top"
+  ],
+  "hoodie": [
+   "连帽卫衣",
+   "top"
+  ],
+  "vest": [
+   "马甲",
+   "top"
+  ],
+  "bra": [
+   "文胸",
+   "top"
+  ],
+  "corset": [
+   "束腰",
+   "top"
+  ],
+  "cardigan": [
+   "开衫",
+   "outer"
+  ],
+  "coat": [
+   "大衣",
+   "outer"
+  ],
+  "jacket": [
+   "夹克",
+   "outer"
+  ],
+  "robe": [
+   "睡袍",
+   "outer"
+  ],
+  "skirt": [
+   "半身裙",
+   "bottom"
+  ],
+  "shorts": [
+   "短裤",
+   "bottom"
+  ],
+  "pants": [
+   "长裤",
+   "bottom"
+  ],
+  "jeans": [
+   "牛仔裤",
+   "bottom"
+  ],
+  "briefs": [
+   "内裤",
+   "bottom"
+  ],
+  "dress": [
+   "连衣裙",
+   "one"
+  ],
+  "swimsuit": [
+   "泳衣",
+   "one"
+  ],
+  "apron": [
+   "围裙",
+   "acc"
+  ],
+  "socks": [
+   "袜子",
+   "legs"
+  ],
+  "tights": [
+   "连裤袜",
+   "legs"
+  ],
+  "stockings": [
+   "长筒袜",
+   "legs"
+  ],
+  "sneakers": [
+   "运动鞋",
+   "shoes"
+  ],
+  "boots": [
+   "靴子",
+   "shoes"
+  ],
+  "heels": [
+   "高跟鞋",
+   "shoes"
+  ],
+  "loafers": [
+   "乐福鞋",
+   "shoes"
+  ],
+  "pumps": [
+   "浅口鞋",
+   "shoes"
+  ],
+  "sandals": [
+   "凉鞋",
+   "shoes"
+  ],
+  "bag": [
+   "手提包",
+   "acc"
+  ],
+  "tote": [
+   "托特包",
+   "acc"
+  ],
+  "beanie": [
+   "毛线帽",
+   "acc"
+  ],
+  "beret": [
+   "贝雷帽",
+   "acc"
+  ],
+  "hat": [
+   "帽子",
+   "acc"
+  ],
+  "headband": [
+   "发箍",
+   "acc"
+  ],
+  "belt": [
+   "腰带",
+   "acc"
+  ],
+  "choker": [
+   "颈链",
+   "acc"
+  ],
+  "gloves": [
+   "手套",
+   "acc"
+  ],
+  "muffler": [
+   "围巾",
+   "acc"
+  ],
+  "scarf": [
+   "丝巾",
+   "acc"
+  ],
+  "necklace": [
+   "项链",
+   "acc"
+  ],
+  "sunglasses": [
+   "墨镜",
+   "acc"
+  ]
+ },
+ "solo": {
+  "knit": [
+   "针织衫",
+   "top"
+  ],
+  "denim": [
+   "牛仔外套",
+   "outer"
+  ],
+  "lace": [
+   "蕾丝",
+   "acc"
+  ],
+  "fur": [
+   "毛绒披肩",
+   "outer"
+  ],
+  "ribbon": [
+   "蝴蝶结",
+   "acc"
+  ],
+  "leather": [
+   "皮夹克",
+   "outer"
+  ],
+  "frill": [
+   "荷叶边",
+   "acc"
+  ],
+  "mini": [
+   "迷你裙",
+   "bottom"
+  ]
+ },
+ "en_solo": {
+  "knit": "knit top",
+  "denim": "denim jacket",
+  "fur": "fur stole",
+  "leather": "leather jacket",
+  "mini": "miniskirt",
+  "lace": "lace trim",
+  "frill": "frills",
+  "ribbon": "ribbon"
+ },
+ "skirt_len": {
+  "mini": "短裙",
+  "midi": "中长裙",
+  "maxi": "长裙"
+ },
+ "tw": [
+  [
+   "薰衣草紫",
+   "薰衣草紫"
+  ],
+  [
+   "高领毛衣",
+   "高領毛衣"
+  ],
+  [
+   "连帽卫衣",
+   "連帽上衣"
+  ],
+  [
+   "牛仔外套",
+   "牛仔外套"
+  ],
+  [
+   "毛绒披肩",
+   "毛絨披肩"
+  ],
+  [
+   "酒红色",
+   "酒紅色"
+  ],
+  [
+   "奶油色",
+   "奶油色"
+  ],
+  [
+   "象牙白",
+   "象牙白"
+  ],
+  [
+   "卡其色",
+   "卡其色"
+  ],
+  [
+   "薄荷绿",
+   "薄荷綠"
+  ],
+  [
+   "藏青色",
+   "藏青色"
+  ],
+  [
+   "橄榄绿",
+   "橄欖綠"
+  ],
+  [
+   "灯芯绒",
+   "燈芯絨"
+  ],
+  [
+   "荷叶边",
+   "荷葉邊"
+  ],
+  [
+   "蝴蝶结",
+   "蝴蝶結"
+  ],
+  [
+   "半身裙",
+   "半身裙"
+  ],
+  [
+   "牛仔裤",
+   "牛仔褲"
+  ],
+  [
+   "连衣裙",
+   "洋裝"
+  ],
+  [
+   "连裤袜",
+   "褲襪"
+  ],
+  [
+   "长筒袜",
+   "過膝襪"
+  ],
+  [
+   "运动鞋",
+   "運動鞋"
+  ],
+  [
+   "高跟鞋",
+   "高跟鞋"
+  ],
+  [
+   "乐福鞋",
+   "樂福鞋"
+  ],
+  [
+   "浅口鞋",
+   "包鞋"
+  ],
+  [
+   "手提包",
+   "手提包"
+  ],
+  [
+   "托特包",
+   "托特包"
+  ],
+  [
+   "毛线帽",
+   "毛帽"
+  ],
+  [
+   "贝雷帽",
+   "貝雷帽"
+  ],
+  [
+   "针织衫",
+   "針織衫"
+  ],
+  [
+   "皮夹克",
+   "皮夾克"
+  ],
+  [
+   "迷你裙",
+   "迷你裙"
+  ],
+  [
+   "中长裙",
+   "中長裙"
+  ],
+  [
+   "上身是",
+   "上身是"
+  ],
+  [
+   "上身穿",
+   "上身穿"
+  ],
+  [
+   "上衣选",
+   "上衣選"
+  ],
+  [
+   "外面套",
+   "外面套"
+  ],
+  [
+   "下身配",
+   "下身配"
+  ],
+  [
+   "下装是",
+   "下裝是"
+  ],
+  [
+   "腿上是",
+   "腿上是"
+  ],
+  [
+   "鞋子选",
+   "鞋子選"
+  ],
+  [
+   "作点缀",
+   "作點綴"
+  ],
+  [
+   "银灰色",
+   "銀灰色"
+  ],
+  [
+   "米色",
+   "米色"
+  ],
+  [
+   "黑色",
+   "黑色"
+  ],
+  [
+   "蓝色",
+   "藍色"
+  ],
+  [
+   "棕色",
+   "棕色"
+  ],
+  [
+   "金色",
+   "金色"
+  ],
+  [
+   "绿色",
+   "綠色"
+  ],
+  [
+   "灰色",
+   "灰色"
+  ],
+  [
+   "橙色",
+   "橙色"
+  ],
+  [
+   "粉色",
+   "粉色"
+  ],
+  [
+   "紫色",
+   "紫色"
+  ],
+  [
+   "红色",
+   "紅色"
+  ],
+  [
+   "银色",
+   "銀色"
+  ],
+  [
+   "白色",
+   "白色"
+  ],
+  [
+   "黄色",
+   "黃色"
+  ],
+  [
+   "雪纺",
+   "雪紡"
+  ],
+  [
+   "牛仔",
+   "牛仔"
+  ],
+  [
+   "碎花",
+   "碎花"
+  ],
+  [
+   "毛绒",
+   "毛絨"
+  ],
+  [
+   "针织",
+   "針織"
+  ],
+  [
+   "蕾丝",
+   "蕾絲"
+  ],
+  [
+   "皮质",
+   "皮質"
+  ],
+  [
+   "网纱",
+   "網紗"
+  ],
+  [
+   "百褶",
+   "百褶"
+  ],
+  [
+   "波点",
+   "圓點"
+  ],
+  [
+   "缎面",
+   "緞面"
+  ],
+  [
+   "麂皮",
+   "麂皮"
+  ],
+  [
+   "薄纱",
+   "薄紗"
+  ],
+  [
+   "丝绒",
+   "絲絨"
+  ],
+  [
+   "羊毛",
+   "羊毛"
+  ],
+  [
+   "长款",
+   "長款"
+  ],
+  [
+   "中长",
+   "中長"
+  ],
+  [
+   "迷你",
+   "迷你"
+  ],
+  [
+   "衬衫",
+   "襯衫"
+  ],
+  [
+   "吊带",
+   "細肩帶"
+  ],
+  [
+   "衬衣",
+   "襯衣"
+  ],
+  [
+   "毛衣",
+   "毛衣"
+  ],
+  [
+   "马甲",
+   "背心"
+  ],
+  [
+   "文胸",
+   "胸罩"
+  ],
+  [
+   "束腰",
+   "束腰"
+  ],
+  [
+   "开衫",
+   "開襟衫"
+  ],
+  [
+   "大衣",
+   "大衣"
+  ],
+  [
+   "夹克",
+   "夾克"
+  ],
+  [
+   "睡袍",
+   "睡袍"
+  ],
+  [
+   "短裤",
+   "短褲"
+  ],
+  [
+   "长裤",
+   "長褲"
+  ],
+  [
+   "内裤",
+   "內褲"
+  ],
+  [
+   "泳衣",
+   "泳衣"
+  ],
+  [
+   "围裙",
+   "圍裙"
+  ],
+  [
+   "袜子",
+   "襪子"
+  ],
+  [
+   "靴子",
+   "靴子"
+  ],
+  [
+   "凉鞋",
+   "涼鞋"
+  ],
+  [
+   "帽子",
+   "帽子"
+  ],
+  [
+   "发箍",
+   "髮箍"
+  ],
+  [
+   "腰带",
+   "腰帶"
+  ],
+  [
+   "颈链",
+   "頸鍊"
+  ],
+  [
+   "手套",
+   "手套"
+  ],
+  [
+   "围巾",
+   "圍巾"
+  ],
+  [
+   "丝巾",
+   "絲巾"
+  ],
+  [
+   "项链",
+   "項鍊"
+  ],
+  [
+   "墨镜",
+   "墨鏡"
+  ],
+  [
+   "短裙",
+   "短裙"
+  ],
+  [
+   "长裙",
+   "長裙"
+  ],
+  [
+   "身穿",
+   "身穿"
+  ],
+  [
+   "一条",
+   "一條"
+  ],
+  [
+   "内搭",
+   "內搭"
+  ],
+  [
+   "叠穿",
+   "疊穿"
+  ],
+  [
+   "外披",
+   "外披"
+  ],
+  [
+   "外搭",
+   "外搭"
+  ],
+  [
+   "外穿",
+   "外穿"
+  ],
+  [
+   "搭配",
+   "搭配"
+  ],
+  [
+   "脚踩",
+   "腳踩"
+  ],
+  [
+   "再加",
+   "再加"
+  ],
+  [
+   "点缀",
+   "點綴"
+  ],
+  [
+   "裙裤",
+   "裙褲"
+  ],
+  [
+   "短款",
+   "短款"
+  ],
+  [
+   "穿",
+   "穿"
+  ],
+  [
+   "配",
+   "配"
+  ],
+  [
+   "与",
+   "與"
+  ],
+  [
+   "和",
+   "和"
+  ],
+  [
+   "拼",
+   "拼"
+  ]
+ ],
+ "tw_chars": {
+  "领": "領",
+  "连": "連",
+  "卫": "衛",
+  "绒": "絨",
+  "红": "紅",
+  "绿": "綠",
+  "榄": "欖",
+  "灯": "燈",
+  "叶": "葉",
+  "边": "邊",
+  "结": "結",
+  "裤": "褲",
+  "袜": "襪",
+  "长": "長",
+  "运": "運",
+  "动": "動",
+  "乐": "樂",
+  "浅": "淺",
+  "托": "託",
+  "线": "線",
+  "贝": "貝",
+  "针": "針",
+  "织": "織",
+  "夹": "夾",
+  "选": "選",
+  "装": "裝",
+  "点": "點",
+  "缀": "綴",
+  "银": "銀",
+  "蓝": "藍",
+  "黄": "黃",
+  "纺": "紡",
+  "丝": "絲",
+  "质": "質",
+  "网": "網",
+  "纱": "紗",
+  "缎": "緞",
+  "衬": "襯",
+  "带": "帶",
+  "马": "馬",
+  "开": "開",
+  "内": "內",
+  "围": "圍",
+  "凉": "涼",
+  "发": "發",
+  "颈": "頸",
+  "链": "鏈",
+  "项": "項",
+  "镜": "鏡",
+  "条": "條",
+  "叠": "疊",
+  "脚": "腳",
+  "与": "與"
+ }
+}

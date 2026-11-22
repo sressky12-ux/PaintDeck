@@ -693,15 +693,20 @@ export async function applyTo() {
     studio.openVideo("short");
     await h3.applySheet({ sheet: structuredClone(S), prompt: prompts[0], secs: S.segments[0].secs, first, refs: segRefFiles(0) });
     toast("套用到短片了：按送出前會先健檢", "ok");
+    closeDrawer();
   } else if (await h3chain.applySheet({ sheet: S, prompts, first, refs, segRefs: S.segments.map((_, i) => (segRefFiles(i).length === refs.length ? null : segRefFiles(i))) })) {
     studio.openVideo("long");
     toast(`套用到長片了：${S.segments.length} 段`, "ok");
+    closeDrawer();
   }
   } catch (e) { toast(e.message, "err"); }
   finally { applying = false; }
 }
 
 /** 長片打開時帶回它存的拍攝單：一樣的就不動；目前草稿有寫東西先問 */
+/** 套用到短片／長片後收起拍攝單抽屜，讓人看得到結果（動態載入：videostage 會連到 h3.js，避免循環） */
+function closeDrawer() { import("./videostage.js").then((m) => m.setDrawer(false)).catch(() => {}); }
+
 export function offerLoad(sheet) {
   const canon = (x) => JSON.stringify(fill(x));
   if (canon(sheet) === canon(S)) return;

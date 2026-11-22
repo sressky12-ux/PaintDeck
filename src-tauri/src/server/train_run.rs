@@ -7,8 +7,8 @@
 //! - GET  /api/train/{id}/sample/{file}
 //! - POST /api/train/{id}/compare {params, strengths?, epochs?}：對照表（每一版 × 每個強度，同種子）
 //! - POST /api/train/{id}/adopt {epoch, strength}：就用這版（寫 LoRA 資訊）
-use super::api_train::{emit, fam_of, job_begin, job_end, job_kind, live, load, pdir, read_caption, training_id, update, vram_gb};
-use super::{bad, blocking, file_response, internal, not_found, ok, ApiError, ApiResult, Body, Shared};
+use super::api_train::{emit, engine_of, kohaku_defaults, kohaku_gpu, fam_of, job_begin, job_end, job_kind, live, load, pdir, read_caption, training_id, update, vram_gb};
+use super::{bad, blocking, file_response, internal, not_found, ok, train_kohaku, ApiError, ApiResult, Body, Shared};
 use crate::director::tx;
 use crate::train::{self, Fam};
 use axum::extract::{Path as UrlPath, Query, State};
@@ -39,12 +39,15 @@ struct Install {
 }
 
 static INSTALL: LazyLock<Mutex<Install>> = LazyLock::new(|| Mutex::new(Install::default()));
+static TOOLKIT_OPERATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+// 讓訓練啟動時的環境檢查與 job_begin，和移除時的 training_id 檢查與刪檔互斥。
+static TRAINER_FILES: tokio::sync::RwLock<()> = tokio::sync::RwLock::const_new(());
 
 fn inst() -> std::sync::MutexGuard<'static, Install> {
     INSTALL.lock().unwrap_or_else(|e| e.into_inner())
 }
 
-fn trainer_dir(app: &Shared) -> PathBuf {
+pub(super) fn trainer_dir(app: &Shared) -> PathBuf {
     app.paths.root.join("trainer")
 }
 
@@ -66,19 +69,24 @@ fn installed(app: &Shared) -> bool {
 
 pub(super) fn trainer_view(app: &Shared) -> Value {
     let i = inst();
-    json!({
+    let toolkit = json!({
         "installed": installed(app), "busy": i.busy, "error": i.error, "log": i.log.iter().rev().take(15).rev().collect::<Vec<_>>(),
         "commit": train::TOOLKIT_COMMIT, "dir": trainer_dir(app).to_string_lossy(), "download_gb": 8,
-    })
+    });
+    drop(i);
+    let mut v = toolkit.clone();
+    v["engines"] = json!({"toolkit": toolkit, "kohakumoss": train_kohaku::kohaku_view(app)});
+    v
 }
 
-fn dir_size(dir: &Path) -> u64 {
+fn dir_size(dir: &Path, toolkit_root: bool) -> u64 {
     std::fs::read_dir(dir)
         .into_iter()
         .flatten()
         .flatten()
+        .filter(|e| !toolkit_root || !e.file_name().eq_ignore_ascii_case("kohakumoss"))
         .map(|e| match e.file_type() {
-            Ok(t) if t.is_dir() => dir_size(&e.path()),
+            Ok(t) if t.is_dir() => dir_size(&e.path(), false),
             Ok(t) if t.is_file() => e.metadata().map(|m| m.len()).unwrap_or(0),
             _ => 0,
         })
@@ -89,12 +97,14 @@ pub async fn trainer(State(app): State<Shared>, Query(q): Query<HashMap<String, 
     let mut v = trainer_view(&app);
     if q.contains_key("size") {
         let d = trainer_dir(&app);
-        v["size_gb"] = json!((blocking(move || dir_size(&d)).await as f64 / 1e9 * 10.0).round() / 10.0);
+        let size = (blocking(move || dir_size(&d, true)).await as f64 / 1e9 * 10.0).round() / 10.0;
+        v["size_gb"] = json!(size);
+        v["engines"]["toolkit"]["size_gb"] = json!(size);
     }
     ok(v)
 }
 
-fn quiet(cmd: &mut tokio::process::Command) {
+pub(super) fn quiet(cmd: &mut tokio::process::Command) {
     #[cfg(windows)]
     cmd.creation_flags(0x0800_0000);
     cmd.stdin(Stdio::null()).env_remove("PYTHONPATH").env_remove("PYTHONHOME");
@@ -144,26 +154,8 @@ async fn run_logged(app: &Shared, cmd: tokio::process::Command) -> Result<(), St
     run_logged_with_error(app, cmd, None).await
 }
 
-async fn run_logged_with_error(app: &Shared, mut cmd: tokio::process::Command, exit_error: Option<(i32, &str)>) -> Result<(), String> {
-    quiet(&mut cmd);
-    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
-    let mut child = cmd.spawn().map_err(|e| format!("開不了：{e}"))?;
-    let (out, err) = (child.stdout.take(), child.stderr.take());
-    let pump = |app: Shared, r: Option<Box<dyn tokio::io::AsyncRead + Unpin + Send>>| async move {
-        let Some(r) = r else { return };
-        let mut lines = BufReader::new(r).split(b'\n');
-        while let Ok(Some(l)) = lines.next_segment().await {
-            // 進度條用 \r 重畫同一行：只留最後一段
-            let s = String::from_utf8_lossy(&l);
-            if let Some(last) = s.split('\r').map(str::trim).rfind(|x| !x.is_empty()) {
-                say(&app, last.chars().take(300).collect::<String>());
-            }
-        }
-    };
-    let a = tokio::spawn(pump(app.clone(), out.map(|o| Box::new(o) as _)));
-    let b = tokio::spawn(pump(app.clone(), err.map(|o| Box::new(o) as _)));
-    let st = child.wait().await.map_err(|e| e.to_string())?;
-    let _ = tokio::join!(a, b);
+async fn run_logged_with_error(app: &Shared, cmd: tokio::process::Command, exit_error: Option<(i32, &str)>) -> Result<(), String> {
+    let st = run_logged_to(app, cmd, say, None).await?;
     if st.success() {
         Ok(())
     } else if let Some((_, msg)) = exit_error.filter(|(code, _)| st.code() == Some(*code)) {
@@ -171,6 +163,34 @@ async fn run_logged_with_error(app: &Shared, mut cmd: tokio::process::Command, e
     } else {
         Err(format!("指令失敗（代碼 {}），往上看最後幾行訊息", st.code().unwrap_or(-1)))
     }
+}
+
+pub(super) async fn forward_lines(app: &Shared, reader: impl tokio::io::AsyncRead + Unpin, sink: fn(&Shared, String)) {
+    let mut lines = BufReader::new(reader).split(b'\n');
+    while let Ok(Some(line)) = lines.next_segment().await {
+        // 進度條用 \r 重畫同一行：只留最後一段
+        if let Some(last) = String::from_utf8_lossy(&line).split('\r').map(str::trim).rfind(|s| !s.is_empty()) {
+            sink(app, last.chars().take(300).collect());
+        }
+    }
+}
+
+pub(super) async fn run_logged_to(
+    app: &Shared, mut cmd: tokio::process::Command, sink: fn(&Shared, String), cancel: Option<&CancellationToken>,
+) -> Result<std::process::ExitStatus, String> {
+    quiet(&mut cmd);
+    cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).kill_on_drop(true);
+    #[cfg(windows)]
+    if let Some(cancel) = cancel {
+        return train_kohaku::run_windows_stage(app, cmd, sink, cancel).await.map_err(|e| format!("執行安裝指令失敗：{e}"));
+    }
+    let mut child = cmd.spawn().map_err(|e| format!("開不了：{e}"))?;
+    let out = child.stdout.take().unwrap();
+    let err = child.stderr.take().unwrap();
+    let (status, (), ()) = tokio::join!(child.wait(), forward_lines(app, out, sink), forward_lines(app, err, sink));
+    #[cfg(not(windows))]
+    let _ = cancel; // KohakuMoss 安裝路由只在 Windows 啟動工作。
+    status.map_err(|e| e.to_string())
 }
 
 const SITE_FIX: &str = "import glob, locale, os, sys
@@ -239,6 +259,7 @@ async fn install_run(app: &Shared) -> Result<(), String> {
 }
 
 pub async fn trainer_install(State(app): State<Shared>) -> ApiResult {
+    let operation = TOOLKIT_OPERATION.try_lock().map_err(|_| bad("訓練器正在安裝或移除"))?;
     {
         let mut i = inst();
         if i.busy {
@@ -248,6 +269,7 @@ pub async fn trainer_install(State(app): State<Shared>) -> ApiResult {
     }
     let app2 = app.clone();
     tokio::spawn(async move {
+        let _operation = operation;
         let r = install_run(&app2).await;
         let mut i = inst();
         i.busy = false;
@@ -264,15 +286,51 @@ pub async fn trainer_install(State(app): State<Shared>) -> ApiResult {
     ok(json!({"ok": true}))
 }
 
+pub(super) fn remove_toolkit_files(dir: &Path) -> std::io::Result<()> {
+    let entries = match std::fs::read_dir(dir) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        other => other?,
+    };
+    for entry in entries {
+        let entry = entry?;
+        if entry.file_name().eq_ignore_ascii_case("kohakumoss") {
+            continue;
+        }
+        if entry.file_type()?.is_dir() {
+            std::fs::remove_dir_all(entry.path())?;
+        } else {
+            std::fs::remove_file(entry.path())?;
+        }
+    }
+    Ok(())
+}
+
 pub async fn trainer_remove(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     if b["confirm"].as_bool() != Some(true) {
         return Err(bad("移除訓練器要帶 confirm: true（會刪掉訓練器和它下載的底模，之後要用得重裝；煉好的 LoRA 和訓練專案不會動）"));
     }
-    if inst().busy || training_id().is_some() {
-        return Err(bad("訓練器正在安裝或訓練中，先等它結束"));
+    let (dir, lock, kohaku) = match b.get("engine").map(Value::as_str) {
+        None | Some(Some("toolkit")) => (trainer_dir(&app), &TOOLKIT_OPERATION, false),
+        Some(Some("kohakumoss")) => (train_kohaku::kohaku_dir(&app), &train_kohaku::OPERATION, true),
+        _ => return Err(bad("不認得這個訓練引擎")),
+    };
+    let operation = lock.try_lock().map_err(|_| bad("訓練器正在安裝或移除，先等它結束"))?;
+    let files = TRAINER_FILES.write().await;
+    if training_id().is_some() {
+        return Err(bad("訓練中，先等它結束"));
     }
-    let d = trainer_dir(&app);
-    blocking(move || std::fs::remove_dir_all(&d)).await.or_else(|e| if e.kind() == std::io::ErrorKind::NotFound { Ok(()) } else { Err(internal(format!("刪不掉：{e}"))) })?;
+    blocking(move || {
+        let _operation = operation;
+        let _files = files;
+        if kohaku {
+            match std::fs::remove_dir_all(dir) {
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                other => other,
+            }
+        } else {
+            remove_toolkit_files(&dir)
+        }
+    }).await.map_err(|e| internal(format!("刪不掉：{e}")))?;
     ok(json!({"ok": true}))
 }
 
@@ -370,9 +428,89 @@ fn lora_rel(fam: &Fam, name: &str, n: u32) -> String {
     }
 }
 
+fn protect_adopted(app: &Shared, id: &str, p: &Value, rel: String) -> String {
+    if p["adopted"]["file"].as_str().is_some_and(|f| f.eq_ignore_ascii_case(&rel)) {
+        let dest = rel.replace(".safetensors", "_dup.safetensors");
+        let msg = format!("保留已採用的 LoRA，這版另存為 {dest}");
+        eprintln!("{msg}");
+        emit(app, id, "train", "running", json!({"msg":msg}));
+        dest
+    } else {
+        rel
+    }
+}
+
+fn plan_fresh_run(p: &Value) -> (u32, Value) {
+    let run = &p["run"];
+    let mut history = p["runs_history"].as_array().cloned().unwrap_or_default();
+    let previous = history.iter().filter_map(|r| r["run_no"].as_u64()).max().unwrap_or(0);
+    let mut number = run["run_no"].as_u64().unwrap_or(previous);
+    if run["epochs"].as_array().is_some_and(|v| !v.is_empty()) || run["run_no"].is_u64() {
+        if run["run_no"].is_null() {
+            number = previous + 1;
+        }
+        history.push(json!({"run_no":number, "epochs":run["epochs"].as_array().cloned().unwrap_or_default(), "ended":run["ended"]}));
+    }
+    (number.max(previous) as u32 + 1, json!(history))
+}
+
+fn find_resume(dir: &Path) -> Option<PathBuf> {
+    std::fs::read_dir(dir)
+        .ok()?
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let step = name.to_str()?.strip_prefix("step_")?;
+            if step.len() != 8 || !step.bytes().all(|c| c.is_ascii_digit()) || !entry.file_type().ok()?.is_dir() {
+                return None;
+            }
+            let path = entry.path();
+            (path.join("state.json").is_file() && path.join("trainable.safetensors").is_file()).then_some(path)
+        })
+        .max()
+}
+
+fn classify_error(msg: &str) -> &'static str {
+    let lower = msg.to_ascii_lowercase();
+    if lower.contains("out of memory") || lower.contains("outofmemoryerror") {
+        "oom"
+    } else if lower.contains("no space left") || lower.contains("磁碟空間不足") || lower.contains("disk full") {
+        "disk"
+    } else if lower.contains("torch.cuda.is_available") || lower.contains("no cuda gpu") || lower.contains("nvidia driver") {
+        "driver"
+    } else if (lower.contains("no such file") || lower.contains("filenotfounderror") || lower.contains("not found") || lower.contains("file in"))
+        && [".safetensors", ".ckpt", ".bin", ".pt", "weights", "transformer", "text_encoder", "vae"].iter().any(|word| lower.contains(word))
+    {
+        "missing_model"
+    } else {
+        "other"
+    }
+}
+
+fn kohaku_versions(files: &[String], run: &str) -> Vec<(u32, u64, String)> {
+    let prefix = format!("{run}/");
+    train::kohaku_epoch_names(&files.iter().filter(|f| f.starts_with(&prefix)).cloned().collect::<Vec<_>>())
+}
+
+fn kohaku_cache(dir: &Path, number: u32, resume: bool) -> Result<PathBuf, String> {
+    let cache = dir.join("cache");
+    let current = cache.join(format!("r{number}"));
+    std::fs::create_dir_all(&current).map_err(|e| format!("建立快取失敗：{e}"))?;
+    if !resume {
+        for entry in std::fs::read_dir(&cache).map_err(|e| e.to_string())? {
+            let entry = entry.map_err(|e| e.to_string())?;
+            let numbered = entry.file_name().to_str().and_then(|s| s.strip_prefix('r')?.parse::<u32>().ok()).is_some();
+            if numbered && entry.path() != current && entry.file_type().map_err(|e| e.to_string())?.is_dir() {
+                std::fs::remove_dir_all(entry.path()).map_err(|e| format!("清除舊輪次快取失敗：{e}"))?;
+            }
+        }
+    }
+    Ok(current)
+}
+
 /// 把遠端的檔案抓回來：LoRA 各版進 loras\<家族>\<名字>\，樣張進專案的 out\samples\。回這次有沒有新東西
 #[allow(clippy::too_many_arguments)]
-async fn collect(app: &Shared, id: &str, conn: &Conn, st: &Value, fam: &Fam, name: &str, seen: &mut HashMap<String, u64>, got: &mut HashSet<String>, finished: bool) -> Result<bool, String> {
+async fn collect(app: &Shared, id: &str, conn: &Conn, st: &Value, fam: &Fam, p: &Value, seen: &mut HashMap<String, u64>, got: &mut HashSet<String>, finished: bool) -> Result<bool, String> {
     let files: Vec<(String, u64, String)> = st["files"]
         .as_array()
         .into_iter()
@@ -382,21 +520,33 @@ async fn collect(app: &Shared, id: &str, conn: &Conn, st: &Value, fam: &Fam, nam
     // 還在寫的檔不抓：大小要跟上一輪一樣（或訓練已經結束）
     let stable = |n: &str, size: u64, seen: &HashMap<String, u64>| finished || seen.get(n) == Some(&size);
     let loras: Vec<String> = files.iter().filter(|f| f.2 == "lora").map(|f| f.0.clone()).collect();
+    let name = train::lora_name(p);
+    let kohaku = p["run"]["engine"] == "kohakumoss";
+    let run_no = p["run"]["run_no"].as_u64().unwrap_or(1) as u32;
+    let run_name = format!("{id}_r{run_no}");
+    let lora_name = if kohaku { train::run_lora_name(name, run_no) } else { name.into() };
+    let versions = if kohaku {
+        kohaku_versions(&loras, &run_name)
+    } else {
+        train::epoch_names(&loras, name).into_iter().map(|(n,src)| (n,0,src)).collect()
+    };
     let mut changed = false;
     let mut new_epochs = Vec::new();
-    for (n, src) in train::epoch_names(&loras, name) {
+    for (n, step, src) in versions {
         let size = files.iter().find(|f| f.0 == src).map_or(0, |f| f.1);
         if got.contains(&src) || size == 0 || !stable(&src, size, seen) {
             continue;
         }
-        let rel = lora_rel(fam, name, n);
+        let rel = protect_adopted(app, id, p, lora_rel(fam, &lora_name, n));
         conn.download(&src, &app.paths.loras.join(&rel)).await?;
         got.insert(src.clone());
-        new_epochs.push(json!({"n": n, "file": rel, "src": src}));
+        let mut epoch = json!({"n": n, "file": rel, "src": src});
+        if kohaku { epoch["step"] = json!(step); }
+        new_epochs.push(epoch);
         changed = true;
     }
     let mut new_samples = Vec::new();
-    for (src, size, _) in files.iter().filter(|f| f.2 == "sample") {
+    for (src, size, _) in files.iter().filter(|f| f.2 == "sample" && (!kohaku || f.0.split_once('/').is_some_and(|(dir,_)| dir == run_name))) {
         if got.contains(src) || *size == 0 || !stable(src, *size, seen) {
             continue;
         }
@@ -430,6 +580,8 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
     let name = train::lora_name(&p).to_string();
     let first = conn.status().await?;
     let resumed = first["state"] == "running";
+    let kohaku = p["run"]["engine"] == "kohakumoss";
+    let resume_checkpoint = kohaku && p["run"]["resume"] == true;
     if !resumed {
         emit(app, id, "train", "running", json!({"msg": "打包訓練圖…", "step": 0, "total": 0}));
         let zip_path = pdir(app, id).join("dataset.zip");
@@ -441,15 +593,52 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
         conn.send(conn.http.post(format!("{}/dataset", conn.base)).body(bytes), 3600).await?;
         let data_dir = first["data_dir"].as_str().ok_or("訓練機沒有回報資料夾位置（小幫手版本太舊？）")?;
         let out_dir = first["out_dir"].as_str().unwrap_or("");
-        let cfg = train::toolkit_config(&p, fam, data_dir, out_dir, model, vram);
-        let _ = std::fs::create_dir_all(pdir(app, id).join("out"));
-        let _ = std::fs::write(pdir(app, id).join("out").join("config.yaml"), &cfg);
-        conn.post("/start", &json!({"config": cfg, "name": name})).await?;
-        set_run(app, id, |r| {
-            r.insert("epochs".into(), json!([]));
-            r.insert("samples".into(), json!([]));
-        })
-        .await;
+        if kohaku {
+            if cancel.is_cancelled() {
+                return Ok("stopped");
+            }
+            if out_dir.is_empty() {
+                return Err("小幫手沒有回報輸出資料夾".into());
+            }
+            let number = p["run"]["run_no"].as_u64().ok_or("缺少訓練輪次")? as u32;
+            let repo = train_kohaku::kohaku_dir(app).join("repo");
+            let kogine = train_kohaku::kohaku_kogine(app).ok_or("找不到 KohakuMoss 引擎")?;
+            let dir = pdir(app, id);
+            let paths = train::KohakuPaths {
+                repo: repo.to_string_lossy().into_owned(),
+                weights_root: super::api_models::models_root(app).to_string_lossy().into_owned(),
+                data_dir: data_dir.into(),
+                cache_dir: kohaku_cache(&dir, number, resume_checkpoint)?.to_string_lossy().into_owned(),
+                out_dir: out_dir.into(),
+                run_name: format!("{id}_r{number}"),
+                resume: if resume_checkpoint { "latest".into() } else { String::new() },
+                vram_gb: vram,
+            };
+            let (data, cfg) = train::kohaku_configs(&p, &paths);
+            let out = dir.join("out");
+            std::fs::create_dir_all(&out)
+                .and_then(|()| std::fs::write(out.join("data.py"), &data))
+                .and_then(|()| std::fs::write(out.join("train.py"), &cfg))
+                .map_err(|e| format!("無法儲存訓練設定：{e}"))?;
+            conn.post(
+                "/start",
+                &json!({"engine":"kohakumoss","name":paths.run_name,
+                "kohaku":{"repo":repo,"kogine":kogine,"data_config":data,"train_config":cfg}}),
+            )
+            .await?;
+        } else {
+            let cfg = train::toolkit_config(&p, fam, data_dir, out_dir, model, vram);
+            let _ = std::fs::create_dir_all(pdir(app, id).join("out"));
+            let _ = std::fs::write(pdir(app, id).join("out").join("config.yaml"), &cfg);
+            conn.post("/start", &json!({"config": cfg, "name": name})).await?;
+        }
+        if !resume_checkpoint {
+            set_run(app, id, |r| {
+                r.insert("epochs".into(), json!([]));
+                r.insert("samples".into(), json!([]));
+            })
+            .await;
+        }
     }
     set_run(app, id, |r| {
         r.insert("state".into(), json!("running"));
@@ -457,7 +646,7 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
     })
     .await;
     let (mut seen, mut got) = (HashMap::new(), HashSet::new());
-    if resumed {
+    if resumed || resume_checkpoint {
         // 接回去：已經抓過的版本不要再抓一次
         got.extend(p["run"]["epochs"].as_array().into_iter().flatten().filter_map(|e| e["src"].as_str()).map(str::to_string));
     }
@@ -468,6 +657,10 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
             () = tokio::time::sleep(Duration::from_secs(3)) => {}
             () = cancel.cancelled() => {
                 let _ = conn.post("/stop", &json!({})).await;
+                if kohaku {
+                    let st = conn.status().await?;
+                    collect(app,id,conn,&st,fam,&p,&mut seen,&mut got,true).await?;
+                }
                 return Ok("stopped");
             }
         }
@@ -486,18 +679,30 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
         };
         let state = st["state"].as_str().unwrap_or("");
         let finished = matches!(state, "done" | "error" | "stopped");
-        let changed = collect(app, id, conn, &st, fam, &name, &mut seen, &mut got, finished).await?;
+        let changed = collect(app, id, conn, &st, fam, &p, &mut seen, &mut got, finished).await?;
         let step = st["step"].as_u64().unwrap_or(0);
-        if changed || step != last_step || finished {
+        let mut progress = json!({"step": step, "total": st["total"], "loss": st["loss"], "log": st["log"], "new": changed});
+        if kohaku {
+            for key in ["engine", "phase", "phase_index", "sec_per_step", "vram"] {
+                progress[key] = st[key].clone();
+            }
+            progress["target"] = json!("local");
+        }
+        if kohaku || changed || step != last_step || finished {
             last_step = step;
             set_run(app, id, |r| {
                 r.insert("step".into(), json!(step));
                 r.insert("total".into(), st["total"].clone());
                 r.insert("loss".into(), st["loss"].clone());
+                if kohaku {
+                    for key in ["phase", "phase_index", "sec_per_step", "vram", "log"] {
+                        r.insert(key.into(), st[key].clone());
+                    }
+                }
             })
             .await;
         }
-        emit(app, id, "train", "running", json!({"step": step, "total": st["total"], "loss": st["loss"], "log": st["log"], "new": changed}));
+        emit(app, id, "train", "running", progress);
         match state {
             "done" => return Ok("done"),
             "stopped" => return Ok("stopped"),
@@ -514,7 +719,25 @@ async fn finish(app: &Shared, id: &str, r: Result<&'static str, String>) {
         Ok(s) => (s, String::new()),
         Err(e) => ("error", e),
     };
+    if let Ok(p) = load(app, id) {
+        let run = &p["run"];
+        if run["engine"] == "kohakumoss" && state == "done" {
+            if let Some(speed) = run["sec_per_step"].as_f64().filter(|v| *v > 0.0) {
+                let path = train_kohaku::kohaku_dir(app).join("speed.json");
+                let (gpu, gb) = blocking(kohaku_gpu).await;
+                let layer = p["kohaku_params"]["vram"].as_str().filter(|v| *v != "auto").unwrap_or_else(|| train::kohaku_vram_layer(gb));
+                let mut speeds = std::fs::read(&path).ok().and_then(|b| serde_json::from_slice::<Map<String, Value>>(&b).ok()).unwrap_or_default();
+                speeds.insert(format!("{gpu}|{layer}"), json!(speed));
+                if let Err(e) = crate::director::write_atomic(&path, &json!(speeds)) {
+                    emit(app, id, "train", "running", json!({"msg":format!("無法記住這次的速度：{e}")}));
+                }
+            }
+        }
+    }
     set_run(app, id, |run| {
+        if state == "error" && run.get("engine").is_some_and(|v| v == "kohakumoss") {
+            run.insert("error_kind".into(), json!(classify_error(&error)));
+        }
         run.insert("state".into(), json!(state));
         run.insert("error".into(), json!(error));
         run.insert("ended".into(), json!(chrono::Utc::now().timestamp()));
@@ -534,9 +757,43 @@ fn checkpoint_path(app: &Shared, name: &str) -> Option<PathBuf> {
     app.paths.unet_roots().into_iter().map(|r| r.join(name)).find(|p| p.is_file())
 }
 
-async fn local_run(app: &Shared, id: &str, model: String, cancel: &CancellationToken) -> Result<&'static str, String> {
-    let kit = toolkit_dir(app);
-    let vpy = venv_python(&kit).ok_or("訓練器還沒裝好")?;
+async fn wait_queue(app: &Shared, id: &str, cancel: &CancellationToken) -> bool {
+    loop {
+        let queue = tokio::select! {
+            biased;
+            () = cancel.cancelled() => return false,
+            result = app.comfy.get("/queue") => match result { Ok(q) => q, Err(_) => return true },
+        };
+        let n: usize = ["queue_running", "queue_pending"].iter().filter_map(|key| queue[key].as_array()).map(Vec::len).sum();
+        if n == 0 {
+            return true;
+        }
+        let msg = format!("等 ComfyUI 畫完（還有 {n} 張）…");
+        set_run(app, id, |r| {
+            r.insert("state".into(), json!("waiting"));
+            r.insert("queue".into(), json!(n));
+        })
+        .await;
+        emit(app, id, "train", "waiting", json!({"queue":n,"msg":msg,"target":"local"}));
+        tokio::select! {
+            () = cancel.cancelled() => return false,
+            () = tokio::time::sleep(Duration::from_secs(3)) => {}
+        }
+    }
+}
+
+async fn local_run(app: &Shared, id: &str, model: String, kohaku: bool, wait: bool, cancel: &CancellationToken) -> Result<&'static str, String> {
+    let (kit, vpy) = if kohaku {
+        if wait && !wait_queue(app, id, cancel).await {
+            return Ok("stopped");
+        }
+        let kogine = train_kohaku::kohaku_kogine(app).ok_or("找不到 KohakuMoss 引擎")?;
+        (train_kohaku::kohaku_dir(app).join("repo"), kogine.with_file_name("python.exe"))
+    } else {
+        let kit = toolkit_dir(app);
+        let vpy = venv_python(&kit).ok_or("訓練器還沒裝好")?;
+        (kit, vpy)
+    };
     // 把顯存讓出來：ComfyUI 卸模型、語言模型關掉
     let _ = app.comfy.post("/free", &json!({"unload_models": true, "free_memory": true})).await;
     let _ = app.pe.stop("訓練 LoRA 要用顯存").await;
@@ -557,7 +814,12 @@ async fn local_run(app: &Shared, id: &str, model: String, cancel: &CancellationT
     quiet(&mut cmd);
     let mut child = cmd.spawn().map_err(|e| format!("訓練小幫手開不起來：{e}"))?;
     let mut lines = BufReader::new(child.stdout.take().ok_or("拿不到小幫手的輸出")?).lines();
-    let first = tokio::time::timeout(Duration::from_secs(30), lines.next_line()).await.map_err(|_| "訓練小幫手 30 秒沒有回應".to_string())?.ok().flatten().unwrap_or_default();
+    let first = tokio::time::timeout(Duration::from_secs(30), lines.next_line())
+        .await
+        .map_err(|_| "訓練小幫手 30 秒沒有回應".to_string())?
+        .ok()
+        .flatten()
+        .unwrap_or_default();
     let port = first.split("port=").nth(1).and_then(|p| p.trim().parse::<u16>().ok()).ok_or_else(|| format!("訓練小幫手沒有報 port：{first}"))?;
     let conn = Conn::new(&format!("http://127.0.0.1:{port}"), &token, true)?;
     let r = drive(app, id, &conn, cancel, &model, vram_gb()).await;
@@ -805,7 +1067,7 @@ async fn civ_run(app: &Shared, id: &str, max_cost: f64, cancel: &CancellationTok
             if have.contains(&n) || ep["model"]["available"].as_bool() != Some(true) {
                 continue;
             }
-            let rel = lora_rel(fam, &name, n as u32);
+            let rel = protect_adopted(app, id, &p, lora_rel(fam, &name, n as u32));
             let dest = app.paths.loras.join(&rel);
             let http = reqwest::Client::builder().proxy(crate::net::proxy()).build().map_err(|e| e.to_string())?;
             let bytes = http.get(url).header("User-Agent", "paintdeck").timeout(Duration::from_secs(1800)).send().await.and_then(reqwest::Response::error_for_status).map_err(|e| format!("下載第 {n} 版失敗：{}", e.without_url()))?.bytes().await.map_err(|e| e.without_url().to_string())?;
@@ -904,7 +1166,8 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
     }
     ready(&app, &p)?;
     // 參數還沒存過就用自動算的
-    if !p["params"].is_object() || !p["samples"].as_array().is_some_and(|s| !s.is_empty()) {
+    let kohaku = target == "local" && engine_of(&p) == "kohakumoss";
+    if !kohaku && (!p["params"].is_object() || !p["samples"].as_array().is_some_and(|s| !s.is_empty())) {
         update(&app, &id, |p| {
             let kind = p["kind"].as_str().unwrap_or("style").to_string();
             if !p["params"].is_object() {
@@ -918,20 +1181,42 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
         .await?;
     }
     let mut model = fam.base_hint.to_string();
+    let files = TRAINER_FILES.write().await;
     match target.as_str() {
         "local" => {
-            if !installed(&app) {
+            if kohaku {
+                let app = app.clone();
+                let base = p["kohaku_params"]["base"].as_str().unwrap_or(train::HEAL_FILE).to_owned();
+                let checks = blocking(move || {
+                    let free = crate::maint::disk_usage(&app.paths.data).map(|(free, _)| free);
+                    train_kohaku::checklist(&app, &base, &crate::gpu::detect(false).0, train_kohaku::buildtools_installed(), free)
+                })
+                .await;
+                if checks["ok_to_start"] != true {
+                    let bad_rows = checks["rows"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|r| r["state"] == "bad")
+                        .filter_map(|r| r["text"].as_str())
+                        .collect::<Vec<_>>()
+                        .join("；");
+                    return Err(bad(bad_rows));
+                }
+            } else if !installed(&app) {
                 return Err(bad("本機訓練器還沒裝：先按「安裝訓練器」"));
             }
             if let Some(other) = training_id().filter(|o| o != &id) {
                 return Err(bad(format!("已經有另一個專案在訓練（{other}），本機一次只能煉一顆")));
             }
-            let vram = blocking(vram_gb).await;
-            if vram + 0.5 < fam.min_vram_gb && b["force"].as_bool() != Some(true) {
-                return Err(bad(format!("這台的顯存 {vram:.0}GB 不夠煉 {}（至少要 {:.0}GB）：改用雲端顯卡或 C 站", fam.label, fam.min_vram_gb)));
-            }
-            if let Some(m) = b["model"].as_str().filter(|m| !m.is_empty()) {
-                model = checkpoint_path(&app, m).ok_or_else(|| bad(format!("找不到底模 {m}")))?.to_string_lossy().into_owned();
+            if !kohaku {
+                let vram = blocking(vram_gb).await;
+                if vram + 0.5 < fam.min_vram_gb && b["force"].as_bool() != Some(true) {
+                    return Err(bad(format!("這台的顯存 {vram:.0}GB 不夠煉 {}（至少要 {:.0}GB）：改用雲端顯卡或 C 站", fam.label, fam.min_vram_gb)));
+                }
+                if let Some(m) = b["model"].as_str().filter(|m| !m.is_empty()) {
+                    model = checkpoint_path(&app, m).ok_or_else(|| bad(format!("找不到底模 {m}")))?.to_string_lossy().into_owned();
+                }
             }
         }
         "remote" => {
@@ -950,17 +1235,47 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
             }
         }
         _ => {
+            drop(files);
             return super::train_ms::start(&app, &id, &p).await;
         }
     }
     let cancel = job_begin(&id, "train")?;
-    let t2 = target.clone();
-    let keep_remote = p["run"]["target"].as_str() == Some(target.as_str());
-    set_run(&app, &id, |r| {
+    drop(files);
+    let updated = update(&app, &id, |p| {
+        let keep_remote = p["run"]["target"].as_str() == Some(target.as_str()) && p["run"]["engine"] != "kohakumoss";
+        let previous = p["run"]["run_no"].as_u64().unwrap_or(0) as u32;
+        let resume = kohaku
+            && b["resume"] == true
+            && p["run"]["engine"] == "kohakumoss"
+            && previous > 0
+            && find_resume(&trainer_dir(&app).join("work/out").join(format!("{id}_r{previous}")).join("checkpoints")).is_some();
+        let mut number = previous;
+        if !resume && (kohaku || p["run"]["engine"] == "kohakumoss") {
+            let (next, history) = plan_fresh_run(p);
+            number = next;
+            p["runs_history"] = history;
+        }
+        if kohaku {
+            let mut defaults = kohaku_defaults(p, p["level"].as_str().unwrap_or("std"));
+            if let Some(saved) = p["kohaku_params"].as_object() {
+                defaults.as_object_mut().unwrap().extend(saved.clone());
+            }
+            p["kohaku_params"] = defaults;
+        }
+        if !p["run"].is_object() {
+            p["run"] = json!({});
+        }
+        let r = p["run"].as_object_mut().unwrap();
         let remote = r.get("remote").cloned().filter(|_| keep_remote);
-        let (epochs, samples) = (r.get("epochs").cloned().filter(|_| keep_remote), r.get("samples").cloned().filter(|_| keep_remote));
+        let (epochs, samples) =
+            (r.get("epochs").cloned().filter(|_| resume || (!kohaku && keep_remote)), r.get("samples").cloned().filter(|_| resume || (!kohaku && keep_remote)));
         r.clear();
-        r.insert("target".into(), json!(t2));
+        if kohaku {
+            r.insert("engine".into(), json!("kohakumoss"));
+            r.insert("run_no".into(), json!(number));
+            r.insert("resume".into(), json!(resume));
+        }
+        r.insert("target".into(), json!(target));
         r.insert("state".into(), json!("starting"));
         r.insert("started".into(), json!(chrono::Utc::now().timestamp()));
         for (k, v) in [("remote", remote), ("epochs", epochs), ("samples", samples)] {
@@ -968,14 +1283,19 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
                 r.insert(k.into(), v);
             }
         }
+        Ok(())
     })
     .await;
-    emit(&app, &id, "train", "running", json!({"msg": "準備中…"}));
+    if let Err(e) = updated {
+        job_end(&id);
+        return Err(e);
+    }
+    emit(&app, &id, "train", "running", json!({"msg": "準備中…","target":target}));
     let (app2, id2) = (app.clone(), id.clone());
     tokio::spawn(async move {
         let (app, id) = (app2, id2);
         let r = match target.as_str() {
-            "local" => local_run(&app, &id, model, &cancel).await,
+            "local" => local_run(&app, &id, model, kohaku, b["wait_queue"].as_bool().unwrap_or(true), &cancel).await,
             "remote" => match Conn::new(&tx(&b["url"]), &tx(&b["token"]), false) {
                 Ok(conn) => drive(&app, &id, &conn, &cancel, &model, b["vram_gb"].as_f64().unwrap_or(24.0)).await,
                 Err(e) => Err(e),
@@ -1016,7 +1336,8 @@ pub async fn compare(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Bo
     if epochs.is_empty() || strengths.is_empty() {
         return Err(bad("還沒有煉好的版本可以比"));
     }
-    if epochs.len() * strengths.len() > 60 {
+    let baseline = b["baseline"].as_bool().unwrap_or(true);
+    if epochs.len() * strengths.len() + usize::from(baseline) > 60 {
         return Err(bad("格子太多（超過 60 張），少選幾版或幾個強度"));
     }
     // 家族對不上的 LoRA 會被生圖流程默默略過：先擋，並替還沒登記的檔補上底模（檔頭認不出來時靠它）
@@ -1040,11 +1361,16 @@ pub async fn compare(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Bo
     }
     let seed = base.get("seed").and_then(crate::py::int).filter(|s| *s >= 0).unwrap_or(20_261_110);
     let mut cells = Vec::new();
-    for (n, strength, seed) in train::compare_jobs(&epochs, &strengths, seed) {
-        let Some(file) = epoch_file(&p, u64::from(n)) else { continue };
+    for (n, strength, seed) in train::compare_jobs(&epochs, &strengths, seed, baseline) {
+        let loras = if n == 0 {
+            json!([])
+        } else {
+            let Some(file) = epoch_file(&p, u64::from(n)) else { continue };
+            json!([{"name":file, "strength":strength, "enabled":true}])
+        };
         let mut q = base.clone();
         q.insert("seed".into(), json!(seed));
-        q.insert("loras".into(), json!([{"name": file, "strength": strength, "enabled": true}]));
+        q.insert("loras".into(), loras);
         let jobs = super::api_gen::submit_jobs(&app, q, 1).await?;
         cells.push(json!({"epoch": n, "strength": strength, "seed": seed, "job": jobs.first().map(|j| j["job"].clone())}));
     }
@@ -1077,6 +1403,59 @@ pub async fn adopt(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn fresh_run_never_touches_adopted() {
+        let p = json!({"run":{"run_no":1,"epochs":[{"n":2}],"ended":123},"adopted":{"file":r"moss\xk\xk_e2.safetensors"}});
+        let (n, history) = plan_fresh_run(&p);
+        assert_eq!(n, 2);
+        assert_eq!(history, json!([{"run_no":1,"epochs":[{"n":2}],"ended":123}]));
+        let path = lora_rel(train::fam("moss").unwrap(), &train::run_lora_name("xk", n), 1);
+        assert_eq!(path, r"moss\xk_r2\xk_r2_e1.safetensors");
+        assert_ne!(p["adopted"]["file"], path);
+    }
+
+    #[test]
+    fn resume_without_checkpoint_starts_fresh() {
+        let dir = std::env::temp_dir().join(train::new_id());
+        std::fs::create_dir(&dir).unwrap();
+        assert_eq!(find_resume(&dir), None);
+        for name in ["step_00000400", "step_00000200"] {
+            let checkpoint = dir.join(name);
+            std::fs::create_dir(&checkpoint).unwrap();
+            for file in ["state.json", "trainable.safetensors"] {
+                std::fs::write(checkpoint.join(file), b"").unwrap();
+            }
+        }
+        std::fs::create_dir(dir.join("step_00000800")).unwrap();
+        assert_eq!(find_resume(&dir), Some(dir.join("step_00000400")));
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn classify_error_kinds() {
+        for (msg, kind) in [("CUDA out of memory","oom"), ("OutOfMemoryError","oom"),
+            ("No such file: x.safetensors","missing_model"), ("torch.cuda.is_available","driver"),
+            ("no CUDA GPUs","driver"), ("No space left","disk"), ("磁碟空間不足","disk"), ("unknown","other")] {
+            assert_eq!(classify_error(msg), kind);
+        }
+    }
+
+    fn export(run: &str, step: u32) -> String {
+        format!("{run}/checkpoints/step_{step:08}/export/x-comfy.safetensors")
+    }
+
+    #[test]
+    fn kohaku_collect_maps_step_to_version() {
+        let files = vec![export("a_r1",400), export("a_r1",200)];
+        assert_eq!(kohaku_versions(&files,"a_r1"), vec![(1,200,files[1].clone()), (2,400,files[0].clone())]);
+    }
+
+    #[test]
+    fn kohaku_collect_ignores_other_runs() {
+        let files = vec![export("a_r10",200), export("a_r1",400), export("b_r1",200)];
+        assert_eq!(kohaku_versions(&files,"a_r1"), vec![(1,400,files[1].clone())]);
+    }
 
     #[test]
     fn lora_paths_follow_family_folder() {

@@ -3,6 +3,7 @@ import { $, el, api, toast, openModal, closeModal, debounce, store, pickFile, ma
 import { app } from "./state.js";
 
 let list = [], pickCb = null, pickFam = null, pickAll = false, shown = 0, pickShown = 0, pickOpts = {};
+const pickSel = new Set();   // 多選時勾了哪些（l.name）
 // 卡片／列表兩種排法（2026-11-17 網友：「或者是列表化选择」）：LoRA 庫和挑選視窗各記各的
 const view = { page: store.get("lora_view", "grid"), pick: store.get("lora_pick_view", "grid") };
 const PAGE = 60;
@@ -17,6 +18,12 @@ export function init() {
   $("#lpQ").oninput = debounce(() => { pickShown = 0; renderPicker(); }, 150);
   $("#loraRefresh").onclick = async () => { await app.refreshState(); toast("已重新整理", "ok"); };
   $("#loraView").onclick = () => { view.page = view.page === "list" ? "grid" : "list"; store.set("lora_view", view.page); renderPage(true); };
+  $("#lpAdd").onclick = () => {
+    const trig = !pickOpts.noTrig && $("#lpTrig").checked, cb = pickCb;
+    const chosen = list.filter((x) => pickSel.has(x.name));
+    closeModal("#loraPicker");
+    for (const l of chosen) cb(l, trig);
+  };
   $("#lpView").onclick = () => { view.pick = view.pick === "list" ? "grid" : "list"; store.set("lora_pick_view", view.pick); pickShown = 0; renderPicker(); };
   initPreviewDialog();
 }
@@ -36,9 +43,18 @@ export function onState(st) {
 export function showPage() { fillFilters(); renderPage(true); }
 
 const title = (l) => l.title || l.name.replace(/\.safetensors$/, "");
+
+/** 卡匣上要顯示的名字：有自訂名稱用名稱，檔名不一樣才另外列出來（固定舞台 A 案：長名字換行、不切掉） */
+export function loraNames(t, file) {
+  const bare = String(file || "").replace(/\.safetensors$/, "");
+  const name = t || bare;
+  return { name, file: name === bare ? null : file };
+}
+/** 多選挑選視窗的加入鍵 */
+export function pickAddLabel(n) { return `加入 ${n} 個`; }
 const famName = (l) => app.state?.models?.family_names?.[l.family] || "";
 // 卡片的底模小標和「模型」篩選：照站上判斷的家族分組，名稱用 Civitai 的寫法（2026-10-28 使用者：同一個底模出現「Anima」「Anima（動漫）」、「MOSS」「MOSS Image」兩個選項）
-const FAM_LABEL = { anima: "Anima", moss: "MOSS Image", qwen21: "Qwen 2.1", sdxl: "SDXL", sd15: "SD1.5", flux: "Flux", sd3: "SD3" };
+const FAM_LABEL = { anima: "Anima", moss: "MOSS Image", qwen21: "Qwen 2.1", sdxl: "SDXL", sd15: "SD1.5", flux: "Flux", sd3: "SD3", mmimage: "MiniMax H3 Image" };
 const tagsOf = (l) => Array.isArray(l.tags) ? l.tags.filter((x) => typeof x === "string" && x.trim()) : [];
 const categoryOf = (l) => {
   if (l.category) return l.category;
@@ -145,8 +161,8 @@ function renderPage(reset = true) {
   shown = end;
   $("#loraMore").hidden = shown >= items.length;
   $("#loraTotal").textContent = `${items.length} / ${list.length} 個`;
-  if (!list.length) g.append(el("div", { class: "muted pad" }, "還沒有 LoRA。到「Civitai」分頁搜尋下載。"));
-  else if (!items.length) g.append(el("div", { class: "muted pad" }, "沒有符合條件的 LoRA。"));
+  if (!list.length) g.append(el("div", { class: "empty-span muted pad" }, "還沒有 LoRA。到「Civitai」分頁搜尋下載。"));
+  else if (!items.length) g.append(el("div", { class: "empty-span muted pad" }, "沒有符合條件的 LoRA。"));
 }
 
 // 預覽圖可以直接拖一張圖上去換掉
@@ -342,12 +358,21 @@ export function openPicker(cb, fam, opts = {}) {
   pickOpts = opts;
   pickAll = false;
   pickShown = 0;
+  pickSel.clear();
+  $("#lpFoot").hidden = !opts.multi;
+  paintPickFoot();
   $("#lpQ").value = "";
   $("#lpTitle").textContent = opts.title || "選擇 LoRA 卡匣";
   $("#lpTrig").closest("label").hidden = !!opts.noTrig;
   renderPicker();
   openModal("#loraPicker");
   setTimeout(() => $("#lpQ").focus(), 50);
+}
+
+function paintPickFoot() {
+  $("#lpCount").textContent = pickSel.size ? `勾了 ${pickSel.size} 個` : "點卡片勾選，可以一次勾好幾個";
+  $("#lpAdd").textContent = pickAddLabel(pickSel.size);
+  $("#lpAdd").disabled = !pickSel.size;
 }
 
 function renderPicker() {
@@ -358,24 +383,38 @@ function renderPicker() {
   const asList = view.pick === "list";
   const fits = (x) => !pickFam || (typeof pickFam === "function" ? pickFam(x) : (x.family || "anima") === pickFam);
   const usable = pickAll ? list : list.filter(fits);
-  if (!usable.length) g.append(el("div", { class: "muted pad" }, "還沒有這個模型能用的 LoRA。到「Civitai」分頁搜尋下載（記得選對基底模型）。"));
+  if (!usable.length) g.append(el("div", { class: "empty-span muted pad" }, "還沒有這個模型能用的 LoRA。到「Civitai」分頁搜尋下載（記得選對基底模型）。"));
   const matches = usable.filter((x) => match(x, q));
   askCovers(matches.slice(0, pickShown + 80));
   for (const l of matches.slice(0, pickShown + 80)) {
-    const pick = () => { closeModal("#loraPicker"); pickCb(l, !pickOpts.noTrig && $("#lpTrig").checked); };
+    const had = !!pickOpts.multi && !!pickOpts.have?.has(l.name);
+    // 多選：點卡片是勾／取消勾，視窗不關（已經在清單裡的灰掉、不能勾）；單選：點了就選、就關
+    const pick = pickOpts.multi
+      ? (e) => {
+        if (had) return;
+        pickSel.has(l.name) ? pickSel.delete(l.name) : pickSel.add(l.name);
+        const card = e.currentTarget;
+        card.classList.toggle("picked", pickSel.has(l.name));
+        card.querySelector(".lp-ck").checked = pickSel.has(l.name);
+        paintPickFoot();
+      }
+      : () => { closeModal("#loraPicker"); pickCb(l, !pickOpts.noTrig && $("#lpTrig").checked); };
+    const ck = pickOpts.multi ? el("input", { type: "checkbox", class: "lp-ck", tabindex: "-1", "aria-hidden": "true", checked: had || pickSel.has(l.name), disabled: had }) : null;
+    const hadTag = had ? el("span", { class: "badge lp-had" }, "已加入") : null;
+    const cls = (base) => base + (had ? " had" : "") + (pickSel.has(l.name) ? " picked" : "");
     if (asList) {
       // 列表：一行一個，小縮圖＋名稱＋家族＋觸發詞，按整行就選
-      g.append(el("div", { class: "card pick lrow", onclick: pick },
-        ph(l),
+      g.append(el("div", { class: cls("card pick lrow"), onclick: pick },
+        ck, ph(l),
         el("div", { class: "bd" },
-          el("div", { class: "t" }, (l.fav ? "★ " : "") + title(l), modelLabel(l) ? el("span", { class: "badge fam" }, modelLabel(l)) : null),
+          el("div", { class: "t" }, (l.fav ? "★ " : "") + title(l), modelLabel(l) ? el("span", { class: "badge fam" }, modelLabel(l)) : null, hadTag),
           l.triggers?.length ? el("div", { class: "trig", title: l.triggers.join(", ") }, l.triggers.slice(0, 6).join(", ")) : null,
           l.note ? el("div", { class: "st", title: l.note }, l.note) : null)));
       continue;
     }
-    g.append(el("div", { class: "card pick", onclick: pick },
-      ph(l, { style: "aspect-ratio:1" }),
-      el("div", { class: "bd" }, el("div", { class: "t" }, title(l)), l.triggers?.length ? el("div", { class: "trig" }, l.triggers.slice(0, 4).join(", ")) : null,
+    g.append(el("div", { class: cls("card pick"), onclick: pick },
+      ck, ph(l, { style: "aspect-ratio:1" }),
+      el("div", { class: "bd" }, el("div", { class: "t" }, title(l), hadTag), l.triggers?.length ? el("div", { class: "trig" }, l.triggers.slice(0, 4).join(", ")) : null,
         l.note ? el("div", { class: "pick-note", title: l.note }, l.note) : null)));
   }
   pickShown = Math.min(matches.length, pickShown + 80);

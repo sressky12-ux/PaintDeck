@@ -1,0 +1,1 @@
+抓取日期 2026-11-22（posewear.pages.dev 上線版，用來測 front_assets／front_patch）

@@ -94,7 +94,16 @@ function tabBtn(name, on, onclick, title) {
  * 掛一份詞庫。box：放面板的空 div；btn：開關鈕（抽屜才有）；main：大框；watch：要追蹤焦點的容器（分段小框、負面框所在的區塊）；
  * prefix：localStorage 鍵的開頭
  */
-export function create({ box, btn = null, main, watch = [], prefix = "taglib" }) {
+/**
+ * 詞庫浮層的位置（固定舞台 A 案：按「詞」從提示詞卡上緣往上彈出，卡片不變高）。
+ * anchor 是提示詞卡在畫面上的方框；回傳 fixed 定位用的 left、width、bottom（離視窗底多遠）、max-height。
+ * 卡片太靠上時高度至少 160，寧可蓋到上面的東西也要看得到詞。
+ */
+export function sheetRect(anchor, viewH, minTop = 56) {
+  return { left: anchor.left, width: anchor.width, bottom: viewH - anchor.top + 6, maxHeight: Math.max(160, anchor.top - 6 - minTop) };
+}
+
+export function create({ box, btn = null, main, watch = [], prefix = "taglib", sheet = null }) {
   let src = SOURCES.some(([k]) => k === store.get(prefix + "_src", "danbooru")) ? store.get(prefix + "_src", "danbooru") : "danbooru";
   const pos = { g: store.get(prefix + "_g", 0), s: store.get(prefix + "_s", 0) };
   const sources = [main.parentElement, ...watch];
@@ -113,7 +122,7 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib" })
     return null;
   }
 
-  const shown = () => ui && !ui.box.hidden && ui.box.offsetParent !== null;
+  const shown = () => ui && !ui.box.hidden && (sheet ? true : ui.box.offsetParent !== null);   // fixed 定位的浮層 offsetParent 是 null
 
   function toggle(text) {
     const ta = target();
@@ -202,9 +211,33 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib" })
     render();
   }
 
+  // 浮層模式：開著的時候跟著提示詞卡移動；點詞庫和提示詞卡以外的地方、或按 Esc 就收起來
+  let sheetEvents = null;
+  function placeSheet() {
+    const r = sheetRect(sheet.anchor.getBoundingClientRect(), innerHeight);
+    Object.assign(ui.box.style, { left: r.left + "px", width: r.width + "px", bottom: r.bottom + "px", maxHeight: r.maxHeight + "px" });
+  }
+  function watchSheet(on) {
+    sheetEvents?.abort();
+    sheetEvents = null;
+    if (!on) return;
+    sheetEvents = new AbortController();
+    const signal = sheetEvents.signal;
+    placeSheet();
+    addEventListener("resize", placeSheet, { signal });
+    addEventListener("scroll", placeSheet, { signal, capture: true });
+    document.addEventListener("pointerdown", (e) => {
+      if (!ui.box.contains(e.target) && !btn?.contains(e.target) && !sheet.anchor.contains(e.target)) open(false);
+    }, { signal, capture: true });
+    addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && !document.querySelector(".modal:not([hidden])")) { e.preventDefault(); open(false); }
+    }, { signal, capture: true });
+  }
+
   async function open(force) {
     const on = force ?? ui.box.hidden;
     ui.box.hidden = !on;
+    if (sheet) watchSheet(on);
     if (btn) {
       btn.classList.toggle("on", on);
       btn.setAttribute("aria-pressed", String(on));
@@ -232,9 +265,13 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib" })
     el("div", { class: "muted sm tl-src" }, "詞庫來源：Danbooru tag group（danbooru.donmai.us 的 wiki）、WeiLin-Comfyui-Tools-Prompt（MIT）"),
   );
   ui = { box, q, srcSel, groups, subs, list, info };
+  if (sheet) {
+    box.classList.add("tl-sheet");
+    (document.getElementById("capLayer") || document.body).append(box);
+  }
   if (btn) {
     btn.onclick = () => open();
-    if (store.get(prefix + "_open", false)) open(true);
+    if (!sheet && store.get(prefix + "_open", false)) open(true);   // 浮層模式啟動時一律收著
   }
   return { open, refresh: paintOn };
 }

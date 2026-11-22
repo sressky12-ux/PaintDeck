@@ -650,6 +650,48 @@
     "note": "H3 動作控制（深度、骨架、線稿照著拍；預演台送 H3 也用這個）"
   },
   {
+    "path": "diffusion_models/minimax_h3_image_pruned_w4a8.safetensors",
+    "size": 12549794530,
+    "sha256": "517cc19b85348386f4df7c806dce80d839d0899e7cdaa3e1dbb09de964381dbb",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/diffusion_models/minimax_h3_image_pruned_w4a8.safetensors",
+    "note": "MiniMax H3 Image 主模型 w4a8（8GB 顯卡建議用這個；Comfy-Org/MiniMax-H3-Image，MiniMax H3 Image Community License）"
+  },
+  {
+    "path": "vae/minimax_h3_image_vae_fp16.safetensors",
+    "size": 1168505312,
+    "sha256": "d80e9c2e5cfc9844869961ff5a58c9a9e52182df6bfb30b26018dd7f348721af",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/vae/minimax_h3_image_vae_fp16.safetensors",
+    "note": "MiniMax H3 Image 的 VAE（MiniMax H3 Image Community License）"
+  },
+  {
+    "path": "diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+    "size": 20979314802,
+    "sha256": "83eb140f1ff95c068f8a6886e6d3f3d0d4ab2e07bb2fe6d2ef992a51146ee622",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/diffusion_models/minimax_h3_image_pruned_int8_convrot.safetensors",
+    "note": "MiniMax H3 Image 主模型 int8（高精度選配；MiniMax H3 Image Community License）"
+  },
+  {
+    "path": "diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
+    "size": 40234657162,
+    "sha256": "a767f5325db019588b3491a93d80288d336c826a7aeb87bec67675e554367222",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/diffusion_models/minimax_h3_image_pruned_bf16.safetensors",
+    "note": "MiniMax H3 Image 主模型 bf16（原始精度，要大顯卡；MiniMax H3 Image Community License）"
+  },
+  {
+    "path": "text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+    "size": 27141342152,
+    "sha256": "bc2ced0fbea64757fa9acddccfc0b3f4819d1dcf1da6c124d690d368be283923",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/text_encoders/qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+    "note": "MiniMax H3 Image 文字編碼器 int8（高精度選配；MiniMax H3 Image Community License）"
+  },
+  {
+    "path": "text_encoders/qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq.safetensors",
+    "size": 17286101484,
+    "sha256": "296e29695661323009f220a52eef0f58e981400b4c324fc8e8a19f46cdbf0fac",
+    "url": "https://huggingface.co/Comfy-Org/MiniMax-H3-Image/resolve/89c635085f539d03ad35485ed542c5a286e3c6d6/text_encoders/qwen3.8_27b_minimax_h3_image_pe_w4a8_gptq.safetensors",
+    "note": "MiniMax H3 Image 官方 27B 提示詞擴寫器（高精度選配；MiniMax H3 Image Community License）"
+  },
+  {
     "path": "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors",
     "size": 1132530600,
     "sha256": "01329abd340dd9cf55677381a11558fe5307c7fd648f1988b441172fbbd86fd5",

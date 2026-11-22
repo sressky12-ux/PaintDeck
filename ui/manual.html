@@ -76,7 +76,7 @@ h1 em { font-style: normal; color: var(--acc); }
   font: 20px/1 var(--f-vfd); box-shadow: 0 0 0 4px var(--bezel), inset 0 2px 5px rgba(0,0,0,.7); }
 .vfdline .a { color: var(--ph-amber); }
 
-/* ---------- 目錄：像左邊那排功能鍵 ---------- */
+/* ---------- 目錄：章節按鍵 ---------- */
 .toc { display: flex; gap: 10px; flex-wrap: wrap; margin: 26px 0 8px; padding: 12px; border-radius: 10px; background: var(--case-2); box-shadow: inset 0 2px 3px var(--groove), inset 0 -1px 0 var(--case-hi); }
 .toc a { position: relative; flex: 1 1 108px; text-decoration: none; color: var(--label); background: var(--key); border-radius: 6px; padding: 16px 8px 8px; text-align: center;
   font: 700 13px/1.2 var(--f-ui); box-shadow: 0 5px 0 var(--key-side), 0 6px 8px rgba(0,0,0,.22), inset 0 1px 0 rgba(255,255,255,.5); transition: transform .12s, box-shadow .12s; }
@@ -326,6 +326,17 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
   .ch .stage-w { order: 0; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } html { scroll-behavior: auto; } }
+.m-stage { top: 28px; bottom: 0; grid-template: "nav nav" 24px "mode tasks" 20px "view tasks" minmax(0,1fr) "card tasks" auto / 1fr 86px; }
+.m-stage > .m-rail { grid-area: nav; flex-direction: row; padding: 2px; }
+.m-stage > .m-rail span { height: auto; line-height: 16px; padding: 0 8px; }
+.m-stage > .m-piano { grid-area: mode; grid-template-columns: repeat(7,1fr); }
+.m-stage > .m-ctrl { grid-area: card; }
+.m-stage .m-chips { align-items: center; }
+.m-stage .m-big { margin-left: auto; padding: 4px 12px; }
+.m-stage > .m-view { grid-area: view; min-height: 0; }
+.m-stage .m-acts { position: absolute; bottom: 5px; justify-self: center; }
+.m-stage > .m-mag { grid-area: tasks; }
+.m-stage + .m-status { top: 4px; left: auto; bottom: auto; width: 250px; }
 </style>
 </head>
 <body>
@@ -392,7 +403,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       </table></div>
       <h3>步驟</h3>
       <ul class="tips">
-        <li>雙擊 <code>繪匣 PaintDeck_26.1121.1_x64-setup.exe</code>。安裝檔沒有付費簽章，Windows 可能跳出「Windows 已保護您的電腦」：按「其他資訊」→「仍要執行」。</li>
+        <li>雙擊 <code>繪匣 PaintDeck_26.1122.5_x64-setup.exe</code>。安裝檔沒有付費簽章，Windows 可能跳出「Windows 已保護您的電腦」：按「其他資訊」→「仍要執行」。</li>
         <li>從 Anima／PaintDeck 舊版接手：精靈會優先選原設定的資料與 ComfyUI。找到多份圖庫時請自行選擇，不會自動挑圖片最多的。資料資料夾不用改名，也不用搬模型。找不到原位置時，可按「自己指定舊資料」；選到內層 data 會自動辨識外層，原路徑失效或資料庫讀不到時不會新建空白圖庫取代它。</li>
         <li>開始前確認「本次使用的位置」。沿用資料時，模型頁預設不新增勾選下載，缺哪些功能再自行勾選。第一頁可展開「程式位置與舊版安裝紀錄」核對路徑；不要同時開新舊版，同資料夾的舊解除安裝項目先確認再處理，MCP 設定需重新複製。</li>
         <li>第一次打開會進安裝精靈，一共四步：<b>檢查電腦</b> → <b>資料與 ComfyUI 放哪裡</b> → <b>要下載哪些模型</b> → <b>安裝</b>。右上角可以切換繁體中文／简体中文／English。</li>
@@ -432,7 +443,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>點右上角自己的頭像 → 選單裡的齒輪 <b>Settings</b>（帳號設定頁，網址是 <code>civitai.com/user/account</code>）。</li>
         <li>往下捲到 <b>API Keys</b> 那一塊，按 <b>+ Add API key</b>，名字隨便取（例如 anima），按 <b>Save</b>。</li>
         <li>畫面會出現一長串金鑰，<b>只會顯示這一次</b>：按旁邊的複製鈕。不小心關掉了就刪掉重建一組。</li>
-        <li>回到生圖站：左邊「設定」→ 最上面的 <b>Civitai API key</b> 欄位貼上 → 按 <b>儲存</b>，下面會顯示已設定。</li>
+        <li>回到生圖站：頂列「全部功能」→「設定」→ 最上面的 <b>Civitai API key</b> 欄位貼上 → 按 <b>儲存</b>，下面會顯示已設定。</li>
       </ol>
       <p class="note"><b>金鑰只存在你這台電腦：</b>用 Windows 的加密存起來，匯出設定檔、恢復原廠都不會帶走它。別把金鑰貼給別人或貼到網路上；外洩了就到同一頁刪掉重建。</p>
       <h3>每一包裝了什麼</h3>
@@ -450,6 +461,8 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
           <tr><td>Anima 常用 LoRA</td><td>畫風、細節、光影、身材滑桿…（部分在 Civitai）</td><td>4.6GB</td><td>—</td></tr>
           <tr><td>Qwen 2.1 常用 LoRA</td><td>寫實風、加速、滑桿…（部分在 Civitai）</td><td>3.7GB</td><td>—</td></tr>
           <tr><td>H3 影片（本機，選配）</td><td>MiniMax H3＋10Eros-Max w4a8：在自己電腦做有聲影片（「動起來」、導演台、H3 影片台都用它）。要 32GB 記憶體以上，8GB 顯卡能跑</td><td>33GB</td><td>—</td></tr>
+          <tr><td>MiniMax H3 Image 圖片（選配）</td><td>MiniMax 的圖片模型（w4a8）：文生圖、最多 16 張參考圖改圖，4～20 百萬畫素。文字編碼器跟 H3 影片共用，裝過 H3 影片就少下載 15.7GB。要 32GB 記憶體以上，8GB 顯卡能跑</td><td>29GB</td><td>—</td></tr>
+          <tr><td>MiniMax H3 Image 高精度（選配）</td><td>大顯卡用的 int8／bf16 主模型、int8 文字編碼器、官方 27B 提示詞擴寫器。8GB 顯卡不用裝</td><td>106GB</td><td>—</td></tr>
           <tr><td>MOSS 省記憶體文字編碼器（選配）</td><td>Qwen3.5-4B＋轉接器：生成頁「MOSS 文字編碼器」切 4B，比 9B 省記憶體</td><td>4.8GB</td><td>—</td></tr>
           <tr><td>MOSS LoRA 合集（選配）</td><td>gordonz 整理的 MOSS LoRA 合集 80 顆：畫風、照片風、臉模、滑桿、加速、去色帶、動漫轉寫實，每顆都有中文備註。電腦裡已經有同一顆（大小和 SHA256 都一樣）就不重下</td><td>14GB</td><td>—</td></tr>
           <tr><td colspan="4">擴圖、變體、塗鴉畫布、X/Y 對照表、批次提示詞不用另外下載。「H3 影片」包很大，它和兩個 MOSS 選配包選「完整版」也不會自動勾，要在自己電腦做影片請自己勾；不想下載也可以在 H3 影片台開雲端做。</td></tr>
@@ -466,9 +479,11 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
     <div class="txt">
       <div class="ch-no">02</div>
       <h2>先認識這台機器</h2>
-      <p>畫面分成五塊。左邊一排是功能鍵：生成、圖庫、LoRA、下載、導演、漫畫、助手，下面是任務和設定。按鍵左上角的小數字就是快捷鍵：<kbd>Alt</kbd>＋那個數字直接跳過去。生成頁從左到右是控制台、觀景窗、幻燈片匣（視窗比較窄時，幻燈片匣改排在觀景窗下面），最下面那條綠字螢幕是狀態列。</p>
+      <p>頂列顯示釘選的頁面。「全部功能」裡有 14 顆功能鍵，對按鍵按右鍵可釘到頂列。<kbd>Alt</kbd>＋<kbd>1</kbd> 到 <kbd>9</kbd> 按編號切頁，<kbd>Alt</kbd>＋<kbd>0</kbd> 開設定。生成頁中央是觀景窗，下面的提示詞卡可以寫詞、調參數、生成。右邊任務抽屜顯示進度和最近的成品，頂列的「佇列」或 <kbd>Q</kbd> 可開完整任務面板。</p>
+      <p>其他頁也是同一套擺法：導演分鏡、拆幀台、漫畫、助手、訓練的「專案／作品／對話」收成頁首的一顆膠囊（例如「專案 第一部片 ▾」），點開才是清單和新增、改名、移到待刪除；「全部生成」「畫這一頁」「開始上色」這類主按鈕固定在右欄底部。助手頁的腦袋、生圖設定、雲端顯卡、LoRA 認識度收在輸入框下面的膠囊，右邊是每一輪的圖。整行的說明文字改成工具列尾端的 <b>ⓘ</b>，點開才看到。設定頁和 API 頁左邊多了段落目錄（設定頁分一般、連線、模型、AI、系統五組），點一下就跳過去。</p>
+      <p>點參數膠囊可打開設定，點外面就收回去。每頁的面板位置是固定的，拖不動；每一區、每一塊都能收起、展開（按區邊上的 « »、面板的標題列，或模式列右邊的「任務」鍵收起右邊的任務欄）。設定頁「版面 → 全部展開」可以一次打開。LoRA 卡匣每一顆是兩行：上面是完整名稱和檔名，下面是強度；按「＋插入」挑 LoRA 時可以一次勾好幾個，再按「加入 N 個」。</p>
       <ol class="steps" data-for="s-tour"></ol>
-      <p class="note"><b>右上角三個小東西：</b>「淺／自動／深」換外觀，喇叭開關按鍵音效，「?」打開快捷鍵說明，裡面也有這份手冊的連結。</p>
+      <p class="note"><b>右上角三個小東西：</b>按「外觀」選淺色、自動或深色，喇叭開關按鍵音效，「?」打開快捷鍵說明，裡面也有這份手冊的連結。</p>
     </div>
     <div class="stage-w" id="s-tour"></div>
   </section>
@@ -477,13 +492,14 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
     <div class="txt">
       <div class="ch-no">03</div>
       <h2>提示詞：看你用哪個模型</h2>
-      <p>生圖站有三家模型，寫法不一樣。控制台下面的「模型」選單換模型，步數、CFG 會自動換成那個模型的預設值。</p>
+      <p>生圖站有三家模型，寫法不一樣。點提示詞卡的 ENGINE 膠囊換模型，步數、CFG 會自動換成那個模型的預設值。</p>
       <div class="tbl-w"><table>
         <thead><tr><th>模型</th><th>擅長</th><th>提示詞</th></tr></thead>
         <tbody>
           <tr><td>Anima</td><td>動漫、插畫，速度最快</td><td>英文 tag，逗號隔開</td></tr>
           <tr><td>Qwen 2.1</td><td>寫實照片、改圖、多圖參考</td><td>完整的英文句子</td></tr>
           <tr><td>MOSS-Image</td><td>寫實、排版、在圖上寫字</td><td>完整的英文句子，字放在引號裡</td></tr>
+          <tr><td>MiniMax H3 Image</td><td>大尺寸（4～20 百萬畫素）、最多 16 張參考圖組圖</td><td>完整的英文句子，參考圖寫 <code>&lt;Picture 1&gt;</code></td></tr>
         </tbody>
       </table></div>
       <h3>Anima 的寫法</h3>
@@ -502,23 +518,49 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>這兩家都不吃權重，<code>(tag:1.2)</code> 會被當成文字，框裡會畫紅色波浪線提醒你。想強調什麼，就多用一句話描述它。</li>
         <li>Noct Q Anime（Qwen 的動漫版）開頭要寫 <code>An anime illustration of…</code>，沒寫會畫成照片。</li>
       </ul>
+      <h3>MiniMax H3 Image 的寫法</h3>
+      <ul class="tips">
+        <li>能做兩件事：<b>文生圖</b>、<b>多圖參考</b>（最多 16 張）。圖生圖、局部重繪、版面框這些不支援，選到它時那幾個模式會變灰。</li>
+        <li>要裝的檔：安裝精靈勾「MiniMax H3 Image 圖片（選配）」，內含主模型 w4a8、VAE、文字編碼器（跟 H3 影片共用）。大顯卡想用 int8／bf16 或 27B 擴寫器，再勾「高精度」那一包。</li>
+        <li>尺寸改用 <b>比例＋百萬畫素</b> 選，預設 1:1、4MP（2048×2048，官方調校的尺寸），最高 20MP，邊長自動對齊 32。</li>
+        <li><b>8GB 顯卡</b>：按尺寸區的「8GB 建議」＝4MP、分塊解碼 512、不開提示詞擴寫器，文字編碼器用 nvfp4。RTX 3070 實測 4MP 約 55 秒（第一張要載模型，約 2 分鐘）、16MP 約 165 秒。</li>
+        <li>參考圖在提示詞裡寫 <code>&lt;Picture 1&gt;</code>、<code>&lt;Picture 2&gt;</code>，點參考圖上的編號會自動插入對的寫法；從 Qwen 換過來，舊的 <code>&lt;image1&gt;</code> 也認得。</li>
+        <li>步數 6、CFG 1，負面提示詞沒有作用，所以選到它時負面詞框會收起來。</li>
+      </ul>
       <h3>看不懂提示詞：中英對照</h3>
       <ul class="tips">
-        <li>按提示詞框右下角的 <b>中英對照</b>，框下面會把每一段 tag 配上中文，例如 <code>long hair</code> 長髮、<code>safe</code> 分級：全年齡。權重、<code>{red|blue}</code> 隨機、<code>@畫師</code>、<code>&lt;image1&gt;</code> 也會寫出意思。再按一次就收起來。</li>
+        <li>按提示詞工具列的 <b>中英對照</b>，框下面會把每一段 tag 配上中文，例如 <code>long hair</code> 長髮、<code>safe</code> 分級：全年齡。權重、<code>{red|blue}</code> 隨機、<code>@畫師</code>、<code>&lt;image1&gt;</code> 也會寫出意思。再按一次就收起來。</li>
         <li>tag 查對照表，打字的同時就更新，不用等。</li>
         <li>對照表翻不了的句子（Qwen、MOSS 那種整段英文）或冷門 tag，按 <b>AI 翻句子</b>，交給 AI 改寫用的同一顆本機模型翻。第一次要等模型載入，之後幾秒就好；翻過的會記住，下次不用再翻。翻到一半可以按「停止」。</li>
         <li>點對照裡的任何一段，提示詞框會直接選到那一段，方便改或刪。</li>
       </ul>
       <h3>不知道有哪些 tag：詞庫</h3>
       <ul class="tips">
-        <li>按提示詞框右上角的 <b>詞</b>，框下面打開詞庫：上排是大類（人物、服飾、表情動作、畫面、環境、場景、物品、鏡頭、漢服、魔法系、NSFW），下排是小類，例如「人物 → 頭髮」。每顆上面是中文、下面是英文 tag。</li>
+        <li>按提示詞框右上角的 <b>詞</b>，詞庫從提示詞卡上方彈出來（卡片不會被撐高），點外面或按 <kbd>Esc</kbd> 收起：上排是大類（人物、服飾、表情動作、畫面、環境、場景、物品、鏡頭、漢服、魔法系、NSFW），下排是小類，例如「人物 → 頭髮」。每顆上面是中文、下面是英文 tag。</li>
         <li>點一下就加進你最後點過的那個框（提示詞、分段的小框、負面都可以）；已經在框裡的會亮起來，再點一下就拿掉。</li>
         <li>上面的搜尋框打中文或英文都行，簡體也找得到，會跨分類列出來。</li>
         <li>詞庫右上角可以換來源：<b>Danbooru 分類</b>（預設）照 Danbooru 官方的 tag 分類，一萬五千多個 tag，每顆下面有在 Danbooru 用過幾次，熱門的排前面，同一小類裡再分成一段一段；<b>WeiLin</b> 是 WeiLin-Comfyui-Tools-Prompt（MIT 授權）整理的四千多條，有些是整段的組合。</li>
       </ul>
+      <h3>找衣服、找姿勢：衣姿抽屜</h3>
+      <ul class="tips">
+        <li>按提示詞框右上角的 <b>衣</b>，右邊會滑出「衣姿」抽屜，有兩個分頁：<b>服裝</b>（動畫風 1320 套、寫實 1407 套，灰底平鋪的整套衣服）和 <b>姿勢</b>（288 組人偶姿勢，每組有正面、俯拍、仰拍、側面、斜側 5 個角度，格子下面的小鈕切換）。抽屜左邊那條可以拖寬，一次看更多格。</li>
+        <li>看到喜歡的，直接把縮圖 <b>拖</b> 過去：拖到提示詞框＝加進英文描述（框裡已經有的詞不會重複加）；姿勢拖到 <b>構圖控制</b> 的框＝放進那個姿勢的深度圖，Anima 會照著擺姿勢（MOSS 文生圖也行）；拖到 <b>多圖參考</b>＝加成參考圖，服裝的角色自動選「服裝」、姿勢選「姿勢」，Qwen 2.1 就能「讓圖1的人穿上圖2的衣服」。不想拖，每格下面也有「＋詞」「參考」「控制」按鈕。</li>
+        <li>拖到放不進去的地方，或現在的模型沒有能放的框（例如 Qwen 2.1 在文生圖），會跳一句提示告訴你要怎麼做。</li>
+        <li>縮圖要連網路才看得到（直接從原作者的網站顯示）；原圖是你拖進去的那一刻才抓那一張，抓過的會留在電腦裡。素材是日本作者ギア 的 AI 參考圖庫，一張一張拿來當參考可以商用，但禁止大量下載和轉載；中文和英文提示詞改自 posewear（MIT）。</li>
+      </ul>
+      <h3>衣姿整頁：跟 posewear 官網一樣的大格子</h3>
+      <ul class="tips">
+        <li>「全部功能」裡的 <b>05 衣姿</b>（或抽屜右上的「開整頁」）打開的就是 posewear 官網原樣：姿勢、深度姿勢、服裝、動畫服裝、人像、表情、髮型、歷代、場景、光影、道具、家具 12 個分類，搜尋、篩選、隨機一個、收藏、最近、組合、18+ 開關、深色模式都跟官網一樣。</li>
+        <li>點開任何一格會跳出詳情：大圖、中文描述、英文提示詞（可以複製）、相似推薦，←→ 鍵切換。下面多三顆 <b>➜ 加到提示詞</b>、<b>➜ 當參考</b>、<b>➜ 當構圖控制</b>（姿勢才有），按了會切回生成頁直接放進去，跟抽屜的按鈕一樣。</li>
+        <li>右上角的 <b>繁／简</b> 切換繁體（台灣用語）和簡體（官網原樣），會記住你上次選的。</li>
+        <li><b>試穿</b> 分頁要接雲端服務（OpenAI、Gemini、豆包 Seedream 或自訂中轉），金鑰要自己申請、按張付費；不想花錢的話，用下面的「➜ 交給繪匣」整套送進多圖參考，或用「當參考」一張一張送，用本機模型換裝。</li>
+        <li>資料直接用官網的，7 天自動更新一次；縮圖、大圖要連網路才看得到。</li>
+        <li><b>頁面本身也跟官網同步</b>：官網改版加了新功能，繪匣這邊不用等更新就看得到。左下角一行寫目前跑的是哪一版，旁邊 <b>檢查官網更新</b> 可以馬上抓。官網改得太多、對不上時，會自動退回安裝時內建的版本，左下角寫「官網改版了，暫時用內建版本」，照樣能用；沒網路時用上次抓的那份。</li>
+        <li><b>試穿</b> 分頁的生成鍵旁邊多一顆 <b>➜ 交給繪匣</b>：把你選好的人物照、服裝、姿勢、表情整套原圖，連同工作台組好的提示詞，送進生成頁的多圖參考，用本機模型畫、不用 API 金鑰。有 MiniMax H3 Image 就用它（最多 16 張），沒有就用 Qwen 2.1（最多 10 張）；張數超過會先告訴你，參考匣原本有圖會先問要不要換掉。放好之後看一眼再按生成。</li>
+      </ul>
       <h3>隨機頁：隨機產生器＋AI 組詞</h3>
       <ul class="tips">
-        <li>左邊功能列的 <b>隨機</b> 是生成頁的分身，分成三欄：左邊是隨機產生器；中間是生成頁的提示詞（連同 AI 改寫）和 LoRA 卡匣，生成鈕和最新一張圖固定在底下；右邊是模型與輸入、尺寸、取樣（步數、CFG、<b>張數</b>、種子、整套設定）和附加（高解析修復、構圖控制、自動修臉、X/Y 對照表）。這些跟生成頁是同一組，在這頁改什麼、按生成都一樣；切回生成頁，面板會回到原本的位置。螢幕窄的時候中右兩欄會疊成一欄。</li>
+        <li>頂列的 <b>02 隨機</b> 打開隨機產生器。底下共用生成頁的整張提示詞卡，點膠囊可換模型、選 LoRA、調尺寸與取樣，再按生成。右側可看最新一張或按「AI 組成完整提示詞」。切回生成頁時，提示詞、參數和釘選位置都會保留。</li>
         <li>隨機產生器用的是 ComfyUI 外掛 Comfyui-Anima-Wardrobe-V6（GPL-3.0，作者灵冻不冻）：照 15 段 57 欄的規則抽一整組提示詞，數量、頭髮、五官、身材、服裝、姿勢、鏡頭、場景、光影會互相搭配，不會抽出互相矛盾的東西。第一次用按 <b>安裝隨機產生器</b>，裝好重開 ComfyUI（自己用 ComfyUI Manager 裝過的就不用再裝）。</li>
         <li>上排設 <b>分級</b>（全年齡到極端）、<b>種子</b>（填數字＝同樣的設定每次抽一樣；空白＝每次重抽）、tag 上限、服裝風格、胸部大小。按 <b>🎲 全部隨機</b> 先看結果，滿意再按 <b>套用到提示詞</b>（可選取代或接在後面）。勾 <b>每次生成前重抽</b>，在隨機頁每按一次生成就換一組。</li>
         <li><b>欄位</b>：每一段可以關掉、調多少；每一欄可以設「關／少／一般／多／必出」，或直接固定成某個選項（例如頭髮固定銀髮）。<b>角色</b>：兩千四百多個角色的縮圖，搜中文、英文或作品，點卡片＝固定出這個角色（可多選），☆ 收藏。<b>服裝</b>：點一套＝每次都穿這套，或勾分類讓它每次從裡面挑一套。<b>場景</b>：勾的場景放進勾選池，每次從池裡挑一組姿勢、構圖、光影。</li>
@@ -529,7 +571,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       <ul class="tips">
         <li>開著中文輸入法打英文 tag 時，打出來的 <b>，、：（）</b> 會自動換成 <code>, : ( )</code>，例如 <code>1girl，long hair（smile：1.2）</code> 會變成 <code>1girl, long hair(smile:1.2)</code>。</li>
         <li>只換英文後面的；在寫中文句子（前一個字是中文）就不動。換錯了按 Ctrl+Z 就回到全形。</li>
-        <li>不想要的話，按提示詞框右下角的 <b>，→,</b> 關掉。</li>
+        <li>不想要的話，按提示詞框下緣的 <b>，→,</b> 關掉。</li>
       </ul>
       <ol class="steps" data-for="s-prompt"></ol>
     </div>
@@ -617,7 +659,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
     <div class="txt">
       <div class="ch-no">06</div>
       <h2>七種模式，一排琴鍵切換</h2>
-      <p>控制台最上面那排鍵決定這次要做什麼。除了文生圖，其他都要先放一張圖：拖進框裡、按 <kbd>Ctrl</kbd><kbd>V</kbd> 貼上，或按「從圖庫選」。觀景窗和圖庫大圖下面也有同名的按鈕，按一下就把那張圖送過去（擴圖在「玩法…」裡面）。</p>
+      <p>觀景窗上方的模式鍵決定這次要做什麼。除了文生圖，其他都要先放一張圖：拖進框裡、按 <kbd>Ctrl</kbd><kbd>V</kbd> 貼上，或按「從圖庫選」。觀景窗和圖庫大圖下面也有同名的按鈕，按一下就把那張圖送過去（擴圖在「玩法…」裡面）。</p>
       <ol class="steps" data-for="s-modes"></ol>
       <div class="tbl-w"><table>
         <thead><tr><th>模式</th><th>適合</th><th>關鍵設定</th></tr></thead>
@@ -663,7 +705,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
 
       <h3>擴圖：把畫面往外延伸</h3>
       <ol class="how">
-        <li>兩種開法：控制台最上面那排鍵按 <b>擴圖</b>，再放一張圖（拖進框、<kbd>Ctrl</kbd><kbd>V</kbd> 或「從圖庫選」）；或在觀景窗、大圖按 <b>玩法…</b> → <b>擴圖</b>，那張圖會直接送過來。</li>
+        <li>兩種開法：觀景窗上方的模式鍵按 <b>擴圖</b>，再放一張圖（拖進框、<kbd>Ctrl</kbd><kbd>V</kbd> 或「從圖庫選」）；或在觀景窗、大圖按 <b>玩法…</b> → <b>擴圖</b>，那張圖會直接送過來。</li>
         <li>「擴圖」區有四格：往上、往下、往左、往右，各填要多補幾像素（照原圖的大小算）。</li>
         <li>懶得算就按快捷鈕：<b>四邊各 +25%</b>、<b>左右 +50%（變寬）</b>、<b>上下 +50%（變高）</b>、<b>往下補一半（補身體）</b>、<b>變成 16:9</b>、<b>變成 9:16</b>、<b>變成 1:1</b>。<b>清除</b> 全部歸零。</li>
         <li>看下面的預覽：斜線的地方就是要補出來的部分，「擴圖」標題旁邊會顯示擴完的尺寸。</li>
@@ -767,7 +809,8 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>有些模型要登入 Civitai 才能下載：到設定頁貼上 Civitai API key，只存在這台電腦（申請步驟見第 01 章）。</li>
         <li>LoRA 已經放在別的地方（A1111 的 <code>models\Lora</code>、別的 ComfyUI）？到「設定 → 模型與工作流」把那個資料夾加進「外部模型資料夾」就能直接用。手上的單一檔案，拖進同一區的「加裝模型」框，生圖站看檔案內容自動放進對的資料夾。</li>
       </ul>
-      <p class="note"><b>自己煉一顆 LoRA：</b>選單「訓練」把一包圖變成 LoRA，分六步，每一步都先自動做好，你看一眼、想改再改。<b>專案</b>：取名字、選煉畫風／角色／概念、選用在哪個模型，觸發詞留空會自動給一個。<b>訓練圖</b>：把圖拖進來或貼資料夾路徑，會複製一份、縮到合適大小（原圖不動），太小的、幾乎一樣的會標出來；畫風建議 30～200 張、角色 15～60 張。<b>描述</b>：按一下自動寫（Anima、SDXL 用 tag，Qwen、MOSS、Krea 2 用英文句子），煉角色時每張都有的髮色瞳色會建議拿掉，讓觸發詞記住它。<b>參數</b>：只要選輕／標準／充分，旁邊會寫為什麼是這個步數。<b>在哪煉</b>：本機顯卡（先按「安裝訓練器」，約 8GB；8GB 顯卡可以煉 SDXL，其他家族要更大的卡）、雲端顯卡（租 RunPod，會先報價、煉完自動關機；或連你自己的訓練機）、C 站（先試算要幾 Buzz）、魔塔（包好資料集，到魔塔網頁送出）。<b>訓練與驗收</b>：每存一版就抓回來，按「出對照表」用同一句提示詞把每一版、幾個強度各畫一張，挑好按「就用這版」，它就出現在 LoRA 卡匣裡。花錢的地方送出前一定會先問；本機訓練時顯卡會被占滿，先不要生圖。</p>
+      <p class="note"><b>自己煉一顆 LoRA：</b>選單「訓練」把一包圖變成 LoRA，分六步，每一步都先自動做好，你看一眼、想改再改。<b>專案</b>：取名字、選煉畫風／角色／概念、選用在哪個模型，觸發詞留空會自動給一個。<b>訓練圖</b>：把圖拖進來或貼資料夾路徑，會複製一份、縮到合適大小（原圖不動），太小的、幾乎一樣的會標出來；畫風建議 30～200 張、角色 15～60 張。<b>描述</b>：按一下自動寫（Anima、SDXL 用 tag，Qwen、MOSS、Krea 2 用英文句子），煉角色時每張都有的髮色瞳色會建議拿掉，讓觸發詞記住它。<b>參數</b>：只要選輕／標準／充分，旁邊會寫為什麼是這個步數。<b>在哪煉</b>：本機顯卡（選好家族後依畫面安裝引擎，8GB 顯卡可以煉 SDXL 或 MOSS）、雲端顯卡（租 RunPod，會先報價、煉完自動關機；或連你自己的訓練機）、C 站（先試算要幾 Buzz）、魔塔（包好資料集，到魔塔網頁送出）。<b>訓練與驗收</b>：每存一版就抓回來，按「出對照表」用同一句提示詞把每一版、幾個強度各畫一張，挑好按「就用這版」，它就出現在 LoRA 卡匣裡。花錢的地方送出前一定會先問；本機訓練時顯卡會被占滿，先不要生圖。</p>
+      <p class="note"><b>用 8GB 顯卡煉 MOSS：</b>新建 MOSS 專案，在「在哪煉」選本機，照 KohakuMoss 引擎（作者 KBlueLeaf）的健檢清單按修正按鈕。下載前會告訴你大小，紅燈處理好就能開始。有圖還在排隊，選「等畫完自動開始」。第一次進到訓練要編譯顯卡程式，可能等 1～5 分鐘。中途停止後按「接著煉」，有完整存檔就從那裡繼續。煉完看對照表，先看「不掛（對照）」那欄，再比較同一個種子掛上各版 LoRA 的差別。</p>
       <p class="note"><b>MOSS 想快一點：</b>選 MOSS 模型時會出現「MOSS 快速」勾選框，勾了自動掛加速 LoRA 0.35、步數改 10，一張從約 40 秒變約 16 秒。要先下載加速 LoRA（檔名 <code>moss_speed_dmd…</code>）；它在安裝精靈的「MOSS-Image 文生圖繪圖」包裡；沒有的話勾了會問要不要直接下載（約 1.1 GB），下載好自動勾上。</p>
       <p class="note"><b>MOSS 照指令改圖：</b>MOSS 模型＋「圖生圖」模式會出現「照指令改圖」勾選。勾了之後輸入圖當參考圖，提示詞寫要怎麼改（例如「把外套改成紅色，其他保持不變」），會自動掛上 MOSS 編輯 LoRA（<code>moss_edit_chinoll</code>，也在 MOSS 包裡，沒有的話勾了會問要不要下載；Civitai 的 MOSS 編輯 LoRA 也能用）。重繪固定 1、參考圖自動縮到約 0.5MP，8GB 顯卡 20 步實測約 1 分鐘。繪匣更新後開站會自動換上新的 MOSS 支援；ComfyUI 不是繪匣開的，畫面會提醒你重開一次 ComfyUI。</p>
       <p class="note"><b>MOSS 照參考圖的構圖畫：</b>MOSS 模型＋「文生圖」打開「構圖控制」，放一張參考圖，勾「照深度」（姿勢、前後位置）和／或「照色塊」（每個東西放哪裡），MOSS 會照參考圖的構圖從頭畫，內容照提示詞。照片類參考圖「結束」用 1；3D 人偶這種合成圖用 0.5，比較不會畫成人偶。要用 ComfyUI 0.43 以後，第一次用會問要不要下載控制轉接器（約 300MB）。</p>
@@ -904,7 +947,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>它會自動測模型看不看得到圖。看得到就直接看圖驗收；看不到就改用反推模型讀 tag 驗收，數量、左右手這類細節會看不出來。</li>
         <li>提示詞會送到對方的伺服器，看得到圖的模型連圖也會送過去。費用照對方的價格算，官方服務也可能擋成人內容。</li>
       </ul>
-      <h3>左邊「API」頁：所有大模型和金鑰集中在這</h3>
+      <h3>「全部功能」裡的 API 頁：所有大模型和金鑰集中在這</h3>
       <ul class="tips">
         <li><b>大模型連線</b>可以存好幾組：DeepSeek、智譜 GLM、OpenAI（GPT）、Anthropic（Claude）、Google Gemini、Kimi、通義千問、OpenRouter，或任何 OpenAI 相容的網址。選服務商會自動填網址，按 <b>抓模型清單</b> 挑模型，按 <b>測試</b> 確認金鑰對、順便測看不看得到圖。上面助手的「API 設定…」改的就是標「預設」的那組。</li>
         <li><b>誰用哪顆腦袋</b>：生圖助手、AI 改寫、中英對照、拍攝單、H3 寫手、導演台，每一個都能選本機 9B／35B、雲端，或某一組 API，也能各套一組指令預設。選「照頁面上的選擇」就跟以前一樣。</li>
@@ -944,7 +987,8 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>想用別的影片模型？Wan、HunyuanVideo 這些也行：先在 ComfyUI 把影片工作流調到能跑，到「設定 → 影片模型」匯入：一般「儲存」的 JSON、「匯出（API）」的 JSON、ComfyUI 畫出來的 PNG／WebP 都可以（一般「儲存」的要開著 ComfyUI 才轉得了），匯入後會問要不要馬上改用。在正面提示詞的文字框寫 <code>{{prompt}}</code>，生圖站就知道你寫的東西要放哪裡；匯入後設定頁會列出它看懂了哪些地方（提示詞、首格圖、種子、長寬、長度）。</li>
       </ul>
       <h3>拍攝單：同一份分鏡，選不同影片引擎</h3>
-      <p>在「影片」的拍攝單先選 H3 或已匯入的工作流，再填角色、首幀、場景、聲音與每段動作。每段秒數會個別保存。H3 沿用原本的短片／長片流程，自訂工作流會建立導演專案；這個選擇不會更改設定頁的預設影片模型。只有文生影片的自訂工作流可以不放首幀。以前選 LTX 的拍攝單，打開會自動換成 H3。</p>
+      <p>「影片」分頁跟生成頁同一副版面：最上面一排是「短片／長片」和「拍攝單 ▸」，右邊是狀態燈。短片的正中間播最新做好的影片，下面的提示詞卡放點子、AI 幫我寫，以及長度、比例、畫質、支數和「開始做影片」；起手式、素材板、分鏡、在哪跑、進階（模型、LoRA）收在提示詞卡上的膠囊，點了彈出來。長片的正中間是段落列表，下面一排是在哪拍、比例、畫質和「開拍整條」，長片清單和整條共用的設定在膠囊裡。右邊是這次的工作和成品。</p>
+      <p>按「拍攝單 ▸」會從右邊滑出拍攝單抽屜（Esc 或「關閉」收起，下次打開程式會記得開著還是關著），套用到短片或長片後抽屜會自己收起來，讓你看到填好的結果。在拍攝單先選 H3 或已匯入的工作流，再填角色、首幀、場景、聲音與每段動作。每段秒數會個別保存。H3 沿用原本的短片／長片流程，自訂工作流會建立導演專案；這個選擇不會更改設定頁的預設影片模型。只有文生影片的自訂工作流可以不放首幀。以前選 LTX 的拍攝單，打開會自動換成 H3。</p>
       <ul class="tips">
         <li><b>連戲狀態：</b>展開每鏡的「開始狀態」「結束狀態」，自由填站位、姿態、哪隻手拿什麼、視線、服裝、光向與鏡頭軸線。開始狀態空白時可沿用上一鏡結束；手填內容優先，程式不會替你補造沒填的事實。</li>
         <li><b>逐鏡審片：</b>勾選後，拍好一鏡先停下讓你比較版本；在「拍攝版本」按「採用這版」後再繼續。取消勾選可連拍並自動採用新結果。</li>
@@ -1035,7 +1079,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       <ul class="tips">
         <li>面板上面勾「提示音」，畫好會響鐘聲，失敗是兩下悶響。</li>
         <li>勾「完成時通知我」，視窗縮小時畫好會跳 Windows 通知。</li>
-        <li>「全停」會清空佇列並停掉目前這張；「清掉已結束的」只清紀錄，不會刪圖。</li>
+        <li>任務抽屜裡的「全停」會清空佇列並停掉目前這張；「清掉已結束的」只清紀錄，不會刪圖。</li>
       </ul>
     </div>
     <div class="stage-w" id="s-jobs"></div>
@@ -1095,9 +1139,9 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       <div class="keys">
         <div class="kgrp"><h4>到處都能用</h4><dl>
           <dt><kbd>?</kbd></dt><dd>打開說明</dd>
-          <dt><kbd>Alt</kbd><kbd>1</kbd>～<kbd>7</kbd></dt><dd>生成、圖庫、LoRA、下載、導演、漫畫、助手（跟按鍵上的編號一樣）</dd>
+          <dt><kbd>Alt</kbd><kbd>1</kbd>～<kbd>9</kbd></dt><dd>依頂列編號切到生成、隨機、圖庫、資產庫、衣姿、LoRA、下載中心、導演或漫畫</dd>
           <dt><kbd>Alt</kbd><kbd>0</kbd></dt><dd>設定</dd>
-          <dt><kbd>Q</kbd>／<kbd>Alt</kbd><kbd>9</kbd></dt><dd>開關任務面板</dd>
+          <dt><kbd>Q</kbd></dt><dd>開關任務面板</dd>
           <dt><kbd>Esc</kbd></dt><dd>關掉最上面的視窗</dd></dl></div>
         <div class="kgrp"><h4>生成</h4><dl>
           <dt><kbd>Ctrl</kbd><kbd>Enter</kbd></dt><dd>生成（在 AI 改寫想法框裡＝改寫）</dd>
@@ -1240,15 +1284,12 @@ const CUR = '<div class="cur"><svg viewBox="0 0 20 22"><path d="M2 1 L2 17 L6.5 
 const TOP = '<div class="m-top"><div class="stripes"><i></i><i></i><i></i><i></i></div><b>繪匣 PaintDeck</b><span class="mn">AW-2000</span><span style="flex:1"></span><span class="m-prog"><i data-k="prog"></i></span></div>';
 const STATUS = '<div class="m-status" data-k="status"><span class="dot"></span>COMFYUI<span>顯存 <span class="a" data-k="vram">2.1/8G</span></span><span data-k="pest">AI 改寫 待機</span><span style="margin-left:auto">V1.1</span></div>';
 const RAIL = '<div class="m-pan m-rail" data-k="rail"><span class="on" data-k="r-gen">生成</span><span data-k="r-gal">圖庫</span><span data-k="r-lora">LoRA</span><span data-k="r-dl">下載</span><span data-k="r-dir">導演</span><span data-k="r-cm">漫畫</span><span data-k="r-ag">助手</span><span class="sp"></span><span data-k="r-q">任務</span><span data-k="r-set">設定</span></div>';
-const MACHINE = TOP + `<div class="m-body">${RAIL}
+const MACHINE = TOP + `<div class="m-body m-stage">
+  <div class="m-pan m-rail" data-k="rail"><span class="on">01 生成</span><span>02 隨機</span><span>03 圖庫</span><span>全部功能 ▾</span><span data-k="r-q">佇列</span></div>
+  <div class="m-piano"><span class="on">文生圖</span><span>圖生圖</span><span>局部重繪</span><span>擴圖</span><span>多圖參考</span><span>放大</span><span>四視圖</span></div>
   <div class="m-pan m-ctrl" data-k="ctrl">
-    <div class="m-piano" data-k="piano"><span class="on">文生圖</span><span>圖生圖</span><span>局部</span><span>擴圖</span><span>多圖</span><span>放大</span><span>四視圖</span></div>
-    <div class="m-lbl">提示詞<span style="letter-spacing:0">CTRL+↑↓ 權重</span></div>
-    <div class="m-scr" data-k="prompt"></div>
-    <div class="m-lbl">尺寸</div>
-    <div class="m-chips"><span class="chipm" data-k="c1">直 1024×1536</span><span class="chipm">方 1024×1024</span><span class="chipm">橫 1536×1024</span></div>
-    <div class="m-knobs" data-k="knobs"><div class="knobm"><i class="dialm" style="--r:-60deg"></i>步數<span class="vfdm">8</span></div><div class="knobm"><i class="dialm" style="--r:-110deg"></i>CFG<span class="vfdm">1</span></div><div class="knobm"><i class="dialm" style="--r:-20deg"></i>張數<span class="vfdm">4</span></div></div>
-    <div class="m-big" data-k="go">生成<small>CTRL + ENTER</small></div>
+    <div class="m-lbl">提示詞</div><div class="m-scr" data-k="prompt"></div>
+    <div class="m-chips"><span class="chipm">ENGINE</span><span class="chipm">LoRA</span><span class="chipm" data-k="c1">尺寸 1024×1536</span><span class="chipm" data-k="knobs">8 步 · CFG 1 · ×4</span><div class="m-big" data-k="go">生成</div></div>
   </div>
   <div class="m-view" data-k="view">
     <div class="m-osd"><span data-k="osdl">● READY</span><span class="a" data-k="osdm"></span><span data-k="osdr" style="margin-left:auto"></span></div>
@@ -1371,14 +1412,14 @@ S.first = new Scene("s-first", MACHINE, [
   { t: "快門一眨，圖從過曝慢慢顯影出來。右邊幻燈片匣會掉進這一批的 4 張。", hold: 1800, a: async (c) => {
     SHOW(c, "dusk"); c.k("osdm").textContent = "文生圖 1024×1536・9 秒"; c.k("osdr").textContent = "SEED 4815162342";
     c.k("slides").innerHTML = ["dusk", "dawn", "night", "water"].map((a) => `<img src="${ART[a]}" alt="">`).join(""); await c.wait(1500); } },
-  { t: "觀景窗下面的按鈕：收藏、下載，或直接拿這張去圖生圖、局部重繪、放大。", a: async (c) => { c.k("acts").hidden = false; await c.press("fav"); c.k("fav").textContent = "★ 已收藏"; } },
+  { t: "游標移到觀景窗，浮出的工具列可收藏、下載，或直接拿這張去圖生圖、局部重繪、放大。", a: async (c) => { c.k("acts").hidden = false; await c.press("fav"); c.k("fav").textContent = "★ 已收藏"; } },
 ]);
 
 S.tour = new Scene("s-tour", MACHINE.replace('data-k="prompt"></div>', 'data-k="prompt">masterpiece, best quality, score_7, safe, 1girl, sunset</div>').replace('<img data-k="img" alt="" hidden>', '<img data-k="img" alt="" data-art="dusk">').replace('<div class="m-empty" data-k="empty">按下生成，圖會出現在這裡</div>', ''), [
-  { t: "左邊一排是功能鍵：生成、圖庫、LoRA、下載、導演、漫畫、助手，最下面是任務和設定。亮燈的是現在這一頁。", a: async (c) => { c.hl("rail"); c.say("Alt＋按鍵上的編號也能切換", "rail", 30, 0); await c.wait(1600); } },
-  { t: "控制台：選模式、寫提示詞、挑尺寸、調旋鈕，最下面是生成鍵。", a: async (c) => { c.hl("ctrl"); c.say("從上往下填，最後按生成", "ctrl", 60, -60); await c.wait(1600); } },
+  { t: "頂列顯示釘選的功能鍵，亮燈的是目前頁面。「全部功能」可以開其他頁面。", a: async (c) => { c.hl("rail"); c.say("Alt＋按鍵上的編號也能切換", "rail", 30, 0); await c.wait(1600); } },
+  { t: "在觀景窗下方寫提示詞、點膠囊調整參數，然後按生成。", a: async (c) => { c.hl("ctrl"); c.say("點膠囊就能調參數", "ctrl", 60, -60); await c.wait(1600); } },
   { t: "觀景窗：上面一排綠字顯示狀態和種子，畫好的圖出現在中間。", a: async (c) => { c.hl("view"); c.say("點圖可以放大看", "view", -40, 40); await c.wait(1600); } },
-  { t: "幻燈片匣：這次畫的每一張都排在這裡（剛打開時先放最近畫的 6 張），點一下就換到觀景窗。", a: async (c) => { c.hl("mag"); c.say("最新的在最上面", "mag", -170, 10); await c.wait(1600); } },
+  { t: "幻燈片匣：這次畫的每一張都排在這裡（剛打開時先放最近畫的 6 張），點一下就換到觀景窗。", a: async (c) => { c.hl("mag"); c.say("點縮圖可切換成品", "mag", -170, 10); await c.wait(1600); } },
   { t: "狀態列：ComfyUI 連線燈、顯存、AI 改寫的狀態。燈變紅就是斷線了。", a: async (c) => { c.hl("status"); c.say("點顯存那一格可以釋放顯存", "status", -150, -50); await c.wait(1600); } },
   { t: "看完了。之後每一章都用這台機器示範。", a: async (c) => { c.hl(null); c.say(""); } },
 ]);

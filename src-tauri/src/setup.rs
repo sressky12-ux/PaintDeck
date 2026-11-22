@@ -1802,9 +1802,12 @@ pub const PACKS: &[(&str, &str, &str, &str)] = &[
     ("moss_loras", "MOSS LoRA 合集（選配）", "gordonz 整理的 MOSS-Image LoRA 合集（約 14GB）：畫風、照片風、臉模、滑桿、加速、去色帶、動漫轉寫實。每顆在 LoRA 選單都有中文備註", "moss"),
     ("anima_loras", "Anima 常用 LoRA", "畫風、細節、光影、身材滑桿…（有些來自 Civitai，要 API key；連不上 Civitai 時大部分會改從繪匣的魔搭備份下載）", "anima"),
     ("qwen_loras", "Qwen 2.1 常用 LoRA", "寫實風、加速、滑桿…（有些來自 Civitai，要 API key；連不上 Civitai 時大部分會改從繪匣的魔搭備份下載）", "qwen"),
+    // 2026-11-22 MiniMax H3 Image：文字編碼器跟 H3 影片共用同一個檔（in_pack 也算進這包），裝過 H3 就只要再下約 13.7GB
+    ("mmimage", "MiniMax H3 Image 圖片（選配）", "MiniMax H3 Image w4a8：文生圖、最多 16 張參考圖改圖，4～20 百萬畫素。主模型 12.5GB＋VAE 1.2GB＋文字編碼器 15.7GB（跟 H3 影片共用），約 29GB；要 32GB 記憶體以上，8GB 顯卡能跑", ""),
+    ("mmimage_hq", "MiniMax H3 Image 高精度（選配）", "大顯卡用的 int8／bf16 主模型、int8 文字編碼器、官方 27B 提示詞擴寫器（約 106GB）。8GB 顯卡不用裝：生成頁選到哪個缺的檔會再問要不要單獨下載", "mmimage"),
 ];
 /// 「完整版」也不會自動勾的選配包（要自己勾）
-pub const OPTIONAL_PACKS: &[&str] = &["pe_35b", "h3", "moss_4b", "moss_loras"];
+pub const OPTIONAL_PACKS: &[&str] = &["pe_35b", "h3", "moss_4b", "moss_loras", "mmimage", "mmimage_hq"];
 /// 基本版：三種畫風的生圖功能都能用（models_basic.json 要跟這個一致，測試會檢查）
 pub const BASIC_PACKS: &[&str] = &["anima", "qwen", "qwen_pose", "moss", "face", "bg"];
 
@@ -1825,6 +1828,12 @@ pub fn pack_of(rel: &str) -> &'static str {
         "text_encoders" if name.starts_with("qwen3.5-4b") => "moss_4b",
         "loras" => "anima_loras",
         "checkpoints" if name.starts_with("sam3") => "face",
+        // MiniMax H3 Image 要排在 H3 影片前面（vae 都叫 minimax_h3…）；w4a8 和 VAE 是基本的，其他精度和 27B 擴寫器是高精度選配
+        "diffusion_models" if name.starts_with("minimax_h3_image_pruned_w4a8") => "mmimage",
+        "diffusion_models" if name.starts_with("minimax_h3_image") => "mmimage_hq",
+        "vae" if name.starts_with("minimax_h3_image") => "mmimage",
+        "text_encoders" if name.starts_with("qwen3.8_27b_minimax_h3_image") => "mmimage_hq",
+        "text_encoders" if name.starts_with("qwen3vl_32b_minimax_h3_int8") => "mmimage_hq",
         // H3 要排在 qwen3vl（Qwen 2.1）前面：它的文字編碼器也叫 qwen3vl_32b_minimax_h3…
         "diffusion_models" if name.starts_with("10eros_max_h3") => "h3",
         "text_encoders" if name.starts_with("qwen3vl_32b_minimax_h3") => "h3",
@@ -1847,6 +1856,11 @@ pub fn pack_of(rel: &str) -> &'static str {
         "vae" if name.starts_with("qwen_image_vae") => "anima",
         _ => "other", // 以後清單加了新種類的檔：只有完整版會裝
     }
+}
+
+/// 這個檔算不算這一包：pack_of 之外，跟別包共用的檔也算（MiniMax H3 Image 用的 nvfp4 文字編碼器歸 H3 影片包）
+pub fn in_pack(rel: &str, pack: &str) -> bool {
+    pack_of(rel) == pack || (pack == "mmimage" && rel.to_lowercase().ends_with(&format!("/{}", crate::h3::TE.to_lowercase())))
 }
 
 /// 2026-10-30 LTX-2.3 退場：以前「影片」包下載的檔（分類, 檔名）。只認這幾個名字，使用者自己放的其他 LTX 檔不碰
@@ -1930,7 +1944,7 @@ pub fn packs_from(body: &Value) -> Result<Vec<String>, String> {
 fn missing_in(res: &Path, models: &Path, packs: &[String], extra: &[crate::model_dirs::Dir]) -> Vec<ModelFile> {
     missing_models(res, models, "full", extra)
         .into_iter()
-        .filter(|m| packs.iter().any(|p| p == pack_of(&m.rel)))
+        .filter(|m| packs.iter().any(|p| in_pack(&m.rel, p)))
         .collect()
 }
 
@@ -1943,8 +1957,8 @@ fn pack_view(res: &Path, p: &Plan, extra: &[crate::model_dirs::Dir], variant: &s
     PACKS
         .iter()
         .map(|(id, label, desc, req)| {
-            let mine: Vec<&ModelFile> = all.iter().filter(|m| pack_of(&m.rel) == *id).collect();
-            let gone: Vec<ModelFile> = miss.iter().filter(|m| pack_of(&m.rel) == *id).cloned().collect();
+            let mine: Vec<&ModelFile> = all.iter().filter(|m| in_pack(&m.rel, id)).collect();
+            let gone: Vec<ModelFile> = miss.iter().filter(|m| in_pack(&m.rel, id)).cloned().collect();
             // 工具（llama.cpp 約 1.3GB 解開後、Vulkan 版約 0.1GB；Node.js＋ffmpeg 約 0.6GB）也算進大小
             let (tool_ok, tool_bytes) = match *id {
                 "pe" => (llama_ok, if variant == "nvidia" { 1_300_000_000u64 } else { 130_000_000u64 }),
@@ -5004,7 +5018,14 @@ mod tests {
         // 去色帶在合集包，生成頁 gen.js MOSS_DEBAND 用的就是這個路徑
         assert!(bundle.iter().any(|m| m.rel == "loras/moss/Excellent-Loras/SFT伪影修复/moss_image_sft_banding_fix_L37-41_bf16.safetensors"));
         // 2026-10-30 LTX 退場：影片包（10Eros v1.5、gemma、LTX 放大）整個拿掉，舊網頁送來的 video 安靜略過
-        assert_eq!(OPTIONAL_PACKS, ["pe_35b", "h3", "moss_4b", "moss_loras"]);
+        assert_eq!(OPTIONAL_PACKS, ["pe_35b", "h3", "moss_4b", "moss_loras", "mmimage", "mmimage_hq"]);
+        // MiniMax H3 Image：w4a8＋VAE 在基本包，共用的 nvfp4 文字編碼器兩包都算；H3 影片的檔不能被搶走
+        let mm: Vec<&str> = full.iter().map(|m| m.rel.as_str()).filter(|r| in_pack(r, "mmimage")).collect();
+        assert_eq!(mm.len(), 3, "{mm:?}");
+        assert!(in_pack(&format!("text_encoders/{}", crate::h3::TE), "h3") && in_pack(&format!("text_encoders/{}", crate::h3::TE), "mmimage"));
+        assert_eq!(full.iter().filter(|m| pack_of(&m.rel) == "mmimage_hq").count(), 4);
+        assert_eq!(pack_of("vae/minimax_h3_video_vae_int8_convrot.safetensors"), "h3");
+        assert!(full.iter().filter(|m| m.rel.contains("minimax_h3_image")).all(|m| m.sha256.is_some() && m.url.as_deref().is_some_and(|u| u.contains("89c635085f539d03ad35485ed542c5a286e3c6d6"))));
         assert_eq!(pack_of("model_patches/minimax_h3_fun_controlnet_union_pruned_int8_convrot.safetensors"), "h3", "H3 動作控制檔跟 H3 包");
         assert!(!PACKS.iter().any(|p| p.0 == "video"));
         assert_eq!(packs_from(&json!({"packs": ["video", "anima"]})).unwrap(), vec!["anima"]);

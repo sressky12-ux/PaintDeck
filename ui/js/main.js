@@ -2,6 +2,7 @@
 import { $, $$, api, toast } from "./util.js";
 import * as gen from "./gen.js";
 import * as gallery from "./gallery.js";
+import * as posewear from "./posewear.js";
 import * as assets from "./assets.js";
 import * as loras from "./loras.js";
 import * as hub from "./hub.js";
@@ -28,18 +29,25 @@ import * as framepick from "./framepick.js";
 import * as charsheet from "./charsheet.js";
 import * as i18n from "./i18n.js";
 import * as diagnostics from "./diagnostics.js";
-import { mountDock } from "./dock.js";
+import * as stage from "./stage.js";
+import * as videostage from "./videostage.js";
+import * as pagehead from "./pagehead.js";
+import { mountToc } from "./formtoc.js";
+import * as topbar from "./topbar.js";
+import { closeAllCaps, mountDock } from "./dock.js";
 import * as taglibPage from "./taglibpage.js";
 
 function showPage(p) {
+  if (app.page !== p) closeAllCaps();
   // 隨機頁借走的生成頁面板：離開就還回去（要在生成頁顯示之前，自由版面才量得到）
   if (app.page === "taglib" && p !== "taglib") taglibPage.hide();
   app.page = p;
-  $$("#tabs button").forEach((b) => { b.classList.toggle("on", b.dataset.page === p); b.setAttribute("aria-selected", String(b.dataset.page === p)); });
-  $$(".page").forEach((pg) => pg.classList.toggle("on", pg.id === `page-${p}`));
+  topbar.markPage(p);
   if (p === "taglib") taglibPage.show();
+  $$(".page").forEach((pg) => pg.classList.toggle("on", pg.id === `page-${p}`));
   if (p === "gallery") gallery.show();
   if (p === "assets") assets.show();
+  if (p === "posewear") posewear.showPage();
   if (p === "loras") loras.showPage();
   if (p === "civitai") hub.show();
   if (p === "settings") settings.show();
@@ -158,20 +166,65 @@ function labelControls() {
 }
 labelControls();
 
-// 生成頁的停靠式版面（dock.js）：看圖區＋生成鈕固定在中間，其他面板可以搬到左／右／下區、收起、拉寬。要在 i18n 前面組好，面板標題才會一起翻
-mountDock($("#page-gen"), {
-  name: "gen",
-  main: [$("#page-gen > .monitor"), $("#genRow")],
+// 中央舞台與其他頁各自儲存停靠位置。
+const stageDock = mountDock($("#page-gen"), {
+  name: "stage", caps: stage.capsSpec(),
+  main: [$("#stageModes"), $("#page-gen > .monitor")],
   panels: [
-    { id: "source", title: "模型與輸入", zone: "left" },
-    { id: "prompt", title: "提示詞", zone: "left" },
-    { id: "lora", title: "LoRA 卡匣", zone: "left" },
-    { id: "params", title: "尺寸與模式設定", zone: "left" },
-    { id: "extra", title: "附加", zone: "left" },
-    { id: "sampler", title: "取樣與種子", zone: "left" },
-    { id: "recent", title: "幻燈片匣", zone: "right", min: 100 },
+    { id: "source", title: "模型與輸入", zone: "cap" },
+    { id: "lora", title: "LoRA 卡匣", zone: "cap" },
+    { id: "params", title: "尺寸與模式設定", zone: "cap" },
+    { id: "sampler", title: "取樣與種子", zone: "cap" },
+    { id: "extra", title: "附加", zone: "cap" },
+    { id: "layout", title: "版面框", zone: "cap" },
+    { id: "pe", title: "AI 改寫", zone: "cap" },
+    { id: "compose", title: "提示詞卡", zone: "bottom", min: 200 },
+    { id: "tasks", title: "任務", zone: "right", min: 300 },
   ],
-  sizes: { top: 160, left: 350, right: 118, bottom: 200 },
+  sizes: { left: 350, right: 330, bottom: 300, top: 160 },   // 下區 300：標題列＋提示詞＋負面詞＋膠囊列剛好放得下，不用在卡裡捲
+});
+// 影片分頁（中央舞台第二期）：短片、長片跟生成頁同一副骨架；舊的 dock_h3、dock_h3long 存檔不讀也不刪
+const h3Dock = mountDock($("#h3Work"), {
+  name: "h3stage", inset: true, caps: videostage.shortCaps(), main: $("#h3Stage"),
+  panels: [
+    { id: "start", title: "起手式", zone: "cap" },
+    { id: "board", title: "素材板", zone: "cap" },
+    { id: "shots", title: "分鏡與完整提示詞", zone: "cap" },
+    { id: "where", title: "在哪跑", zone: "cap" },
+    { id: "adv", title: "進階（模型、LoRA、低顯存）", zone: "cap" },
+    { id: "h3compose", title: "提示詞卡", zone: "bottom", min: 200 },
+    { id: "h3tasks", title: "工作與成品", zone: "right", min: 280 },
+  ],
+  sizes: { left: 360, right: 330, bottom: 300, top: 160 },
+});
+const hcDock = mountDock($("#hcHost"), {
+  name: "hcstage", inset: true, caps: videostage.longCaps(), main: $("#hcStage"),
+  panels: [
+    { id: "film", title: "長片", zone: "cap" },
+    { id: "shared", title: "整條共用", zone: "cap" },
+    { id: "hcrun", title: "開拍", zone: "bottom", min: 100 },
+    { id: "hcshoot", title: "開拍與成品", zone: "right", min: 280 },
+  ],
+  sizes: { left: 360, right: 330, bottom: 120, top: 160 },
+});
+// 助手頁（中央舞台第三期）：主區＝對話螢幕＋輸入框，右邊＝每輪的圖，其他設定收進輸入框下面的膠囊
+const agText = (id) => (document.getElementById(id)?.textContent || "").replace(/\s+/g, " ").trim();
+const agDock = mountDock($("#agHost"), {
+  name: "agstage", inset: true, main: $("#agHost > .ag-bezel"),
+  caps: { host: $("#agCapRow"), chips: {
+    agbrain: { label: "腦袋", summary: () => `${agText("agBrainR") || "—"} · ${$("#agRounds").value} 輪 · ×${$("#agCount").value}` },
+    agbase: { label: "生圖設定", summary: () => pagehead.pillText($("#agBModel")?.selectedOptions[0]?.textContent || agText("agBaseInfo"), 14) },
+    agcloud: { label: "雲端", summary: () => pagehead.pillText(agText("agCloudMsg"), 8) },
+    aglora: { label: "LoRA", summary: () => "" },
+  } },
+  panels: [
+    { id: "agbrain", title: "腦袋與旋鈕", zone: "cap" },
+    { id: "agbase", title: "生圖設定", zone: "cap" },
+    { id: "agcloud", title: "雲端顯卡", zone: "cap" },
+    { id: "aglora", title: "LoRA 認識度", zone: "cap" },
+    { id: "agstrip", title: "每一輪的圖", zone: "right", min: 260 },
+  ],
+  sizes: { left: 360, right: 380, bottom: 200, top: 160 },
 });
 // 其他頁（2026-10-26 使用者：「我剛講的是所有，包含其他功能的介面」）：每頁原本的欄位 → 一欄當主區，其他欄變面板
 {
@@ -183,8 +236,6 @@ mountDock($("#page-gen"), {
   dockCols("assets", "#page-assets .as-wrap", 0, [{ id: "edit", title: "編輯資產", zone: "right", at: 1, min: 360 }], { right: 420 });
   dockCols("director", "#page-director section[data-tab=plan] > .dir-cols", 1, [{ id: "story", title: "劇情與設定", zone: "left", at: 0, min: 300 }], { left: 400 });
   dockCols("frames", "#frCols", 0, [{ id: "frames", title: "全部的幀", zone: "right", at: 1 }], { right: 420 });
-  dockCols("h3", "#h3Work", 1, [{ id: "start", title: "起手式與素材", zone: "left", at: 0, min: 300 }, { id: "shoot", title: "開拍與成品", zone: "right", at: 2, min: 280 }], { left: 360, right: 330 });
-  dockCols("h3long", "#page-director section[data-sub=long] > .dir-cols", 1, [{ id: "film", title: "長片設定", zone: "left", at: 0, min: 300 }, { id: "shoot", title: "開拍與成品", zone: "right", at: 2, min: 280 }], { left: 360, right: 330 });
   dockCols("comic", "#page-comic .cm-cols", 1, [{ id: "layout", title: "版型與分格", zone: "left", at: 0, min: 320 }], { left: 440 });
 }
 
@@ -193,7 +244,9 @@ mountDock($("#page-gen"), {
 await i18n.init();
 deck.init();
 system.init();
+topbar.init();
 gen.init();
+stage.init(stageDock);
 taglibPage.init();   // 要在 gen.init 之後：隨機頁接的是生成頁的提示詞框
 gallery.init();
 assets.init();
@@ -209,6 +262,23 @@ studio.init();
 h3.init();
 h3chain.init();
 shotsheet.init();
+videostage.init();
+videostage.initShort(h3Dock);
+videostage.initLong(hcDock);
+videostage.watchCaps(agDock, $("#agHost"), [$("#agBrainR"), $("#agBaseInfo"), $("#agBModel"), $("#agCloudMsg")]);
+// 中央舞台第三～五期：頁首列的專案膠囊（選單和新增／改名／刪除收成一顆）、ⓘ、表單頁的段落目錄
+// 外框只管外觀：哪一個掛不上就略過（console 留紀錄），不能讓後面各頁的初始化跟著停掉
+const safe = (name, fn) => { try { fn(); } catch (e) { console.error(`版面外框「${name}」掛不上`, e); } };
+safe("ⓘ與彈出窗", () => pagehead.initPageHead());
+safe("導演專案膠囊", () => pagehead.projPill($("#dirProj"), [$("#dirNew"), $("#dirRename"), $("#dirDel")], { label: "專案" }));
+safe("拆幀台膠囊", () => pagehead.projPill($("#frSess"), [$("#frStorage"), $("#frDel")], { label: "影片" }));
+safe("漫畫作品膠囊", () => pagehead.projPill($("#cmProj"), [$("#cmNew"), $("#cmRename"), $("#cmDel"), $("#cmExample")], { label: "作品" }));
+safe("助手對話膠囊", () => pagehead.projPill($("#agSess"), [$("#agNew"), $("#agDel")], { label: "對話" }));
+safe("訓練專案膠囊", () => pagehead.listPill($("#trList"), [$("#trNew"), $("#trDel")], { label: "專案", at: $("#trNew") }));
+safe("設定頁目錄", () => mountToc($("#page-settings .lib-scroll"), $("#page-settings .settings"), [
+  { key: "general", label: "一般" }, { key: "net", label: "連線" }, { key: "model", label: "模型" }, { key: "ai", label: "AI" }, { key: "system", label: "系統" },
+]));
+safe("API 頁目錄", () => mountToc($("#page-api .lib-scroll"), $("#page-api .settings")));
 comic.init();
 colorbook.init();
 agent.init();

@@ -269,7 +269,7 @@ pub fn new_project(name: &str, kind: &str, family: &str, trigger: &str) -> Resul
         return Err("觸發詞只能用英文、數字、底線、連字號，2～32 個字".into());
     }
     let now = chrono::Utc::now().timestamp();
-    Ok(json!({
+    let mut project = json!({
         "id": new_id(),
         "name": name,
         "kind": kind,
@@ -284,7 +284,11 @@ pub fn new_project(name: &str, kind: &str, family: &str, trigger: &str) -> Resul
         "samples": [],
         "run": null,
         "adopted": null,
-    }))
+    });
+    if f.id == "moss" {
+        project["engine"] = json!("kohakumoss");
+    }
+    Ok(project)
 }
 
 pub fn dir(data: &Path) -> PathBuf {
@@ -318,29 +322,15 @@ pub fn list(dir: &Path) -> Vec<Value> {
 
 // ================================================================ 參數
 
-/// 照「每張圖看幾次」算步數。回 {steps, epochs, rank, alpha, lr, optimizer, resolution, batch, caption_dropout, flip, why}
-pub fn auto_params(fam: &Fam, kind: &str, images: usize, level: &str) -> Value {
-    let per = match kind {
-        "character" => 30.0,
-        "concept" => 25.0,
-        _ => 20.0,
-    };
+/// 兩種引擎共用強度倍率、取整方式和步數說明，各自決定上下限與存檔間隔。
+fn training_steps(images: usize, level: &str, per: f64, unit: &str, lo: f64, hi: f64) -> (u64, String) {
     let (mult, level_name) = match level {
         "light" => (0.6, "輕"),
         "full" => (1.5, "充分"),
         _ => (1.0, "標準"),
     };
-    let (lo, hi) = if fam.video { (1000.0, 8000.0) } else { (500.0, 6000.0) };
     let raw = images as f64 * per * mult;
     let steps = ((raw / 50.0).round() * 50.0).clamp(lo, hi) as u64;
-    let epochs = if steps <= 1500 {
-        5
-    } else if steps <= 3000 {
-        8
-    } else {
-        10
-    };
-    let unit = if fam.video { "段" } else { "張" };
     let mut why = format!("{images} {unit} × 每{unit}約看 {} 次", per * mult);
     if (raw - steps as f64).abs() < 50.0 {
         why.push_str(&format!(" ≈ {steps} 步"));
@@ -349,7 +339,28 @@ pub fn auto_params(fam: &Fam, kind: &str, images: usize, level: &str) -> Value {
     } else {
         why.push_str(&format!(" 有 {raw:.0} 步，再多只會背圖，壓到上限 {steps} 步"));
     }
-    why.push_str(&format!("（{level_name}）；每 {} 步存一版，共 {epochs} 版", steps / epochs));
+    why.push_str(&format!("（{level_name}）"));
+    (steps, why)
+}
+
+/// 照「每張圖看幾次」算步數。回 {steps, epochs, rank, alpha, lr, optimizer, resolution, batch, caption_dropout, flip, why}
+pub fn auto_params(fam: &Fam, kind: &str, images: usize, level: &str) -> Value {
+    let per = match kind {
+        "character" => 30.0,
+        "concept" => 25.0,
+        _ => 20.0,
+    };
+    let (lo, hi) = if fam.video { (1000.0, 8000.0) } else { (500.0, 6000.0) };
+    let unit = if fam.video { "段" } else { "張" };
+    let (steps, mut why) = training_steps(images, level, per, unit, lo, hi);
+    let epochs = if steps <= 1500 {
+        5
+    } else if steps <= 3000 {
+        8
+    } else {
+        10
+    };
+    why.push_str(&format!("；每 {} 步存一版，共 {epochs} 版", steps / epochs));
     json!({
         "steps": steps,
         "epochs": epochs,
@@ -761,6 +772,160 @@ pub fn toolkit_config(p: &Value, fam: &Fam, data_dir: &str, out_dir: &str, model
     y.join("\n") + "\n"
 }
 
+// ================================================================ KohakuMoss
+
+pub const KOHAKU_COMMIT: &str = "78416a26f947ea075feb1c4d48db5f069d515c02";
+pub const HEAL_FILE: &str = "moss_image_heal_int8_convrot.safetensors";
+pub const HEAL_URL: &str = "https://huggingface.co/KBlueLeaf/MOSS-Image-heal/resolve/main/comfyui/moss_image_heal_int8_convrot.safetensors";
+pub const HEAL_SIZE: u64 = 5_413_698_934;
+pub const HEAL_SHA256: &str = "a844ae30c48792c42e19ac0d130691f373ee8d901d7c3868d9a82d881fd4b2c8";
+
+pub fn kohaku_auto_params(kind: &str, images: usize, level: &str) -> Value {
+    let (steps, mut why) = training_steps(images, level, 16.0, "張", 400.0, 2000.0);
+    why.push_str(&format!("；每 {} 步存一版，共 4 版", steps.div_ceil(4)));
+    if kind != "character" {
+        why.push_str("（預設值還沒實測）");
+    }
+    json!({
+        "steps": steps, "saves": 4, "dim": 16, "alpha": 16, "lr": 0.0001,
+        "base": HEAL_FILE, "vram": "auto", "flip": kind != "character", "why": why,
+    })
+}
+
+/// 6 GB 檔位還沒實測。
+pub fn kohaku_vram_layer(vram_gb: f64) -> &'static str {
+    if vram_gb <= 7.0 {
+        "vram_6g"
+    } else if vram_gb <= 10.0 {
+        "vram_8g"
+    } else if vram_gb <= 14.0 {
+        "vram_12g"
+    } else if vram_gb <= 20.0 {
+        "vram_16g"
+    } else {
+        "vram_24g"
+    }
+}
+
+pub struct KohakuPaths {
+    pub repo: String,
+    pub weights_root: String,
+    pub data_dir: String,
+    pub cache_dir: String,
+    pub out_dir: String,
+    pub run_name: String,
+    pub resume: String,
+    pub vram_gb: f64,
+}
+
+/// Python 雙引號字串常值，保留中文與路徑分隔符號。
+pub fn py_str(s: &str) -> String {
+    let mut out = String::from("\"");
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            c if c.is_control() => out.push_str(&format!("\\u{:04x}", c as u32)),
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
+/// 依序回傳同一工作資料夾的 data.py、train.py 內容。
+pub fn kohaku_configs(p: &Value, k: &KohakuPaths) -> (String, String) {
+    let kind = p["kind"].as_str().unwrap_or("style");
+    let images = p["images"].as_array().map(Vec::len)
+        .unwrap_or_else(|| p["image_count"].as_u64().unwrap_or(0) as usize);
+    let defaults = kohaku_auto_params(kind, images, p["level"].as_str().unwrap_or("std"));
+    let params = &p["kohaku_params"];
+    let uint = |key: &str| params[key].as_u64().unwrap_or_else(|| defaults[key].as_u64().unwrap());
+    let float = |key: &str| params[key].as_f64().unwrap_or_else(|| defaults[key].as_f64().unwrap());
+    let steps = uint("steps");
+    let flip = params["flip"].as_bool().unwrap_or_else(|| defaults["flip"].as_bool().unwrap());
+    let base = params["base"].as_str().unwrap_or(HEAL_FILE);
+    let filename = base.rsplit(['/', '\\']).next().unwrap_or(base);
+    let transformer = filename.strip_suffix(".safetensors").unwrap_or(filename);
+    let vram = match params["vram"].as_str() {
+        Some(v @ ("vram_6g" | "vram_8g" | "vram_12g" | "vram_16g" | "vram_24g")) => v,
+        _ => kohaku_vram_layer(k.vram_gb),
+    };
+
+    // 小幫手把設定寫在工作資料夾；引擎的五層設定要從 repo 的絕對路徑載入。
+    let repo = k.repo.trim_end_matches(['/', '\\']);
+    let mut train = String::from("from kohakuengine import use_config\n\n");
+    let vram_path = format!("vram/{vram}.py");
+    for layer in ["_base/base_lora.py", "algo/algo_lora.py", "data/data_folder_nl.py", &vram_path, "precision/precision_bf16.py"] {
+        train.push_str(&format!("use_config({})\n", py_str(&format!("{repo}/configs/moss/{layer}"))));
+    }
+    let weights = py_str(&k.weights_root);
+    train.push_str(&format!(r#"
+WEIGHTS = {weights}
+TRANSFORMER = {transformer}
+DATASETS = [{{"source": "folder", "path": {data_dir}, "txt_as": "nl"}}]
+CACHE_DIR = {cache_dir}
+FLIP = {flip}
+STEPS = {steps}
+DIM = {dim}
+ALPHA = {alpha:?}
+LR = {lr}
+SCHEDULE = {{"mode": "cosine", "warmup": 50, "end": -1, "min_value": 0.1}}
+TIMESTEP_KWARGS = {{"mu": -1.09, "s": 0.95, "shift": 1.0, "cutoff": 0.95, "uniform_mix": 0.01}}
+PRESET = {{"target_name": [r"layers\.(?!22\.)\d+\.proj\.(q|k|v|o)$", r"layers\.(?!22\.)\d+\.proj\.(ffn_up_gate|ffn_down)$"]}}
+SAVE_EVERY = {save_every}
+SAVE_MINUTES = 0
+KEEP_LAST = 20
+SAMPLE_EVERY = 0
+SAVE_FORMAT = "comfy"
+OUTPUT_DIR = {out_dir}
+RUN_NAME = {run_name}
+"#,
+        transformer = py_str(transformer), data_dir = py_str(&k.data_dir), cache_dir = py_str(&k.cache_dir),
+        flip = if flip { "True" } else { "False" }, dim = uint("dim"), alpha = float("alpha"), lr = float("lr"),
+        // 無條件進位：450 步存 113、226、339，最後一步引擎自己補存，剛好 4 版（整除時也一樣）
+        save_every = steps.div_ceil(4).max(1), out_dir = py_str(&k.out_dir), run_name = py_str(&k.run_name),
+    ));
+    if !k.resume.is_empty() {
+        train.push_str(&format!("RESUME = {}\n", py_str(&k.resume)));
+    }
+
+    let data = format!(r#"from kohakuengine import use_config
+
+use_config("train.py")
+TEXT_ENCODER = "kohakumoss.encoders.text_encoder"
+TEXT_ENCODER_KWARGS = {{"path": {weights}, "device": "cuda"}}
+IMAGE_ENCODER = "kohakumoss.encoders.vae_encoder"
+IMAGE_ENCODER_KWARGS = {{"path": {weights}, "device": "cuda"}}
+"#);
+    (data, train)
+}
+
+/// 從 checkpoint 的 ComfyUI 匯出檔認版本，略過 run 根目錄的最終匯出。
+pub fn kohaku_epoch_names(files: &[String]) -> Vec<(u32, u64, String)> {
+    let mut found: Vec<(u64, &String)> = files.iter().filter_map(|file| {
+        let mut parts = file.rsplit('/');
+        parts.next()?.strip_suffix("-comfy.safetensors")?;
+        if parts.next()? != "export" {
+            return None;
+        }
+        let step = parts.next()?.strip_prefix("step_")?;
+        if parts.next()? != "checkpoints" || step.len() != 8 || !step.bytes().all(|b| b.is_ascii_digit()) {
+            return None;
+        }
+        Some((step.parse().ok()?, file))
+    }).collect();
+    found.sort();
+    found.into_iter().enumerate().map(|(i, (step, file))| (i as u32 + 1, step, file.clone())).collect()
+}
+
+pub fn run_lora_name(name: &str, run_no: u32) -> String {
+    if run_no <= 1 { name.to_owned() } else { format!("{name}_r{run_no}") }
+}
+
 // ================================================================ 打標
 
 fn quality_noise(tag: &str) -> bool {
@@ -899,8 +1064,8 @@ pub fn fix_stale(p: &mut Value, tracking: bool) {
 // ================================================================ 驗收
 
 /// 對照表要畫的格子：每一版 × 每個強度，全部同一個種子。[(第幾版, 強度, 種子)]
-pub fn compare_jobs(epochs: &[u32], strengths: &[f64], seed: i64) -> Vec<(u32, f64, i64)> {
-    epochs.iter().flat_map(|&e| strengths.iter().map(move |&s| (e, s, seed))).collect()
+pub fn compare_jobs(epochs: &[u32], strengths: &[f64], seed: i64, baseline: bool) -> Vec<(u32, f64, i64)> {
+    baseline.then_some((0, 0.0, seed)).into_iter().chain(epochs.iter().flat_map(|&e| strengths.iter().map(move |&s| (e, s, seed)))).collect()
 }
 
 /// 對照表送出前擋一下：生圖流程會把「家族跟模型不一樣」的 LoRA 默默略過，那樣整張表每格都一樣、看不出差別。
@@ -926,6 +1091,128 @@ pub fn compare_block(fam: &Fam, model_fam: &str, lora_fam: &str, workflow_set: b
 mod tests {
     use super::*;
     use serde_json::json;
+
+    #[test]
+    fn kohaku_steps_clamp() {
+        assert_eq!(kohaku_auto_params("character", 51, "std")["steps"], 800);
+        assert_eq!(kohaku_auto_params("character", 2, "std")["steps"], 400);
+        assert_eq!(kohaku_auto_params("character", 500, "full")["steps"], 2000);
+        assert_eq!(kohaku_auto_params("character", 51, "light")["steps"], 500);
+        assert_eq!(kohaku_auto_params("character", 51, "std")["flip"], false);
+        assert_eq!(kohaku_auto_params("style", 51, "std")["flip"], true);
+    }
+
+    #[test]
+    fn kohaku_vram_map() {
+        for (gb, layer) in [(6.0, "vram_6g"), (8.0, "vram_8g"), (12.0, "vram_12g"), (16.0, "vram_16g"), (24.0, "vram_24g"),
+                            (7.0, "vram_6g"), (10.0, "vram_8g"), (14.0, "vram_12g"), (20.0, "vram_16g")] {
+            assert_eq!(kohaku_vram_layer(gb), layer);
+        }
+    }
+
+    fn kohaku_test_paths() -> KohakuPaths {
+        KohakuPaths {
+            repo: r"F:\AI 引擎\repo\/".into(),
+            weights_root: r"F:\模型".into(),
+            data_dir: r#"F:\AI\小克 工作區\訓練\"img""#.into(),
+            cache_dir: r"F:\快取".into(),
+            out_dir: r"F:\輸出".into(),
+            run_name: "xiaokechr".into(),
+            resume: String::new(),
+            vram_gb: 8.0,
+        }
+    }
+
+    #[test]
+    fn kohaku_configs_match_proven_recipe() {
+        let p = json!({"kind": "character", "trigger": "xiaokechr", "kohaku_params": {"steps": 800}});
+        let (data, train) = kohaku_configs(&p, &kohaku_test_paths());
+        let layers: Vec<_> = train.lines().filter(|l| l.starts_with("use_config(")).collect();
+        assert_eq!(layers, ["_base/base_lora", "algo/algo_lora", "data/data_folder_nl", "vram/vram_8g", "precision/precision_bf16"]
+            .map(|suffix| format!(r#"use_config("F:\\AI 引擎\\repo/configs/moss/{suffix}.py")"#)));
+        for line in [
+            "STEPS = 800", "SAVE_EVERY = 200", "DIM = 16", "ALPHA = 16.0", "FLIP = False",
+            r#"TIMESTEP_KWARGS = {"mu": -1.09, "s": 0.95, "shift": 1.0, "cutoff": 0.95, "uniform_mix": 0.01}"#,
+            r#"PRESET = {"target_name": [r"layers\.(?!22\.)\d+\.proj\.(q|k|v|o)$", r"layers\.(?!22\.)\d+\.proj\.(ffn_up_gate|ffn_down)$"]}"#,
+            r#"SCHEDULE = {"mode": "cosine", "warmup": 50, "end": -1, "min_value": 0.1}"#,
+            r#"SAVE_FORMAT = "comfy""#, "SAVE_MINUTES = 0", "KEEP_LAST = 20", "SAMPLE_EVERY = 0",
+            r#"TRANSFORMER = "moss_image_heal_int8_convrot""#, r#"OUTPUT_DIR = "F:\\輸出""#,
+            r#"RUN_NAME = "xiaokechr""#, r#"WEIGHTS = "F:\\模型""#, r#"CACHE_DIR = "F:\\快取""#,
+        ] {
+            assert!(train.lines().any(|l| l == line), "找不到 {line}");
+        }
+        assert!(train.contains(r#""txt_as": "nl""#));
+        assert!(train.contains(r#""source": "folder""#));
+        assert!(!train.contains("RESUME") && !train.contains("SAMPLE_PROMPTS"));
+        let mut lines = data.lines().filter(|l| !l.trim().is_empty());
+        assert_eq!(lines.next(), Some("from kohakuengine import use_config"));
+        assert_eq!(lines.next(), Some(r#"use_config("train.py")"#));
+        for (key, encoder) in [("TEXT", "text_encoder"), ("IMAGE", "vae_encoder")] {
+            assert!(data.contains(&format!(r#"{key}_ENCODER = "kohakumoss.encoders.{encoder}""#)));
+            assert!(data.contains(&format!(r#"{key}_ENCODER_KWARGS = {{"path": "F:\\模型", "device": "cuda"}}"#)));
+        }
+    }
+
+    #[test]
+    fn kohaku_configs_escape_paths() {
+        let k = kohaku_test_paths();
+        let (_, train) = kohaku_configs(&json!({}), &k);
+        let mut chars = train.split_once(r#""path": ""#).unwrap().1.chars();
+        let mut decoded = String::new();
+        loop {
+            match chars.next().unwrap() {
+                '"' => break,
+                '\\' => match chars.next().unwrap() {
+                    c @ ('\\' | '"') => decoded.push(c),
+                    c => panic!("未預期的跳脫字元 {c}"),
+                },
+                c => decoded.push(c),
+            }
+        }
+        assert_eq!(decoded, k.data_dir);
+        let controls = "\0\t\r\n\u{1f}\u{7f}\u{85}小克";
+        let literal = py_str(controls);
+        assert!(literal.contains("小克") && !literal.chars().any(char::is_control));
+        assert_eq!(serde_json::from_str::<String>(&literal).unwrap(), controls);
+    }
+
+    #[test]
+    fn kohaku_configs_partial_params() {
+        let mut k = kohaku_test_paths();
+        k.resume = r"F:\舊版本".into();
+        let mut p = json!({"kind": "style", "level": "light", "image_count": 51,
+            "kohaku_params": {"dim": 8, "alpha": 4.5, "lr": 0.003, "vram": "vram_12g", "base": r"F:\模型/自選.safetensors"}});
+        let (_, train) = kohaku_configs(&p, &k);
+        for line in ["STEPS = 500", "SAVE_EVERY = 125", "FLIP = True", "DIM = 8", "ALPHA = 4.5", "LR = 0.003",
+                     r#"TRANSFORMER = "自選""#, r#"RESUME = "F:\\舊版本""#] {
+            assert!(train.lines().any(|l| l == line), "找不到 {line}");
+        }
+        assert!(train.contains(r#"/configs/moss/vram/vram_12g.py")"#));
+        p["images"] = json!([]);
+        assert!(kohaku_configs(&p, &k).1.contains("STEPS = 400\n"));
+        p["kohaku_params"]["steps"] = json!(450);
+        assert!(kohaku_configs(&p, &k).1.contains("SAVE_EVERY = 113\n"));
+        p["kohaku_params"]["steps"] = json!(3);
+        assert!(kohaku_configs(&p, &k).1.contains("SAVE_EVERY = 1\n"));
+    }
+
+    #[test]
+    fn kohaku_epochs_from_checkpoints_only() {
+        let files = vec!["xk/checkpoints/step_00000400/export/xk-comfy.safetensors".into(),
+                         "xk/checkpoints/step_00000200/export/xk-comfy.safetensors".into(),
+                         "xk/export/xk-comfy.safetensors".into(),
+                         "xk/checkpoints/step_00000200/adapter.safetensors".into()];
+        assert_eq!(kohaku_epoch_names(&files), vec![(1, 200, files[1].clone()), (2, 400, files[0].clone())]);
+        for step in ["1234567", "123456789", "+0000400", "00000A00"] {
+            assert!(kohaku_epoch_names(&[format!("checkpoints/step_{step}/export/x-comfy.safetensors")]).is_empty());
+        }
+    }
+
+    #[test]
+    fn run_names() {
+        assert_eq!(run_lora_name("xk", 1), "xk");
+        assert_eq!(run_lora_name("xk", 3), "xk_r3");
+    }
 
     fn tmp(name: &str) -> PathBuf {
         let d = std::env::temp_dir().join(format!("anima_train_{name}_{}", new_id()));
@@ -1301,10 +1588,15 @@ mod tests {
     }
 
     #[test]
+    fn compare_jobs_with_baseline() {
+        assert_eq!(compare_jobs(&[2], &[0.8], 42, true), vec![(0,0.0,42), (2,0.8,42)]);
+    }
+
+    #[test]
     fn compare_jobs_cross_product_same_seed() {
-        let j = compare_jobs(&[2, 5], &[0.6, 1.0], 42);
+        let j = compare_jobs(&[2, 5], &[0.6, 1.0], 42, false);
         assert_eq!(j, vec![(2, 0.6, 42), (2, 1.0, 42), (5, 0.6, 42), (5, 1.0, 42)]);
-        assert!(compare_jobs(&[], &[1.0], 1).is_empty());
+        assert!(compare_jobs(&[], &[1.0], 1, false).is_empty());
     }
 
     #[test]

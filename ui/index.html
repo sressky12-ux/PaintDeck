@@ -21,63 +21,63 @@
     <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div class="top" data-tauri-drag-region>
       <div class="badge" data-tauri-drag-region><span data-app="24"></span><b>繪匣 PaintDeck</b><span class="model-no">AW-2000</span></div>
-      <div class="vents" aria-hidden="true"><i></i><i></i><i></i><i></i><i></i><i></i></div>
-      <div class="prog" id="topProg" role="progressbar" aria-label="目前這張的進度"><div></div></div>
-      <span class="grow" data-tauri-drag-region></span>
-      <button class="assist-btn" id="assistBtn" type="button" title="生圖助手：開一個獨立視窗，用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="spark" aria-hidden="true">✦</span>助手</button>
-      <span class="grow" data-tauri-drag-region></span>
-      <button class="chip-status" id="peChip" type="button" hidden></button>
-      <div class="rocker-w"><span class="lbl">外觀</span>
-        <div class="rocker" role="radiogroup" aria-label="外觀" id="rocker"><span class="cap"></span>
-          <button type="button" role="radio" data-t="light" aria-checked="false">淺</button><button type="button" role="radio" data-t="auto" aria-checked="true">自動</button><button type="button" role="radio" data-t="dark" aria-checked="false">深</button>
-        </div></div>
-      <button class="minikey" id="soundBtn" type="button" data-ic="spk" aria-pressed="true" title="按鍵音效" aria-label="按鍵音效"></button>
-      <div class="ai-slot">
-        <button class="chip-status ai" id="aiBtn" type="button" title="AI MCP：讓 Claude、Codex、Cursor 這類 AI 直接操作生圖站"><span class="led"></span><span class="t">AI MCP</span><span class="st" id="aiState">未接上</span></button>
-      </div>
-      <button class="minikey txt" id="helpBtn" type="button" title="快捷鍵與說明（?）" aria-label="快捷鍵與說明">?</button>
-      <div class="wctl" id="wctl" hidden><button class="minikey" type="button" data-ic="min" data-win="min" aria-label="最小化"></button><button class="minikey" type="button" data-ic="max" data-win="max" aria-label="最大化"></button><button class="minikey red" type="button" data-ic="power" data-win="close" aria-label="關閉"></button></div>
-    </div>
-    <div class="notice ai-hint" id="aiHint" hidden>
-      <span class="grow"><b>AI 可以幫你操作整個生圖站</b>：接上 Claude、Codex 或 Cursor 之後，用聊天就能叫它生圖、翻圖庫、畫漫畫、剪影片。按右上角「AI MCP」有設定和說明。</span>
-      <button class="akey sm go" id="aiHintOpen" type="button">怎麼接</button>
-      <button class="akey sm" id="aiHintHide" type="button">知道了</button>
-    </div>
-  </header>
-
-  <div class="deck">
-    <nav class="panel rail screws" id="tabs" aria-label="功能">
+      <div class="nav-slot">
+        <div class="pill"><div id="navPins"></div><button type="button" class="tkey" id="allBtn" aria-expanded="false" aria-controls="navAll">全部功能 ▾</button></div>
+        <div class="top-pop" id="navAll" hidden>
+    <nav class="nav-grid" id="tabs" aria-label="功能">
       <button class="pkey on" data-page="gen" data-ic="cam" type="button"><span class="n">01</span><span class="led"></span>生成</button>
       <button class="pkey" data-page="taglib" data-ic="tags" type="button" title="隨機：照規則隨機組整組提示詞（角色、服裝、場景可固定），旁邊就是生成頁的提示詞、模型、LoRA、尺寸、取樣、附加和生成鈕（跟生成頁同一組）"><span class="n">02</span><span class="led"></span>隨機</button>
       <button class="pkey" data-page="gallery" data-ic="slides" type="button"><span class="n">03</span><span class="led"></span>圖庫</button>
       <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫：角色、場景、道具…全站共用"><span class="n">04</span><span class="led"></span>資產庫</button>
-      <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">05</span><span class="led"></span>LoRA</button>
-      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">06</span><span class="led"></span>下載中心</button>
-      <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">07</span><span class="led"></span>導演</button>
-      <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">08</span><span class="led"></span>漫畫</button>
-      <button class="pkey" data-page="agent" data-ic="bubble" type="button" hidden title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">09</span><span class="led"></span>助手</button>
-      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">10</span><span class="led"></span>訓練</button>
-      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">11</span><span class="led"></span>API</button>
-      <span class="sp"></span>
-      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">12</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
-      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">13</span><span class="led"></span>設定</button>
+      <button class="pkey" data-page="posewear" data-ic="palette" type="button" title="衣姿：posewear 官網原樣（姿勢、服裝、人像、表情、髮型、歷代、場景、光影、道具、家具…），挑中的直接送進生成頁"><span class="n">05</span><span class="led"></span>衣姿</button>
+      <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">06</span><span class="led"></span>LoRA</button>
+      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">07</span><span class="led"></span>下載中心</button>
+      <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">08</span><span class="led"></span>導演</button>
+      <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">09</span><span class="led"></span>漫畫</button>
+      <button class="pkey" data-page="agent" data-ic="bubble" type="button" title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">10</span><span class="led"></span>助手</button>
+      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">11</span><span class="led"></span>訓練</button>
+      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">12</span><span class="led"></span>API</button>
+      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">13</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
+      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">14</span><span class="led"></span>設定</button>
     </nav>
+          <button type="button" class="akey" id="navPinAction" hidden></button>
+        </div>
+      </div>
+      <div class="prog" id="topProg" role="progressbar" aria-label="目前這張的進度"><div></div></div>
+      <span class="grow" data-tauri-drag-region></span>
+      <button class="assist-btn" id="assistBtn" type="button" title="生圖助手：開一個獨立視窗，用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="spark" aria-hidden="true">✦</span>助手</button>
+      <span class="grow" data-tauri-drag-region></span>
+      <div class="status" id="statusStrip" aria-label="系統狀態">
+        <span class="st-comfy"><span class="dot" id="comfyDot" role="img" aria-label="ComfyUI 連線狀態"></span><span id="comfyTxt">COMFYUI</span></span>
+        <button class="sys" id="sysBtn" type="button" title="系統狀態：顯存、記憶體、硬碟（點一下看詳細）" aria-haspopup="dialog">顯存 <span class="meter" id="sysVram" title="顯存"><i></i></span> <span class="a" id="sysText">—</span></button>
+        <span class="st-pe" id="peText">AI 改寫 待機</span>
+        <button type="button" class="a" id="qtxt" aria-haspopup="dialog">佇列 0</button>
+        <button type="button" id="statusMore" aria-controls="statusDetails" aria-expanded="false" aria-label="更多系統狀態">⋯</button>
+        <div class="top-pop" id="statusDetails" hidden><span class="st-ram">記憶體 <span class="a" id="ramText">—</span></span> <span class="st-disk"><span class="a" id="diskText">—</span></span> <span id="verText">V1.1</span>
+          <button class="chip-status" id="peChip" type="button" hidden></button>
+        </div>
+      </div>
+      <button type="button" class="akey sm" id="updateNotice" hidden></button>
+      <div class="ai-slot">
+        <button class="chip-status ai" id="aiBtn" type="button" title="AI MCP：讓 Claude、Codex、Cursor 這類 AI 直接操作生圖站"><span class="led"></span><span class="t">AI MCP</span><span class="st" id="aiState">未接上</span></button>
+      </div>
+      <div class="theme-slot"><button type="button" class="minikey txt" id="themeBtn" aria-expanded="false" aria-controls="rocker">外觀</button>
+        <div class="rocker" role="radiogroup" aria-label="外觀" id="rocker" hidden><span class="cap"></span>
+          <button type="button" role="radio" data-t="light" aria-checked="false">淺</button><button type="button" role="radio" data-t="auto" aria-checked="true">自動</button><button type="button" role="radio" data-t="dark" aria-checked="false">深</button>
+        </div></div>
+      <button class="minikey" id="soundBtn" type="button" data-ic="spk" aria-pressed="true" title="按鍵音效" aria-label="按鍵音效"></button>
+      <button class="minikey txt" id="helpBtn" type="button" title="快捷鍵與說明（?）" aria-label="快捷鍵與說明">?</button>
+      <div class="wctl" id="wctl" hidden><button class="minikey" type="button" data-ic="min" data-win="min" aria-label="最小化"></button><button class="minikey" type="button" data-ic="max" data-win="max" aria-label="最大化"></button><button class="minikey red" type="button" data-ic="power" data-win="close" aria-label="關閉"></button></div>
+    </div>
+  </header>
+
+  <div class="deck">
 
     <div class="pages">
 <!-- ======================= 生成 ======================= -->
 <main id="page-gen" class="page on">
   <!-- 停靠式版面（dock.js）：每個 data-dock 是一塊面板，可以搬到左／右／下區；main.js 的 mountDock 組起來 -->
   <div class="dock-grp" data-dock="source">
-    <div class="piano" id="modeSeg" role="tablist" aria-label="模式">
-      <button data-mode="txt2img" class="on" data-ic="t2i" type="button">文生圖</button>
-      <button data-mode="img2img" data-ic="i2i" type="button">圖生圖</button>
-      <button data-mode="inpaint" data-ic="inpaint" type="button">局部重繪</button>
-      <button data-mode="outpaint" data-ic="expand" type="button" title="把畫面往上下左右延伸出去：橫圖變直圖、補出被裁掉的身體或背景">擴圖</button>
-      <button data-mode="multiref" data-ic="multi" type="button" title="多張參考圖組合：換裝、換場景、照姿勢、合照…（Qwen 2.1）">多圖參考</button>
-      <button data-mode="upscale" data-ic="zoom" type="button">放大</button>
-      <button data-mode="strip" data-ic="i2i" type="button" hidden></button>
-      <button data-mode="sheet" data-ic="multi" type="button" title="角色四視圖（設定稿）一次改：換衣服、改顏色、脫衣，每個視角同步改（Qwen 2.1，不用切模型）">四視圖</button>
-    </div>
 
     <section class="group" id="modelBox">
       <span class="lbl" data-silk="ENGINE">模型</span>
@@ -114,10 +114,6 @@
 
     <section class="group" id="initBox" hidden>
       <span class="lbl" data-silk="INPUT">輸入圖</span>
-      <div class="drop" id="initDrop">
-        <img id="initImg" alt="">
-        <div class="drop-hint">拖曳圖片到這裡、貼上（Ctrl+V），或<button class="link" id="initPick" type="button">選擇檔案</button></div>
-      </div>
       <div class="row gap wrap">
         <button class="akey sm" id="initFromGallery" data-ic="slides" type="button">從圖庫選</button>
         <button class="akey sm" id="maskEdit" data-ic="inpaint" type="button" hidden>畫遮罩</button>
@@ -130,9 +126,8 @@
 
     <section class="group" id="refBox" hidden>
       <div class="lbl" data-silk="REFS">參考圖 <span id="refCount"></span><button class="act" id="refPick" type="button">＋選檔案</button><button class="act" id="refFromGallery" type="button">從圖庫選</button></div>
-      <div class="notice" id="refFamilyWarn" hidden>多圖參考只支援 Qwen 2.1 模型。<button class="akey sm go" id="refSwitchModel" type="button">換成 Qwen 2.1 Turbo</button></div>
-      <div class="ref-tray" id="refTray"></div>
-      <div class="muted sm">輸出的尺寸照第 1 張；角色選「底圖」的會自動排到第 1 張，構圖照它。點圖上的 <code>&lt;image1&gt;</code> 會插進提示詞；拖曳卡片可換順序（提示詞裡的編號會跟著改）。也可以直接 Ctrl+V 貼上。</div>
+      <div class="notice" id="refFamilyWarn" hidden>多圖參考支援 Qwen 2.1 和 MiniMax H3 Image。<button class="akey sm go" id="refSwitchModel" type="button">換成 Qwen 2.1 Turbo</button></div>
+      <div class="muted sm">輸出的尺寸照第 1 張；角色選「底圖」的會自動排到第 1 張，構圖照它。點圖上的 <code id="refTagHint">&lt;image1&gt;</code> 會插進提示詞；拖曳卡片可換順序（提示詞裡的編號會跟著改）。也可以直接 Ctrl+V 貼上。</div>
       <div class="muted sm">實測：<b>重新組一張圖</b>（人物＋衣服＋場景、合照）效果最好；鎖住底圖只改局部（例如只換衣服、背景完全不動）容易只改一半。</div>
       <span class="sub">範本（會設好角色並寫好提示詞）</span>
       <div class="chips" id="refTemplates"></div>
@@ -146,35 +141,68 @@
     </section>
   </div>
 
-  <div class="dock-grp" data-dock="prompt">
+
+  <div class="dock-grp" data-dock="compose">
+    <div class="stage-refs"><div class="drop" id="initDrop">
+        <img id="initImg" alt="">
+        <div class="drop-hint">拖曳圖片到這裡、貼上（Ctrl+V），或<button class="link" id="initPick" type="button">選擇檔案</button></div>
+      </div>
+      <div class="ref-tray" id="refTray"></div>
+    </div>
+    <div class="dock-grp" data-dock="prompt">
     <section class="group" id="promptBox">
       <div class="lbl" data-silk="PROMPT"><label for="prompt">提示詞</label>
+        <button type="button" class="akey sm stage-add" id="stageAddRef">＋參考圖</button>
+        <button type="button" class="akey sm stage-add" id="stageAssets" aria-controls="genAssets" aria-expanded="false">＋從資產</button>
         <span class="tools">
           <select id="recentSel" class="sm recent" aria-label="最近用過的提示詞"><option value="">最近用過</option></select>
           <select id="snippetSel" class="sm" aria-label="插入片段"><option value="">＋ 插入片段</option></select>
           <button class="icon" id="promptLib" type="button" title="打開提示詞庫（整套設定和片段）" aria-label="打開提示詞庫">庫</button>
           <button class="icon" id="tagLibBtn" type="button" aria-pressed="false" title="詞庫：分類點選 tag（人物、服飾、表情、鏡頭…），點一下加進提示詞框" aria-label="打開詞庫">詞</button>
+          <button class="icon" id="pwBtn" type="button" aria-pressed="false" title="衣姿：服裝、姿勢參考圖，拖進提示詞框、構圖控制或多圖參考" aria-label="打開衣姿">衣</button>
+          <button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button>
+          <button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button>
           <button class="icon" id="promptClear" type="button" title="清空" aria-label="清空提示詞">✕</button>
+          <button class="icon" id="promptZoom" type="button" aria-label="放大提示詞框" aria-pressed="false">⤢</button>
         </span>
       </div>
       <div id="genAssets" class="adr-slot"></div>
       <div id="lkRow" class="row wrap lk-row" hidden></div>
       <div class="scr prompt-scr">
-        <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="6" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
-        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="punctFixBtn" type="button" aria-pressed="true" title="英文 tag 後面用中文輸入法打的「，、：（）」自動換成半形「, : ( )」，不用切輸入法；中文句子裡的不動，Ctrl+Z 可以換回來">，→,</button><button class="pzh-toggle" id="promptSecBtn" type="button" aria-pressed="false" title="大框／小框切換：分成畫風、角色、姿勢、鏡頭幾格寫，大框會同步">分段</button><button class="pzh-toggle" id="promptZhBtn" type="button" aria-pressed="false" title="在提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
+        <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="3" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
+        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="punctFixBtn" type="button" aria-pressed="true" title="英文 tag 後面用中文輸入法打的「，、：（）」自動換成半形「, : ( )」，不用切輸入法；中文句子裡的不動，Ctrl+Z 可以換回來">，→,</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
         <div class="pzh" id="promptZh" hidden></div>
       </div>
       <div class="taglib" id="tagLib" hidden></div>
       <div class="warn-line sm" id="promptWarn" hidden></div>
-      <label class="check inline batch-row" title="提示詞框每一行當成一句提示詞，各送一次（每句畫「張數」那麼多張）；開著時不跑「生成時自動改寫」"><input type="checkbox" id="batchLines"> 批次：每行一句提示詞，各畫一組</label>
 
-      <details class="pe lay-wrap" id="layBox" hidden>
+
+      <details class="fold" id="negDetails"><summary>NEG　預設負面詞（點開改）</summary>
+        <div class="ac-wrap"><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
+        <div class="foot"><span class="foot-r"><button class="pzh-toggle" id="negZhBtn" type="button" aria-pressed="false" title="在負面提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button></span></div>
+        <div class="pzh" id="negZh" hidden></div>
+      </details>
+      <label class="check inline batch-row" title="提示詞框每一行當成一句提示詞，各送一次（每句畫「張數」那麼多張）；開著時不跑「生成時自動改寫」"><input type="checkbox" id="batchLines"> 批次：每行一句提示詞，各畫一組</label>
+    </section>
+  </div>
+    <div id="genRow" class="genrow">
+      <div id="capRow"></div>
+      <span id="sizeVfd" hidden>—</span><span id="sizeAspect" hidden></span>
+      <span id="genNodeWrap" hidden><span class="sub">送到</span><select id="genNode"></select></span>
+      <button class="minikey txt" id="stopBtn" type="button" title="停止目前這張">停</button>
+      <button class="bigkey" id="genBtn" type="button"><span class="led"></span>生成<small>CTRL + ENTER</small></button>
+    </div>
+  </div>
+
+  <div class="dock-grp" data-dock="layout">
+    <details class="pe lay-wrap" id="layBox" open hidden>
         <summary><span data-ic="comic" class="sic"></span>版面框 <span class="vfd sm" id="layCount" hidden></span><span class="muted sm">MOSS 專用：拉框指定角色、物件、文字放在畫面哪裡</span></summary>
         <p class="muted sm lay-note">框會照位置畫進這張圖：點下面的畫面會跳出大視窗，在裡面拉框、寫每個框是誰／什麼。上面的提示詞是整張圖的描述（場景、氣氛、光線、畫風）；AI 改寫只改提示詞，框不會動。不畫框就是一般的 MOSS 生圖。</p>
         <div id="layMount"></div>
       </details>
-
-      <details class="pe" id="peBox">
+  </div>
+  <div class="dock-grp" data-dock="pe">
+    <details class="pe" id="peBox" open>
         <summary><span data-ic="rec" class="sic"></span>AI 改寫提示詞 <span class="muted sm">一句想法 → 完整提示詞，可以一直微調</span></summary>
         <div class="label-row"><span class="sub">想法（中文、英文都可以，一句話也行）</span><button class="link sm" id="peFromPrompt" type="button">從提示詞複製</button></div>
         <textarea id="peIdea" rows="2" placeholder="例如：黃昏的屋頂上，一位穿白色洋裝的女性回頭微笑，長髮被風吹起"></textarea>
@@ -228,12 +256,6 @@
         <div class="muted sm"><span id="peModelNote">模型：通用模型 Qwen3.5-9B／Qwen3.6-35B（跟生圖助手同一顆）</span>。改寫時會暫時占用顯存，按「生成」前會自動釋放。</div>
         <div class="warnbox sm" id="peRetire" hidden></div>
       </details>
-      <details class="fold" id="negDetails"><summary>負面提示詞</summary>
-        <div class="ac-wrap"><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
-        <div class="foot"><span class="foot-r"><button class="pzh-toggle" id="negZhBtn" type="button" aria-pressed="false" title="在負面提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button></span></div>
-        <div class="pzh" id="negZh" hidden></div>
-      </details>
-    </section>
   </div>
 
   <div class="dock-grp" data-dock="lora">
@@ -247,6 +269,13 @@
   <div class="dock-grp" data-dock="params">
     <section class="group" id="sizeBox">
       <div class="lbl" data-silk="FRAME">尺寸 <span class="vfd g sm" id="sizeInfo"></span></div>
+      <div id="mmOptions" hidden>
+        <div class="row gap wrap" id="mmCanvas"><label>比例 <select id="mmRatio"><option>1:1</option><option>4:3</option><option>3:4</option><option>3:2</option><option>2:3</option><option>16:9</option><option>9:16</option><option>21:9</option></select></label><label>百萬畫素 <select id="mmMp"><option>4</option><option>8</option><option>12</option><option>16</option><option>20</option></select></label></div>
+        <label>文字編碼器 <select id="mmTe"></select></label>
+        <label>提示詞擴寫器 <select id="mmPe"></select></label>
+        <label>分塊解碼 <select id="mmTiled"><option value="0">關</option><option>512</option><option>384</option><option>256</option></select></label>
+        <button type="button" class="akey sm" id="mmPreset8g">8GB 建議</button>
+      </div>
       <div class="chips" id="sizeChips"></div>
       <div class="row gap" id="sizeInputs">
         <input type="number" id="width" step="16" min="256" max="2048" aria-label="寬"><button class="icon" id="swapWH" type="button" title="交換寬高" aria-label="交換寬高">⇄</button><input type="number" id="height" step="16" min="256" max="2048" aria-label="高">
@@ -416,8 +445,18 @@
     </section>
   </div>
 
+  <div id="stageModes"><div class="piano row" id="modeSeg" role="tablist" aria-label="模式">
+      <button data-mode="txt2img" class="on" data-ic="t2i" type="button">文生圖</button>
+      <button data-mode="img2img" data-ic="i2i" type="button">圖生圖</button>
+      <button data-mode="inpaint" data-ic="inpaint" type="button">局部重繪</button>
+      <button data-mode="outpaint" data-ic="expand" type="button" title="把畫面往上下左右延伸出去：橫圖變直圖、補出被裁掉的身體或背景">擴圖</button>
+      <button data-mode="multiref" data-ic="multi" type="button" title="多張參考圖組合：換裝、換場景、照姿勢、合照…（Qwen 2.1）">多圖參考</button>
+      <button data-mode="upscale" data-ic="zoom" type="button">放大</button>
+      <button data-mode="strip" data-ic="i2i" type="button" hidden></button>
+      <button data-mode="sheet" data-ic="multi" type="button" title="角色四視圖（設定稿）一次改：換衣服、改顏色、脫衣，每個視角同步改（Qwen 2.1，不用切模型）">四視圖</button>
+    </div><button class="akey sm stage-tasks-btn" id="stageTasksBtn" type="button" aria-pressed="true" title="收起／打開右邊的任務欄">任務 <span class="vfd sm" id="stageTasksN" hidden></span></button></div>
   <section class="panel monitor stage screws" aria-label="畫面">
-    <div class="readout" aria-live="polite"><span id="osdl">● READY</span><span class="sep"></span><span id="osdm">—</span><span class="grow"></span><span class="a" id="osdr"></span></div>
+    <div class="readout" aria-live="polite"><span id="osdl">● READY</span><span class="sep"></span><span id="osdm">—</span><span class="grow"></span><span class="a" id="osdr"></span><span class="muted sm view-meta" id="viewMeta"></span></div>
     <div class="viewer" id="viewer">
       <div class="win" id="win">
         <img id="viewImg" alt="目前選取的生成結果">
@@ -450,63 +489,51 @@
       <button class="akey" data-act="reuse" data-ic="loop" type="button">重用參數</button>
       <button class="akey" data-act="img2img" data-ic="i2i" type="button">圖生圖</button>
       <button class="akey" data-act="inpaint" data-ic="inpaint" type="button">局部重繪</button>
-      <button class="akey" data-act="multiref" data-ic="multi" type="button">多圖參考</button>
       <button class="akey" data-act="upscale" data-ic="zoom" type="button">放大</button>
-      <button class="akey" data-act="strip" data-ic="i2i" type="button" hidden></button>
-      <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
-      <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
       <button class="akey" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
       <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
-      <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
-      <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
-      <button class="akey" data-act="tagger" data-ic="rewind" type="button">反推</button>
-      <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
-      <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
-      <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
-      <span class="grow"></span>
       <button class="akey" data-act="fav" type="button">☆ 收藏</button>
       <a class="akey" data-act="download" data-ic="floppy" download>下載</a>
-      <button class="akey warn" data-act="delete" data-ic="eject" type="button">回收區</button>
-      <span class="muted sm view-meta" id="viewMeta"></span>
+      <button class="akey" id="viewMore" type="button" aria-expanded="false" aria-controls="viewMoreMenu" aria-label="更多成品動作">⋯</button>
+      <div id="viewMoreMenu" hidden>
+        <button class="akey" data-act="multiref" data-ic="multi" type="button">多圖參考</button>
+        <button class="akey" data-act="strip" data-ic="i2i" type="button" hidden></button>
+        <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
+        <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
+        <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
+        <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
+        <button class="akey" data-act="tagger" data-ic="rewind" type="button">反推</button>
+        <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
+        <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
+        <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
+        <button class="akey warn" data-act="delete" data-ic="eject" type="button">回收區</button>
+      </div>
     </div>
   </section>
 
-  <div class="genrow" id="genRow">
-    <div class="nodes-launch">
-      <span id="genNodeWrap" hidden><span class="sub">送到</span><select id="genNode"></select></span>
-      <button class="bigkey" id="genBtn" type="button"><span class="led"></span>生成<small>CTRL + ENTER</small></button>
-    </div>
-    <div class="stepper"><span class="lbl">尺寸</span><span class="vfd g" id="sizeVfd">—</span><span class="lbl" id="sizeAspect"></span>
-      <div class="row"><button class="minikey txt" id="stopBtn" type="button" title="停止目前這張">停</button><button class="minikey red txt" id="clearBtn" type="button" title="清空佇列並停止">全停</button></div></div>
-  </div>
 
-  <aside class="mag" data-dock="recent" aria-label="最近畫的圖">
+  <aside class="mag stage-tasks" data-dock="tasks" aria-label="任務">
+    <div class="row gap wrap"><span class="vfd sm" id="stageQueue">QUEUE · 0</span>
+      <span class="grow"></span><button class="minikey red txt" id="clearBtn" type="button" title="清空佇列並停止">全停</button>
+      <button class="akey sm" id="stageJobs" type="button" aria-controls="jobsDrawer">開完整面板</button>
+    </div>
     <div class="cassette" id="cassette"><div class="win2"><span class="reel" id="reelL"></span><span class="reel" id="reelR"></span></div>
       <div class="lab">TASK・C-60</div><div class="pct"><span class="vfd" id="pct">--%</span></div></div>
+    <div id="stageTasks"></div>
     <span class="lbl center-lbl">幻燈片匣</span>
     <div class="strip slides" id="strip"></div>
   </aside>
 </main>
 
-<!-- ======================= 詞庫（生成頁分身） ======================= -->
-<!-- 隨機頁（#taglib，生成頁的分身）：左＝隨機產生器（wardrobe.js）；中＝借來的提示詞（含 AI 改寫）、LoRA 卡匣，底下黏著生成鈕＋最新一張；
-     右＝借來的模型與輸入、尺寸與模式、取樣（步數、CFG、張數、種子、整套設定）、附加（高解析修復、構圖控制、自動修臉、X/Y）。borrow.js 搬過來、離開這頁就還回去 -->
+<!-- 隨機頁借整張提示詞卡，離開時放回生成頁。 -->
 <main id="page-taglib" class="page">
   <div class="tlp">
     <section class="panel screws tlp-lib" aria-label="隨機產生器"><div class="wd" id="tlWardrobe"></div></section>
-    <div class="tlp-right">
-      <section class="panel screws tlp-mid" aria-label="提示詞與生成">
-        <div class="tlp-top row gap wrap">
-          <button class="akey sm go" id="tlCompose" type="button" title="把提示詞框裡的 tag 交給 AI 改寫，照現在用的畫圖模型寫成完整的提示詞（Anima＝tag＋英文句、Qwen／MOSS＝英文段落）；結果在下面的 AI 改寫區，按「套用」才進提示詞">AI 組成完整提示詞</button>
-        </div>
-        <div class="tlp-borrow" id="tlBorrowMid"></div>
-        <div class="tlp-gen">
-          <button class="tlp-last" id="tlLast" type="button" title="最新一張成品：點了回生成頁看大圖" aria-label="最新一張成品，點了回生成頁看大圖" hidden><img alt=""></button>
-          <div class="tlp-genrow" id="tlBorrowGen"></div>
-        </div>
-      </section>
-      <aside class="panel screws tlp-side" aria-label="模型與參數"><div class="tlp-borrow" id="tlBorrowSide"></div></aside>
-    </div>
+    <section class="panel tlp-compose" id="tlBorrowMid" aria-label="提示詞與生成"><div id="tlBorrowCompose"></div></section>
+    <aside class="panel screws tlp-side" id="tlBorrowSide" aria-label="成品與改寫">
+      <div id="tlBorrowGen"><span class="lbl">最新一張</span><button class="tlp-last" id="tlLast" type="button" title="最新一張成品：點了回生成頁看大圖" aria-label="最新一張成品，點了回生成頁看大圖" hidden><img alt=""></button></div>
+      <button class="akey sm go" id="tlCompose" type="button" title="把提示詞框裡的 tag 交給 AI 改寫，照現在用的畫圖模型寫成完整的提示詞（Anima＝tag＋英文句、Qwen／MOSS＝英文段落）；結果在 AI 改寫膠囊裡，按「套用」才進提示詞">AI 組成完整提示詞</button>
+    </aside>
   </div>
 </main>
 
@@ -638,6 +665,11 @@
   </section>
 </main>
 
+<!-- ======================= 衣姿（posewear 官網原樣：ui/posewear/，tools/posewear_vendor.py 產生；後端 server/api_posewear.rs、api_pwproxy.rs） ======================= -->
+<main id="page-posewear" class="page">
+  <div class="st-body pw-page"><iframe id="pwFrame" title="衣姿" allow="clipboard-read; clipboard-write; fullscreen"></iframe></div>
+</main>
+
 <!-- ======================= LoRA ======================= -->
 <main id="page-loras" class="page">
   <section class="panel lib screws">
@@ -652,8 +684,8 @@
     <button class="akey sm" id="loraView" type="button" title="改成一行一個的列表">☰ 列表</button>
     <button class="akey sm" id="loraLearn" type="button" data-ic="chip">讓助手認識 LoRA</button>
     <button class="akey sm" id="loraRefresh" type="button" data-ic="loop">重新整理清單</button>
+    <details class="info-tip"><summary aria-label="說明" title="說明">ⓘ</summary><div class="info-pop lora-library-note">用途會依「讓助手認識 LoRA」的結果、Civitai 標籤與檔名自動分類；卡片可自行改分類與標籤。搜尋框也能找所有標籤；大量清單會分批顯示。</div></details>
   </div>
-  <div class="muted sm pad lora-library-note">用途會依「讓助手認識 LoRA」的結果、Civitai 標籤與檔名自動分類；卡片可自行改分類與標籤。搜尋框也能找所有標籤；大量清單會分批顯示。</div>
   <div class="lib-scroll"><div class="cards" id="loraGrid"></div><div class="center"><button class="akey" id="loraMore" type="button" hidden>載入更多</button></div></div>
   </section>
 </main>
@@ -811,7 +843,7 @@
   <!-- 混音台：小克的 mixdesk 譜檔 → 時間軸＋調音台＋鋼琴捲軸＋影片（ui/mixdesk.html、js/mixdesk/；後端 src-tauri\src\mixdesk.rs、server\api_mixdesk.rs） -->
   <section class="panel lib screws st" data-tab="mixdesk" hidden>
     <div class="toolbar">
-      <span class="vfd g dir-status" role="status">混音台：看小克寫的曲子在動、調推桿、改音符、對著影片配樂</span>
+      <b class="ph-title">混音台</b><details class="info-tip"><summary aria-label="說明" title="說明">ⓘ</summary><div class="info-pop">看小克寫的曲子在動、調推桿、改音符、對著影片配樂</div></details>
       <span class="grow"></span>
       <button class="akey sm" id="mdFull" type="button" title="混音台放大到整個視窗（右下角的紅色按鈕縮回來）">放大</button>
       <button class="akey sm" id="mdFs" type="button" title="蓋滿整個螢幕（按 Esc 退出）">全螢幕</button>
@@ -874,30 +906,33 @@
       <div class="fr-grid lib-scroll" id="frGrid" aria-label="所有幀"></div>
     </div>
   </section>
-  <!-- 影片分頁（2026-10-24）：上面是拍攝單（js/shotsheet.js），下面是 H3 短片或長片其中一個 -->
-  <section class="panel lib screws dir sheet" data-tab="video" data-sub="sheet" hidden>
-    <details id="shFold" open>
-      <summary class="toolbar">
-        <b>拍攝單</b>
-        <span class="muted sm">填角色、首幀、場景、每段的時間軸，程式依影片引擎組提示詞</span>
-        <span class="grow"></span>
-        <span class="piano row" id="videoSub" role="tablist" aria-label="下面用哪一種">
+  <!-- 影片分頁（2026-10-24；2026-11-22 中央舞台第二期）：頁首列（短片／長片、拍攝單、狀態燈）＋右邊滑出的拍攝單抽屜（js/shotsheet.js、js/videostage.js），
+       下面是 H3 短片或長片其中一個 -->
+  <section class="panel lib dir vhead-sec" data-tab="video" data-sub="sheet" hidden>
+    <div class="toolbar vhead">
+      <span class="piano row" id="videoSub" role="tablist" aria-label="下面用哪一種">
           <button data-sub="short" type="button" role="tab" title="一段的 H3 影片（素材板、玩法）">短片</button>
           <button data-sub="long" type="button" role="tab" title="好幾段接著拍，自動接成一支">長片</button>
         </span>
-      </summary>
-      <div id="shBody" class="sh-body lib-scroll"></div>
-    </details>
-  </section>
-  <!-- H3 影片台（2026-10-23 大改）：起手式 → 素材板（每個素材選用途）＋分鏡卡 → 組成官方格式提示詞 → 雲端或這台電腦出片，成品進圖庫 -->
-  <section class="panel lib screws dir" data-tab="video" data-sub="short" hidden>
-    <div class="toolbar">
-      <b id="h3Title">MiniMax H3 影片</b>
+      <button class="akey sm" id="shOpen" type="button" aria-controls="shDrawer" aria-expanded="false" title="填角色、首幀、場景、每段的時間軸，程式依影片引擎組提示詞">拍攝單 ▸</button>
       <span class="grow"></span>
       <span class="vfd g dir-status" id="h3Status" role="status" aria-live="polite">待機</span>
+      <span class="vfd g dir-status" id="hcStatus" role="status" aria-live="polite" hidden>待機</span>
     </div>
-    <div class="dir-cols h3-cols" id="h3Work">
-      <div class="dir-left lib-scroll" id="h3ColA">
+    <aside class="sh-drawer" id="shDrawer" aria-label="拍攝單" hidden>
+      <div class="toolbar sh-drawer-head"><b>拍攝單</b><span class="muted sm">填角色、首幀、場景、每段的時間軸，程式依影片引擎組提示詞</span><span class="grow"></span><button class="akey sm" id="shClose" type="button">關閉</button></div>
+      <div id="shBody" class="sh-body lib-scroll"></div>
+    </aside>
+  </section>
+  <!-- H3 短片（2026-10-23 大改；2026-11-22 中央舞台第二期，js/videostage.js）：舞台＝最新成品；膠囊＝起手式、素材板、分鏡、在哪跑、進階；
+       下面提示詞卡＝點子＋開拍列；右邊＝工作與成品。元素原樣搬，id 都沒變 -->
+  <section class="panel lib screws dir vstage-sec" data-tab="video" data-sub="short" hidden>
+    <div class="h3-host" id="h3Work">
+      <div class="v-stage" id="h3Stage">
+        <div class="v-readout"><b id="h3Title">MiniMax H3 影片</b><span class="grow"></span><span class="vfd sm" id="h3StageTag">—</span></div>
+        <div class="v-screen" id="h3StageView"><div class="v-empty">做好的影片會在這裡播</div></div>
+      </div>
+      <div class="dock-grp" data-dock="start" id="h3ColA">
         <section class="box">
           <label>起手式</label>
           <div class="muted sm">按了只是先把素材格、分鏡、長度擺好，之後全部能改、能加、能刪。</div>
@@ -905,6 +940,8 @@
           <div class="row gap"><select id="h3Tpl" class="sm" autocomplete="off" aria-label="舊範本"></select></div>
           <div class="muted sm" id="h3Desc"></div>
         </section>
+      </div>
+      <div class="dock-grp" data-dock="board">
         <section class="box">
           <label>素材板</label>
           <div class="muted sm">丟進來、選用途就好：編號和「要保留什麼」程式會自己寫進提示詞。</div>
@@ -918,17 +955,7 @@
           <div class="muted sm" id="h3BoardNote"></div>
         </section>
       </div>
-      <div class="dir-left lib-scroll" id="h3ColB">
-        <section class="box">
-          <label for="h3Idea">點子</label>
-          <div id="h3Assets" class="adr-slot"></div>
-          <textarea id="h3Idea" rows="3" placeholder="例：小克推門進咖啡廳，跟店員點一杯不加糖的拿鐵，店員笑著回她「馬上好」。溫暖午後、日系動畫。"></textarea>
-          <div class="row gap wrap">
-            <select id="h3Brain" autocomplete="off" class="sm" aria-label="用哪顆腦袋寫"><option value="9b">本機 9B（快）</option><option value="35b">本機 35B（寫得比較好）</option><option value="cloud">雲端的腦袋（要勾生圖助手）</option><option value="api">外接 API（API 頁的預設連線）</option></select>
-            <button class="akey sm go" id="h3Write" type="button">AI 幫我寫滿分鏡</button>
-          </div>
-          <div class="muted sm">AI 會照素材板的用途寫，已經寫的分鏡會留著再補滿；寫完每一格都能改。放好的圖會一起給它看。</div>
-        </section>
+      <div class="dock-grp" data-dock="shots" id="h3ColB">
         <section class="box">
           <label>分鏡</label>
           <div class="h3-ruler" id="h3Ruler"></div>
@@ -953,23 +980,7 @@
           <div class="muted sm" id="h3PromptNote"></div>
         </section>
       </div>
-      <div class="dir-right lib-scroll">
-        <div class="toolbar dir-run">
-          <button class="akey go" id="h3Go" type="button" data-ic="rec">開始做影片</button>
-          <span class="sub inline">支數</span>
-          <select id="h3Count" autocomplete="off" class="sm" aria-label="一次做幾支"><option>1</option><option>2</option><option>3</option><option>4</option></select>
-          <span class="grow"></span>
-          <span class="muted sm" id="h3Est"></span>
-        </div>
-        <section class="box">
-          <label>長度與畫面</label>
-          <div class="grid2">
-            <div><span class="sub">長度</span><select id="h3Secs"></select></div>
-            <div><span class="sub">畫質</span><select id="h3Quality" autocomplete="off"><option value="fast">快</option><option value="std" selected>標準</option><option value="high">高</option></select></div>
-            <div><span class="sub">比例</span><select id="h3Aspect" autocomplete="off"><option value="16:9">16:9 橫</option><option value="9:16">9:16 直</option><option value="1:1">1:1 方</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9 寬銀幕</option></select></div>
-          </div>
-          <div class="muted sm" id="h3SizeNote"></div>
-        </section>
+      <div class="dock-grp" data-dock="where">
         <section class="box">
           <label>在哪跑</label>
           <div class="piano row" id="h3Where" role="tablist" aria-label="在哪跑">
@@ -1013,6 +1024,8 @@
             <div class="muted sm">一支一個任務，照秒扣 RH 幣（官方價目：48GB 每秒 0.4 幣、24GB 每秒 0.2 幣；免費帳號一次跑一個）。長片要接上一段的 latent，只能用雲端顯卡；RefMod 也只能用雲端顯卡。</div>
           </div>
         </section>
+      </div>
+      <div class="dock-grp" data-dock="adv">
         <section class="box">
           <details class="fold" id="h3Adv">
             <summary>進階</summary>
@@ -1042,25 +1055,60 @@
             <div class="row gap wrap"><button class="akey sm" id="h3LoraAdd" type="button">加一顆 LoRA</button></div>
           </details>
         </section>
+      </div>
+      <div class="dock-grp v-compose" data-dock="h3compose">
+        <div class="v-refs"><span class="vfd sm" id="h3QCounts" title="素材板上的素材">—</span>
+          <button class="akey sm stage-add" id="h3QAddImage" type="button">＋圖</button>
+          <button class="akey sm stage-add" id="h3QAddVideo" type="button">＋影片</button>
+          <button class="akey sm stage-add" id="h3QAddAudio" type="button">＋聲音</button>
+        </div>
+          <label for="h3Idea">點子</label>
+          <div id="h3Assets" class="adr-slot"></div>
+          <textarea id="h3Idea" rows="3" placeholder="例：小克推門進咖啡廳，跟店員點一杯不加糖的拿鐵，店員笑著回她「馬上好」。溫暖午後、日系動畫。"></textarea>
+          <div class="row gap wrap">
+            <select id="h3Brain" autocomplete="off" class="sm" aria-label="用哪顆腦袋寫"><option value="9b">本機 9B（快）</option><option value="35b">本機 35B（寫得比較好）</option><option value="cloud">雲端的腦袋（要勾生圖助手）</option><option value="api">外接 API（API 頁的預設連線）</option></select>
+            <button class="akey sm go" id="h3Write" type="button" title="AI 會照素材板的用途寫，已經寫的分鏡會留著再補滿；寫完每一格都能改。放好的圖會一起給它看。">AI 幫我寫滿分鏡</button>
+          </div>
+        <div class="v-run" id="h3RunRow">
+          <div class="v-params">
+            <div class="v-caps" id="h3CapRow"></div>
+            <label class="chip-sel"><span class="k">長度</span><select id="h3Secs"></select></label>
+            <label class="chip-sel"><span class="k">比例</span><select id="h3Aspect" autocomplete="off"><option value="16:9">16:9 橫</option><option value="9:16">9:16 直</option><option value="1:1">1:1 方</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9 寬銀幕</option></select></label>
+            <label class="chip-sel"><span class="k">畫質</span><select id="h3Quality" autocomplete="off"><option value="fast">快</option><option value="std" selected>標準</option><option value="high">高</option></select></label>
+            <label class="chip-sel"><span class="k">支數</span><select id="h3Count" autocomplete="off" class="sm" aria-label="一次做幾支"><option>1</option><option>2</option><option>3</option><option>4</option></select></label>
+          </div>
+          <span class="grow"></span>
+          <span class="muted sm" id="h3Est"></span>
+          <button class="bigkey v-go" id="h3Go" type="button" data-ic="rec">開始做影片</button>
+        </div>
+        <div class="muted sm" id="h3SizeNote"></div>
+      </div>
+      <aside class="dock-grp v-tasks" data-dock="h3tasks" aria-label="工作與成品">
         <section class="box"><label>這次的工作</label><div class="h3-jobs" id="h3Jobs"><div class="muted sm">還沒有</div></div></section>
         <section class="box"><label>成品</label><div class="h3-out" id="h3Out"><div class="muted sm">做好的影片會出現在這裡，也會進圖庫</div></div></section>
-      </div>
+      </aside>
     </div>
   </section>
-  <!-- H3 長片（分段接續，js/h3chain.js；後端 src-tauri\src\h3chain.rs、server\api_h3chain.rs） -->
-  <section class="panel lib screws dir" data-tab="video" data-sub="long" hidden>
-    <div class="toolbar">
-      <b>H3 長片（一段一段接著拍）</b>
-      <span class="grow"></span>
-      <span class="vfd g dir-status" id="hcStatus" role="status" aria-live="polite">待機</span>
-    </div>
-    <div class="dir-cols h3-cols">
-      <div class="dir-left lib-scroll">
+  <!-- H3 長片（分段接續，js/h3chain.js；後端 src-tauri\src\h3chain.rs、server\api_h3chain.rs）。2026-11-22 中央舞台第二期：
+       舞台＝段落時間軸；膠囊＝長片、整條共用；下面＝開拍列；右邊＝開拍與成品 -->
+  <section class="panel lib screws dir vstage-sec" data-tab="video" data-sub="long" hidden>
+    <div class="h3-host" id="hcHost">
+      <div class="v-stage tl lib-scroll" id="hcStage">
+        <section class="box">
+          <label>段落（第 2 段起接著上一段的結尾拍）</label>
+          <div class="h3-shots" id="hcSegs"></div>
+          <div class="row gap wrap"><button class="akey sm" id="hcAddSeg" type="button">＋ 加一段</button></div>
+          <div class="muted sm">每段 10 秒最穩（5 秒接縫看得出來）。換場景、換姿勢寫成動作（轉身、起身、低頭擋住鏡頭），不要硬釘不同狀態的尾幀。</div>
+        </section>
+      </div>
+      <div class="dock-grp" data-dock="film">
         <section class="box">
           <label>長片</label>
           <div class="row gap"><select id="hcList" class="grow" autocomplete="off" aria-label="選一條長片"></select><button class="akey sm" id="hcNew" type="button">＋ 新的</button><button class="akey sm warn" id="hcDel" type="button">刪除</button></div>
           <span class="sub">片名</span><input type="text" id="hcTitle" spellcheck="false">
         </section>
+      </div>
+      <div class="dock-grp" data-dock="shared">
         <section class="box">
           <label>整條共用（每段都會用）</label>
           <div class="grid2"><div id="hcRef"></div><div id="hcFirst"></div></div>
@@ -1071,38 +1119,34 @@
           <div><span class="sub">畫風</span><input type="text" id="hcStyle" spellcheck="false" placeholder="例：Glossy semi-realistic 2.5D anime style"></div>
           <div><span class="sub">角色的聲音（寫在每句台詞前面）</span><input type="text" id="hcVoice" spellcheck="false" placeholder="例：a slightly low, soft and sultry young female voice"></div>
           <div><span class="sub">環境音</span><input type="text" id="hcSound" spellcheck="false" placeholder="例：soft rain on the window"></div>
-          <div class="grid2">
-            <div><span class="sub">比例</span><select id="hcAspect" autocomplete="off"><option value="9:16">9:16 直</option><option value="16:9">16:9 橫</option><option value="1:1">1:1 方</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9 寬銀幕</option></select></div>
-            <div><span class="sub">畫質</span><select id="hcQuality" autocomplete="off"><option value="fast">快</option><option value="std">標準</option><option value="high">高</option></select></div>
-            <div><span class="sub">在哪拍</span><select id="hcWhere" autocomplete="off" title="雲端顯卡：直接接上一段的 latent，接縫最順，要先開機。本機：同一套 latent 接續，用這台電腦的顯卡，不花錢但慢（8GB 顯卡 10 秒一段約 12 分鐘）。RunningHub：一段一個任務，上一段最後約 0.9 秒的畫面和聲音當下一段的開頭，不用開機、照秒扣 RH 幣"><option value="runpod">雲端顯卡（接 latent）</option><option value="local">本機（接 latent，不花錢）</option><option value="runninghub">RunningHub（接著上一支拍）</option></select></div>
+        </section>
+      </div>
+      <div class="dock-grp v-compose" data-dock="hcrun">
+        <div class="v-run">
+          <div class="v-params">
+            <div class="v-caps" id="hcCapRow"></div>
+            <label class="chip-sel"><span class="k">在哪拍</span><select id="hcWhere" autocomplete="off" title="雲端顯卡：直接接上一段的 latent，接縫最順，要先開機。本機：同一套 latent 接續，用這台電腦的顯卡，不花錢但慢（8GB 顯卡 10 秒一段約 12 分鐘）。RunningHub：一段一個任務，上一段最後約 0.9 秒的畫面和聲音當下一段的開頭，不用開機、照秒扣 RH 幣"><option value="runpod">雲端顯卡（接 latent）</option><option value="local">本機（接 latent，不花錢）</option><option value="runninghub">RunningHub（接著上一支拍）</option></select></label>
+            <label class="chip-sel"><span class="k">比例</span><select id="hcAspect" autocomplete="off"><option value="9:16">9:16 直</option><option value="16:9">16:9 橫</option><option value="1:1">1:1 方</option><option value="4:3">4:3</option><option value="3:4">3:4</option><option value="21:9">21:9 寬銀幕</option></select></label>
+            <label class="chip-sel"><span class="k">畫質</span><select id="hcQuality" autocomplete="off"><option value="fast">快</option><option value="std">標準</option><option value="high">高</option></select></label>
           </div>
-          <div class="muted sm" id="hcSizeNote"></div>
-        </section>
+          <span class="grow"></span>
+          <span class="muted sm" id="hcEst"></span>
+          <button class="akey warn" id="hcStop" type="button">停</button>
+          <button class="akey" id="hcJoin" type="button" title="把拍好的段再接一次（不花雲端的錢）">接成一支</button>
+          <button class="bigkey v-go" id="hcRun" type="button" data-ic="rec" title="從第一個還沒拍好的段開始，一路拍到最後，自動接成一支進圖庫（雲端計費）">開拍整條</button>
+        </div>
+        <div class="muted sm" id="hcSizeNote"></div>
       </div>
-      <div class="dir-left lib-scroll">
-        <section class="box">
-          <label>段落（第 2 段起接著上一段的結尾拍）</label>
-          <div class="h3-shots" id="hcSegs"></div>
-          <div class="row gap wrap"><button class="akey sm" id="hcAddSeg" type="button">＋ 加一段</button></div>
-          <div class="muted sm">每段 10 秒最穩（5 秒接縫看得出來）。換場景、換姿勢寫成動作（轉身、起身、低頭擋住鏡頭），不要硬釘不同狀態的尾幀。</div>
-        </section>
-      </div>
-      <div class="dir-right lib-scroll">
+      <aside class="dock-grp v-tasks" data-dock="hcshoot" aria-label="開拍與成品">
         <section class="box">
           <label>開拍</label>
           <div class="sm" id="hcCloud"></div>
           <div class="row gap"><button class="akey sm" id="hcGoCloud" type="button">到「H3 影片」分頁開雲端</button></div>
-          <div class="muted sm" id="hcEst"></div>
-          <div class="row gap wrap">
-            <button class="akey go" id="hcRun" type="button" data-ic="rec" title="從第一個還沒拍好的段開始，一路拍到最後，自動接成一支進圖庫（雲端計費）">開拍整條</button>
-            <button class="akey warn" id="hcStop" type="button">停</button>
-            <button class="akey" id="hcJoin" type="button" title="把拍好的段再接一次（不花雲端的錢）">接成一支</button>
-          </div>
           <div class="sm" id="hcMsg" role="status" aria-live="polite"></div>
           <div id="hcFinal"></div>
           <div class="muted sm">每段拍完會自動切掉重疊的開頭和定住的尾巴，並用拆幀台檢查跳點（只標出來，不會自動重拍）。</div>
         </section>
-      </div>
+      </aside>
     </div>
   </section>
 </main>
@@ -1290,7 +1334,7 @@
     <span class="grow"></span>
     <span class="vfd g ag-status" id="agStatus" role="status" aria-live="polite">待機</span>
   </div>
-  <div class="ag-cols">
+  <div class="ag-cols" id="agHost">
     <div class="ag-bezel">
       <div class="ag-readout"><span>AGENT · <b id="agBrainR">9B</b></span><span>ROUND <b id="agRoundR">0/3</b></span><span>LAST <b id="agSecsR">—</b></span><span><b id="agStateR" class="g">IDLE</b></span></div>
       <div class="ag-screen" id="agScreen"></div>
@@ -1308,84 +1352,93 @@
           <button class="ag-rec" type="submit" id="agGo"><i></i><span>交給助手</span></button>
           <button class="akey sm warn" type="button" id="agStop" hidden>停止</button>
         </div>
+        <div class="ag-caps" id="agCapRow"></div>
       </form>
     </div>
-    <div class="ag-right lib-scroll">
-      <div class="ag-strip" id="agStrip" aria-label="每一輪的結果"></div>
-      <div class="ag-controls">
-        <div class="ag-ctl"><span class="lbl">腦袋</span>
-          <div class="rocker ag-brain" role="radiogroup" aria-label="腦袋" id="agBrain"><span class="cap"></span><button type="button" role="radio" data-b="9b" aria-checked="true">9B</button><button type="button" role="radio" data-b="35b" aria-checked="false">35B 精細</button><button type="button" role="radio" data-b="cloud" aria-checked="false">雲端</button><button type="button" role="radio" data-b="api" aria-checked="false">API</button></div>
-          <span class="muted sm" id="agBrainNote"></span>
-          <button class="akey sm" id="agApiCfg" type="button" hidden>API 設定…</button>
-        </div>
-        <div class="knob" data-for="agRounds" data-label="最多幾輪"></div>
-        <div class="knob" data-for="agCount" data-label="每輪張數"></div>
-        <div class="knob" data-for="agThink" data-label="思考"></div>
-        <div class="hidden-inputs" aria-hidden="true">
-          <select id="agRounds" tabindex="-1"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
-          <select id="agCount" tabindex="-1"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
-          <select id="agThink" tabindex="-1" title="OFF＝不思考，最快；LOW＝先想一下（思考上限 1024 token）；HIGH＝多想（上限 3072 token），要數東西、分左右手、排版時開"><option value="off" selected>OFF</option><option value="low">LOW</option><option value="high">HIGH</option></select>
-        </div>
-        <div class="ag-flags">
-          <label class="check"><input type="checkbox" id="agAuto" checked><span>自動重畫<small>自己看圖、挑毛病、再畫下一輪；關掉＝畫一輪就停，等你說</small></span></label>
-          <label class="check"><input type="checkbox" id="agLoras" checked><span>讓它自己挑 LoRA<small>照每個 LoRA 的用途說明決定掛不掛、掛多強</small></span></label>
-        </div>
-      </div>
-      <section class="box">
-        <label>生圖設定</label>
-        <div class="muted sm" id="agBaseInfo">還沒設定</div>
-        <div class="ag-base" id="agBaseEdit" hidden>
-          <div class="ag-base-model"><span class="sub">模型</span><select id="agBModel" title="換模型時步數、CFG、取樣器、反向詞會換成那個模型的預設；換到別的家族，固定掛的 LoRA 會拿掉"></select></div>
-          <div class="ag-base-row">
-            <div><span class="sub">步數</span><input type="number" id="agBSteps" min="1" max="80"></div>
-            <div><span class="sub">CFG</span><input type="number" id="agBCfg" min="1" max="15" step="0.1"></div>
-            <div><span class="sub">取樣器</span><select id="agBSampler"></select></div>
-            <div><span class="sub">排程</span><select id="agBSched"></select></div>
+    <aside class="dock-grp" data-dock="agstrip">
+        <div class="ag-strip" id="agStrip" aria-label="每一輪的結果"></div>
+    </aside>
+    <div class="dock-grp" data-dock="agbrain">
+        <div class="ag-controls">
+          <div class="ag-ctl"><span class="lbl">腦袋</span>
+            <div class="rocker ag-brain" role="radiogroup" aria-label="腦袋" id="agBrain"><span class="cap"></span><button type="button" role="radio" data-b="9b" aria-checked="true">9B</button><button type="button" role="radio" data-b="35b" aria-checked="false">35B 精細</button><button type="button" role="radio" data-b="cloud" aria-checked="false">雲端</button><button type="button" role="radio" data-b="api" aria-checked="false">API</button></div>
+            <span class="muted sm" id="agBrainNote"></span>
+            <button class="akey sm" id="agApiCfg" type="button" hidden>API 設定…</button>
           </div>
-          <div><span class="sub">反向提示詞</span><textarea id="agBNeg" rows="2"></textarea></div>
-          <div><span class="sub">固定掛的 LoRA</span><div class="ag-base-loras" id="agBLoras"></div></div>
+          <div class="knob" data-for="agRounds" data-label="最多幾輪"></div>
+          <div class="knob" data-for="agCount" data-label="每輪張數"></div>
+          <div class="knob" data-for="agThink" data-label="思考"></div>
+          <div class="hidden-inputs" aria-hidden="true">
+            <select id="agRounds" tabindex="-1"><option>1</option><option>2</option><option selected>3</option><option>4</option><option>5</option></select>
+            <select id="agCount" tabindex="-1"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
+            <select id="agThink" tabindex="-1" title="OFF＝不思考，最快；LOW＝先想一下（思考上限 1024 token）；HIGH＝多想（上限 3072 token），要數東西、分左右手、排版時開"><option value="off" selected>OFF</option><option value="low">LOW</option><option value="high">HIGH</option></select>
+          </div>
+          <div class="ag-flags">
+            <label class="check"><input type="checkbox" id="agAuto" checked><span>自動重畫<small>自己看圖、挑毛病、再畫下一輪；關掉＝畫一輪就停，等你說</small></span></label>
+            <label class="check"><input type="checkbox" id="agLoras" checked><span>讓它自己挑 LoRA<small>照每個 LoRA 的用途說明決定掛不掛、掛多強</small></span></label>
+          </div>
         </div>
-        <div class="row gap wrap"><button class="akey sm" id="agBaseUse" type="button">用生成頁目前的設定</button></div>
-        <div class="muted sm">可以直接在這裡改，也可以按上面的按鈕整組照抄生成頁。提示詞、尺寸、要不要多掛 LoRA 由助手決定。畫好的圖全部進圖庫，搜尋「助手」就找得到。</div>
-      </section>
-      <section class="box" id="agCloudBox">
-        <div class="row between"><label>雲端顯卡</label><button class="akey sm" id="agCloudCfg" type="button" title="選連法：RunPod 自動租卡、任何一家雲端的主機（SSH）、直接連網址">雲端設定…</button></div>
-        <div class="muted sm" id="agCloudWay"></div>
-        <div id="agCloudGpuRow">
-          <div class="row"><select id="agCloudGpu" class="sm" aria-label="租哪一張顯卡"></select><button class="akey sm" id="agCloudGpuRe" type="button" title="從 RunPod 重抓顯卡清單、價格、有沒有貨（平常每 10 分鐘自動更新）">↻</button></div>
-          <div class="muted sm" id="agCloudGpuNote"></div>
-        </div>
-        <div class="ag-cloud-st"><span class="ag-dot" id="agCloudDot"></span><span id="agCloudMsg">沒開</span></div>
-        <div class="muted sm" id="agCloudMeta"></div>
-        <div class="ag-confirm" id="agCloudConfirm" hidden>
-          <b id="agCloudPrice"></b>
-          <div class="sm" id="agCloudDl">開著就一直計費，按「關機刪除」或閒置太久自動關才會停。每次開機都會在雲端重新下載約 32 GB 模型（機房網路很快），開機到能用大約 3～5 分鐘，這段時間也算錢。</div>
-          <div class="row gap wrap"><button class="akey sm go" id="agCloudYes" type="button">確定開機，開始計費</button><button class="akey sm" id="agCloudNo" type="button">先不要</button></div>
-        </div>
-        <div class="row gap wrap">
-          <button class="akey sm go" id="agCloudStart" type="button">開雲端</button>
-          <button class="akey sm warn" id="agCloudStop" type="button">關機刪除</button>
-          <span class="row gap" id="agCloudIdleRow">
-            <span class="sub inline">閒置</span>
-            <select id="agCloudIdle" class="sm" aria-label="閒置幾分鐘自動關機"><option>5</option><option>10</option><option selected>20</option><option>30</option><option>60</option><option>120</option></select>
-            <span class="sub inline">分鐘自動關</span>
-          </span>
-        </div>
-        <div class="muted sm">腦袋和生圖都放在雲端的大顯卡上，一輪十幾秒，35B 等級的眼力；只能畫 MOSS-Image。RunPod、其他家雲端、現成的網址都能接，按「雲端設定…」選。</div>
-      </section>
-      <section class="box">
-        <label>LoRA 認識度</label>
-        <div class="muted sm" id="agLoraSum"></div>
-        <div class="bar" id="agLoraBar" hidden><div></div></div>
-        <div class="muted sm" id="agLoraMsg"></div>
-        <div class="row gap wrap">
-          <button class="akey sm" id="agLearn" type="button">讓助手認識 LoRA</button>
-          <button class="akey sm warn" id="agLearnStop" type="button" hidden>停止</button>
-          <label class="check inline"><input type="checkbox" id="agProbe" checked> 線索不夠就試畫比較</label>
-        </div>
-        <div class="muted sm">先讀 LoRA 檔裡的標題、觸發詞、訓練標籤和你的備註；看不出來的，同一個種子「不掛／掛」各畫一張給它比較（試畫的圖也會進圖庫）。用本機的腦袋，會暫時讓出顯卡。</div>
-        <div class="ag-loras" id="agLoraList"></div>
-      </section>
+    </div>
+    <div class="dock-grp" data-dock="agbase">
+        <section class="box">
+          <label>生圖設定</label>
+          <div class="muted sm" id="agBaseInfo">還沒設定</div>
+          <div class="ag-base" id="agBaseEdit" hidden>
+            <div class="ag-base-model"><span class="sub">模型</span><select id="agBModel" title="換模型時步數、CFG、取樣器、反向詞會換成那個模型的預設；換到別的家族，固定掛的 LoRA 會拿掉"></select></div>
+            <div class="ag-base-row">
+              <div><span class="sub">步數</span><input type="number" id="agBSteps" min="1" max="80"></div>
+              <div><span class="sub">CFG</span><input type="number" id="agBCfg" min="1" max="15" step="0.1"></div>
+              <div><span class="sub">取樣器</span><select id="agBSampler"></select></div>
+              <div><span class="sub">排程</span><select id="agBSched"></select></div>
+            </div>
+            <div><span class="sub">反向提示詞</span><textarea id="agBNeg" rows="2"></textarea></div>
+            <div><span class="sub">固定掛的 LoRA</span><div class="ag-base-loras" id="agBLoras"></div></div>
+          </div>
+          <div class="row gap wrap"><button class="akey sm" id="agBaseUse" type="button">用生成頁目前的設定</button></div>
+          <div class="muted sm">可以直接在這裡改，也可以按上面的按鈕整組照抄生成頁。提示詞、尺寸、要不要多掛 LoRA 由助手決定。畫好的圖全部進圖庫，搜尋「助手」就找得到。</div>
+        </section>
+    </div>
+    <div class="dock-grp" data-dock="agcloud">
+        <section class="box" id="agCloudBox">
+          <div class="row between"><label>雲端顯卡</label><button class="akey sm" id="agCloudCfg" type="button" title="選連法：RunPod 自動租卡、任何一家雲端的主機（SSH）、直接連網址">雲端設定…</button></div>
+          <div class="muted sm" id="agCloudWay"></div>
+          <div id="agCloudGpuRow">
+            <div class="row"><select id="agCloudGpu" class="sm" aria-label="租哪一張顯卡"></select><button class="akey sm" id="agCloudGpuRe" type="button" title="從 RunPod 重抓顯卡清單、價格、有沒有貨（平常每 10 分鐘自動更新）">↻</button></div>
+            <div class="muted sm" id="agCloudGpuNote"></div>
+          </div>
+          <div class="ag-cloud-st"><span class="ag-dot" id="agCloudDot"></span><span id="agCloudMsg">沒開</span></div>
+          <div class="muted sm" id="agCloudMeta"></div>
+          <div class="ag-confirm" id="agCloudConfirm" hidden>
+            <b id="agCloudPrice"></b>
+            <div class="sm" id="agCloudDl">開著就一直計費，按「關機刪除」或閒置太久自動關才會停。每次開機都會在雲端重新下載約 32 GB 模型（機房網路很快），開機到能用大約 3～5 分鐘，這段時間也算錢。</div>
+            <div class="row gap wrap"><button class="akey sm go" id="agCloudYes" type="button">確定開機，開始計費</button><button class="akey sm" id="agCloudNo" type="button">先不要</button></div>
+          </div>
+          <div class="row gap wrap">
+            <button class="akey sm go" id="agCloudStart" type="button">開雲端</button>
+            <button class="akey sm warn" id="agCloudStop" type="button">關機刪除</button>
+            <span class="row gap" id="agCloudIdleRow">
+              <span class="sub inline">閒置</span>
+              <select id="agCloudIdle" class="sm" aria-label="閒置幾分鐘自動關機"><option>5</option><option>10</option><option selected>20</option><option>30</option><option>60</option><option>120</option></select>
+              <span class="sub inline">分鐘自動關</span>
+            </span>
+          </div>
+          <div class="muted sm">腦袋和生圖都放在雲端的大顯卡上，一輪十幾秒，35B 等級的眼力；只能畫 MOSS-Image。RunPod、其他家雲端、現成的網址都能接，按「雲端設定…」選。</div>
+        </section>
+    </div>
+    <div class="dock-grp" data-dock="aglora">
+        <section class="box">
+          <label>LoRA 認識度</label>
+          <div class="muted sm" id="agLoraSum"></div>
+          <div class="bar" id="agLoraBar" hidden><div></div></div>
+          <div class="muted sm" id="agLoraMsg"></div>
+          <div class="row gap wrap">
+            <button class="akey sm" id="agLearn" type="button">讓助手認識 LoRA</button>
+            <button class="akey sm warn" id="agLearnStop" type="button" hidden>停止</button>
+            <label class="check inline"><input type="checkbox" id="agProbe" checked> 線索不夠就試畫比較</label>
+          </div>
+          <div class="muted sm">先讀 LoRA 檔裡的標題、觸發詞、訓練標籤和你的備註；看不出來的，同一個種子「不掛／掛」各畫一張給它比較（試畫的圖也會進圖庫）。用本機的腦袋，會暫時讓出顯卡。</div>
+          <div class="ag-loras" id="agLoraList"></div>
+        </section>
     </div>
   </div>
   </section>
@@ -1466,36 +1519,36 @@
   <section class="panel lib screws">
   <div class="lib-scroll">
   <div class="settings">
-    <section class="box" id="setLangBox">
+    <section class="box" id="setLangBox" data-group="general">
       <label for="setLang" translate="no">介面語言／界面语言／Language</label>
       <select id="setLang" translate="no"><option value="zh-TW">繁體中文</option><option value="zh-CN">简体中文</option><option value="en">English</option></select>
       <div class="muted sm">只換介面上的字，切換時頁面會重新整理一下。你寫的提示詞、圖庫和對話內容不會被改；教學手冊維持繁體中文。</div>
     </section>
-    <section class="box" id="dockBox">
+    <section class="box" id="dockBox" data-group="general">
       <label>版面</label>
-      <div class="muted sm">每塊面板都能抓標題列拖：放到看圖區旁邊會吸附（看圖區自動讓位）、放到最邊緣會藏成一條小標籤（滑過去才出來）、放其他地方就浮著，四邊四角能拉大小。看圖區右上角的圖釘：釘著的時候浮動面板蓋不到它。版面會自動記住；拖亂了按這裡全部恢復（各面板標題列按右鍵也有）。</div>
-      <div class="row gap"><button class="akey" id="dockReset" type="button">恢復全部版面</button></div>
+      <div class="muted sm">每頁的面板位置固定；每一區、每一塊都可以收起、展開（按區的 « » 或面板標題列）。參數平常收在提示詞卡下面的膠囊裡，點了彈出來。</div>
+      <div class="row gap"><button class="akey" id="dockReset" type="button">全部展開</button></div>
     </section>
-    <section class="box">
+    <section class="box" data-group="net">
       <label>金鑰</label>
       <div class="muted sm">Civitai、魔塔的金鑰，還有大模型 API（DeepSeek、GLM、GPT…）的連線，都搬到左邊的「API」頁了。</div>
       <div class="row gap"><button class="akey" type="button" data-go="api">到 API 頁</button></div>
     </section>
-    <section class="box" id="setNet">
+    <section class="box" id="setNet" data-group="net">
       <label>網路（代理、下載來源）</label>
       <div class="muted sm">在中國大陸，從 Hugging Face、GitHub、Civitai 下載模型要開梯子。這裡看生圖站現在怎麼連網，也可以測試每個下載來源連不連得到。</div>
       <div id="netBox"></div>
     </section>
-    <section class="box" id="setComfy">
+    <section class="box" id="setComfy" data-group="net">
       <label>ComfyUI 啟動方式</label>
       <div class="muted sm">生圖站開 ComfyUI 時要不要多加參數、要不要自己開。A 卡的 ZLUDA 版、DirectML 版會自動照它們的方式開。</div>
       <div id="comfyOptsBox"></div>
     </section>
-    <section class="box" id="setNodes">
+    <section class="box" id="setNodes" data-group="net">
       <label>工作節點（多張顯卡、遠端 ComfyUI）</label>
       <div id="nodesBox"></div>
     </section>
-    <section class="box" id="setTavern">
+    <section class="box" id="setTavern" data-group="net">
       <label>接 SillyTavern（酒館）生圖</label>
       <div class="muted sm">繪匣可以假裝成 Stable Diffusion WebUI（A1111），在酒館聊天時叫繪匣畫插圖。酒館要跟繪匣裝在同一台電腦（別台電腦連不進來）。</div>
       <ol class="st-steps sm">
@@ -1510,10 +1563,10 @@
       <div class="row gap"><code id="tavernUrl" translate="no"></code><button class="akey" id="tavernCopy" type="button">複製網址</button><button class="akey" id="tavernTest" type="button">檢查接口</button></div>
       <div class="muted sm">提示詞裡寫 <code translate="no">&lt;lora:名稱:強度&gt;</code> 會換成繪匣的 LoRA：名稱寫檔名（不用副檔名、大小寫和底線空白都不用管）或 LoRA 庫裡取的標題都行，最穩的是寫在酒館的 Common prompt prefix（LLM 寫的提示詞會被酒館拿掉中文和符號）。找不到、跟模型家族不合的 LoRA 會略過，繪匣這邊會跳提醒。畫好的圖也會存進繪匣的圖庫。目前只能文生圖，酒館的圖生圖、放大用不了。</div>
     </section>
-    <section class="box">
+    <section class="box" data-group="model">
       <label class="check"><input type="checkbox" id="setBlur"> Civitai 預覽圖的成人內容先模糊（滑過才顯示）</label>
     </section>
-    <section class="box" id="setPe">
+    <section class="box" id="setPe" data-group="ai">
       <label>AI 改寫提示詞</label>
       <div class="muted sm">用通用模型（Qwen3.5-9B 或 Qwen3.6-35B，跟生圖助手同一顆）照各模型的官方寫法改寫。8GB 顯卡放不下改寫模型和生圖模型，所以改寫前會先叫 ComfyUI 卸載模型、按下生成前會先關掉改寫模型。</div>
       <div class="grid2">
@@ -1535,7 +1588,7 @@
       <label class="check"><input type="checkbox" id="setPeThink"> 預設開啟「深度思考」</label>
       <div class="row gap"><button class="akey sm" id="setPeSave" type="button">儲存</button><button class="akey sm" id="setPeStop" type="button">立刻關閉改寫模型</button><span class="muted sm" id="setPeState"></span></div>
     </section>
-    <section class="box" id="setPrompts">
+    <section class="box" id="setPrompts" data-group="ai">
       <label for="setPrSel">AI 改寫的系統提示詞（自訂）</label>
       <div class="muted sm">這是交給改寫模型的「工作說明」，決定它怎麼寫。改了只存在這台電腦的資料夾（data\pe_prompts），不會動到 ComfyUI 節點的預設；寫壞了按「還原預設」就回來。</div>
       <div class="row gap wrap"><select id="setPrSel" style="max-width:340px"></select><span class="badge-s" id="setPrState"></span></div>
@@ -1543,13 +1596,13 @@
       <textarea id="setPrText" rows="14" spellcheck="false"></textarea>
       <div class="row gap wrap"><button class="akey sm go" id="setPrSave" type="button">儲存</button><button class="akey sm" id="setPrReset" type="button">還原預設</button><span class="muted sm" id="setPrCount"></span></div>
     </section>
-    <section class="box" id="setFeatures">
+    <section class="box" id="setFeatures" data-group="ai">
       <label>外掛功能</label>
       <div class="muted sm">有些成人向功能的內容不隨公開版一起發布，做成外部補丁檔。下載補丁檔後，用下面的「匯入」選它，或自己把它放進 <code>資料\plugins\</code> 底下的對應資料夾。只裝在這台電腦。</div>
       <div class="row gap wrap" style="align-items:center"><span class="muted sm" id="featStripState"></span><input type="file" id="featStripFile" accept=".json,application/json" hidden><button class="akey sm" id="featStripImport" type="button">匯入補丁檔</button></div>
     </section>
 
-    <section class="box" id="setSkills">
+    <section class="box" id="setSkills" data-group="ai">
       <label for="skUrl">外掛寫法（提示詞 skill）</label>
       <div class="muted sm">把網路上別人寫的提示詞 skill（有 SKILL.md 的 GitHub 庫）裝進來、綁到模型上，生圖助手、AI 改寫、只寫詞寫那個模型的提示詞時就會照著用。skill 通常有好幾萬字，生圖站會切成小段，每次只挑跟需求有關的幾段給模型看，助手還能自己翻目錄再讀。只裝在這台電腦（data\skills），授權照各 skill 自己的規定。</div>
       <div class="row gap wrap"><input type="text" id="skUrl" placeholder="https://github.com/作者/庫名（或指到 skill 資料夾的 …/tree/main/資料夾）" spellcheck="false"><button class="akey sm go" id="skInstall" type="button">從 GitHub 安裝</button><button class="akey sm" id="skOpen" type="button" title="自己把 skill 資料夾放進來也可以（資料夾裡要有 SKILL.md），放好按重新整理">打開資料夾</button><button class="akey sm" id="skReload" type="button">重新整理</button></div>
@@ -1559,7 +1612,7 @@
       <span class="sub">綁到哪個模型的寫法</span>
       <div class="grid2" id="skBind"></div>
     </section>
-    <section class="box" id="setVideo">
+    <section class="box" id="setVideo" data-group="model">
       <label for="setVidEngine">影片模型</label>
       <div class="muted sm">「動起來」和導演台用哪個模型生影片。內建的是 MiniMax H3（有聲音；本機要安裝精靈的「H3 影片（本機，選配）」包，8GB 顯卡用 w4a8 版跑得動，也可以用雲端）；想用 Wan、HunyuanVideo 或其他模型，先在 ComfyUI 把工作流調到能跑，再把它匯入這裡：一般「儲存」的 JSON、「匯出（API）」（Export (API)）的 JSON、ComfyUI 生成的 PNG／WebP 都可以（一般「儲存」的要開著 ComfyUI 才轉得了）。</div>
       <div class="row gap wrap"><select id="setVidEngine" style="max-width:340px"></select><button class="akey sm" id="setVidMap" type="button" hidden title="提示詞放哪、首格圖用哪個 Load Image、固定改值、把欄位釘到「動起來」視窗">對應與參數…</button><button class="akey sm" id="setVidDel" type="button" hidden>刪掉這個工作流</button></div>
@@ -1579,7 +1632,7 @@
         </ul>
       </details>
     </section>
-    <section class="box" id="setModels">
+    <section class="box" id="setModels" data-group="model">
       <label>模型與工作流</label>
       <div class="muted sm">電腦裡本來就有模型（別的 ComfyUI、A1111／Forge 的資料夾）的話，加進「外部模型資料夾」就能原地使用，不用再下載一份、也不會搬動檔案。</div>
       <div class="md-sub">外部模型資料夾</div>
@@ -1630,40 +1683,40 @@
       <div id="mdFeat" class="wf-feat"></div>
       <details class="fold" id="mdInvBox"><summary>模型總覽（生圖站看得到的所有模型）</summary><div id="mdInv"></div></details>
     </section>
-    <section class="box" id="setUpdates">
+    <section class="box" id="setUpdates" data-group="system">
       <h3>程式更新</h3>
       <div class="row gap"><span>目前版本：</span><b id="updateVersion">—</b><button class="akey" type="button" id="updateCheck" disabled>檢查更新</button><button class="akey go" type="button" id="updateDetails" hidden>查看更新說明</button></div>
       <label class="check"><input type="checkbox" id="updateAuto" disabled>自動檢查更新</label>
       <p class="muted sm" id="updateHint"></p>
     </section>
-    <section class="box" id="setAiBox">
+    <section class="box" id="setAiBox" data-group="ai">
       <label>給 AI 操作（MCP）</label>
       <div class="muted sm">讓 Claude、Codex 這類 AI 程式直接操作整個生圖站：生圖、看圖庫、漫畫台、導演台、H3 影片、剪片、修幀。會花錢、刪東西、改設定的操作，AI 一定要先問過你才會做。</div>
       <div class="row gap"><button class="akey sm" id="setAiOpen" data-ic="chip" type="button">給 AI 操作…</button></div>
     </section>
-    <section class="box">
+    <section class="box" data-group="general">
       <label>等圖時的小玩具</label>
       <label class="check"><input type="checkbox" id="setGummy"> 軟糖小熊：生成時掉進觀景窗，可以用滑鼠抓起來拉、壓、甩；圖畫完就掉出去（會多用一點顯卡）</label>
     </section>
-    <section class="box" id="setWinBox" hidden>
+    <section class="box" id="setWinBox" hidden data-group="general">
       <label for="setCloseAct">按視窗的關閉鍵時</label>
       <select id="setCloseAct" style="max-width:260px">
         <option value="ask">每次問我</option>
         <option value="hide">縮到系統列</option>
         <option value="quit">結束程式（會再確認一次）</option></select>
     </section>
-    <section class="box">
+    <section class="box" data-group="model">
       <label for="setNeg">預設負面提示詞</label>
       <textarea id="setNeg" rows="3"></textarea>
       <div class="row gap"><button class="akey sm" id="setNegSave" type="button">儲存</button></div>
     </section>
-    <section class="box">
+    <section class="box" data-group="ai">
       <label>匯出／匯入設定</label>
       <div class="muted sm">把設定、提示詞庫、LoRA 觸發詞與備註、生圖工作流組、影片工作流、改過的 AI 改寫提示詞存成一個檔，換電腦或重灌後匯入就全部還原。<b>不含 Civitai API key</b>、代理設定和模型資料夾位置；工作流裡像金鑰的欄位會清空。匯入時同名但內容不同的舊檔會先搬進「待刪除」，不會直接蓋掉。</div>
       <div class="row gap"><a class="akey sm" href="/api/settings/export" download data-ic="floppy">匯出設定檔</a><button class="akey sm" id="setImport" type="button">匯入設定檔…</button>
         <input type="file" id="setImportFile" accept=".json,application/json" hidden></div>
     </section>
-    <section class="box" id="cacheBox">
+    <section class="box" id="cacheBox" data-group="system">
       <label>清理快取</label>
       <div class="muted sm">清除可重建的縮圖、改寫快取、安裝暫存、安裝壓縮檔與剪輯預覽。原圖、影片、模型、專案、設定與金鑰會保留。正在安裝、下載或生成時無法清理；剪輯台請先關閉。</div>
       <div class="row gap wrap" style="margin-top:8px"><button class="akey sm" type="button" id="cacheScan">查看快取大小</button><button class="akey sm warn" type="button" id="cacheClear" disabled>清理全部快取</button></div>
@@ -1671,7 +1724,7 @@
       <div id="cacheGroups"></div>
       <div class="muted sm" id="cacheResult" aria-live="polite"></div>
     </section>
-    <section class="box" id="diagnosticsBox">
+    <section class="box" id="diagnosticsBox" data-group="system">
       <label>診斷紀錄與錯誤回報</label>
       <div class="muted sm">生成與助手操作會自動記錄提示詞、參數、工作流、模型載入及錯誤。預設成功保留 1 天，失敗、未確認與手動回報保留 3 天；總容量 500 MiB，單次最多 100 MiB。啟動、每 30 分鐘及任務結束時清理，空間不足會提早移除已結束的舊紀錄。</div>
       <div class="row gap wrap diag-policy">
@@ -1709,14 +1762,6 @@
     </div>
   </div>
 
-  <footer class="status" aria-label="系統狀態">
-    <span class="st-comfy"><span class="dot" id="comfyDot" role="img" aria-label="ComfyUI 連線狀態"></span><span id="comfyTxt">COMFYUI</span></span><span class="sep"></span>
-    <button class="sys" id="sysBtn" type="button" title="系統狀態：顯存、記憶體、硬碟（點一下看詳細）" aria-haspopup="dialog">顯存 <span class="meter" id="sysVram" title="顯存"><i></i></span> <span class="a" id="sysText">—</span></button><span class="sep"></span>
-    <span class="st-ram">記憶體 <span class="a" id="ramText">—</span></span><span class="sep"></span>
-    <span class="st-disk"><span class="a" id="diskText">—</span></span><span class="sep"></span>
-    <span class="st-pe" id="peText">AI 改寫 待機</span>
-    <span class="r a" id="qtxt">佇列 0</span><span class="sep"></span><span id="verText">V1.1</span><button type="button" class="akey sm" id="updateNotice" hidden></button>
-  </footer>
 </div>
 
 <!-- ======================= 浮層 ======================= -->
@@ -1800,6 +1845,7 @@
     <div class="row between"><b id="lpTitle">選擇 LoRA 卡匣</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
     <div class="row gap"><input type="search" id="lpQ" placeholder="搜尋…" aria-label="搜尋 LoRA"><label class="check inline"><input type="checkbox" id="lpTrig" checked> 自動加入觸發詞</label><span class="grow"></span><button class="akey sm" id="lpView" type="button">☰ 列表</button></div>
     <div class="cards compact" id="lpGrid"></div>
+    <div class="row gap lp-foot" id="lpFoot" hidden><span class="muted sm" id="lpCount"></span><span class="grow"></span><button class="akey" id="lpAdd" type="button" disabled>加入</button></div>
   </div>
 </div>
 
@@ -2138,6 +2184,11 @@
 <div class="modal" id="stAiModal" hidden>
   <div class="dialog wide">
     <div class="row between"><b>讓 AI 操作生圖站</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="notice ai-hint" id="aiHint" hidden>
+      <span class="grow"><b>AI 可以幫你操作整個生圖站</b>：接上 Claude、Codex 或 Cursor 之後，用聊天就能叫它生圖、翻圖庫、畫漫畫、剪影片。</span>
+      <button class="akey sm go" id="aiHintOpen" type="button">怎麼接</button>
+      <button class="akey sm" id="aiHintHide" type="button">知道了</button>
+    </div>
     <div class="muted sm">支援 MCP 的 AI 程式（Claude Desktop、Claude Code、Codex CLI、Cursor…）可以直接操作整個生圖站：生圖、看圖庫、漫畫台、導演台、H3 影片、生圖助手、提示詞庫、資產庫，也能剪片（你在「剪輯台」分頁看得到它即時改）和修幀。會花錢、刪東西、改設定的操作，AI 一定要先問過你才會做。<br>生圖站要開著 AI 才連得到。ChatGPT 網頁版、手機 App 連不到你電腦裡的程式，用不了。</div>
     <label for="stAiMcp">1. 把生圖站接到 AI 程式（MCP 設定）</label>
     <div class="muted sm">Claude Desktop：設定 → 開發者 → 編輯設定，把下面 <code>anima</code> 那一段放進 <code>mcpServers</code>（以前貼過 <code>fablecut</code> 的，換成這一段），存檔後重開 Claude。Claude Code：存成專案資料夾裡的 <code>.mcp.json</code>，或跑 <code>claude mcp add</code>。Codex CLI：按「複製 Codex 版」貼進 <code>~/.codex/config.toml</code>。Cursor：貼進 <code>%USERPROFILE%\.cursor\mcp.json</code>。</div>
@@ -2335,8 +2386,8 @@
     <div class="row between"><b>快捷鍵與小技巧</b><span class="grow"></span><a class="akey sm go" href="/static/manual.html" target="_blank" title="每一章都有會自己示範操作的小動畫（用瀏覽器開啟）">操作手冊（動畫教學）</a><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
     <div class="help-grid">
       <section><h4>到處都能用</h4>
-        <dl><dt><kbd>?</kbd></dt><dd>打開這個說明</dd><dt><kbd>Alt</kbd>＋<kbd>1</kbd>～<kbd>7</kbd></dt><dd>切換功能（跟左邊按鍵上的編號一樣：生成、圖庫、LoRA、下載、導演、漫畫、助手）</dd><dt><kbd>Alt</kbd>＋<kbd>0</kbd></dt><dd>設定</dd>
-        <dt><kbd>Q</kbd>／<kbd>Alt</kbd>＋<kbd>9</kbd></dt><dd>任務面板</dd><dt><kbd>Esc</kbd></dt><dd>關閉浮層</dd></dl></section>
+        <dl><dt><kbd>?</kbd></dt><dd>打開這個說明</dd><dt><kbd>Alt</kbd>＋<kbd>1</kbd>～<kbd>9</kbd></dt><dd>切換功能（跟頂列及「全部功能」裡按鍵上的編號一樣）</dd><dt><kbd>Alt</kbd>＋<kbd>0</kbd></dt><dd>設定</dd>
+        <dt><kbd>Q</kbd></dt><dd>任務面板</dd><dt><kbd>Esc</kbd></dt><dd>關閉浮層</dd></dl></section>
       <section><h4>生成</h4>
         <dl><dt><kbd>Ctrl</kbd>＋<kbd>Enter</kbd></dt><dd>生成</dd><dt><kbd>Ctrl</kbd>＋<kbd>V</kbd></dt><dd>貼上圖片＝圖生圖（多圖參考模式下＝加一張參考圖）</dd>
         <dt><kbd>Ctrl</kbd>＋<kbd>↑</kbd>／<kbd>↓</kbd></dt><dd>提示詞裡：游標所在的 tag（或選取的文字）權重 ±0.05，寫成 <code>(tag:1.10)</code></dd>
@@ -2361,13 +2412,14 @@
 <input type="file" id="filePick" accept="image/*" hidden>
 <script type="module" src="/static/js/main.js"></script>
 <div class="modal" id="updateModal" hidden>
-  <div class="win" style="width:min(680px,94vw);max-height:85vh;overflow:auto">
-    <div class="row between"><h3>更新程式</h3><button type="button" class="akey" data-close>關閉</button></div>
+  <div class="dialog" style="width:min(680px,94vw)">
+    <div class="row between"><b>更新程式</b><button type="button" class="akey" data-close>關閉</button></div>
     <p>新版：<b id="updateTarget"></b></p>
     <pre id="updateNotes" style="white-space:pre-wrap;overflow-wrap:anywhere;font-family:inherit"></pre>
     <p class="muted sm" id="updateReason"></p><p id="updateProgress" aria-live="polite"></p>
     <button type="button" class="akey go" id="updateInstall" disabled>下載並更新</button>
   </div>
 </div>
+<div id="capLayer"></div>
 </body>
 </html>

@@ -24,7 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 use tokio::io::AsyncWriteExt;
 
-fn models_root(app: &Shared) -> PathBuf {
+pub(super) fn models_root(app: &Shared) -> PathBuf {
     app.paths.comfy_root.join("models")
 }
 
@@ -369,9 +369,12 @@ fn disposition_name(v: &str) -> Option<String> {
 
 /// 在下載清單（/api/models/downloads）登記一筆：回傳（id, 是不是同一個網址已經在下載）
 fn dl_begin(url: &str) -> (u64, bool) {
+    dl_begin_tagged(url, dl::tag(url))
+}
+
+fn dl_begin_tagged(url: &str, tag: String) -> (u64, bool) {
     let mut g = DLS.lock().unwrap_or_else(|e| e.into_inner());
     let mut running = RUNNING.lock().unwrap_or_else(|e| e.into_inner());
-    let tag = dl::tag(url);
     // 這個網址正在下載：回傳那一個的 id（status 不是 run 的留著也沒關係，會被換掉）
     if let Some(&(_, old)) = running.iter().find(|(t, _)| *t == tag) {
         if g.iter().any(|d| d["id"] == old && d["status"] == "run") {
@@ -583,7 +586,17 @@ pub(crate) type OnPlaced = Box<dyn FnOnce(&Value) + Send>;
 /// 下載中心的下載：先存 _incoming（.part 續傳），有 SHA256 就核對（不合就丟掉這次自己下載的暫存檔），再歸位（place_file）。
 /// 歸位成功後呼叫 done(歸位結果)，例如存 LoRA 的觸發詞。進度跟貼網址下載一樣在 /api/models/downloads；回傳 id
 pub(crate) fn download_known(app: &Shared, k: Known, done: Option<OnPlaced>) -> u64 {
-    let (id, already) = dl_begin(&k.url);
+    start_known_download(app, k, done, None)
+}
+
+pub(super) fn start_known_download(app: &Shared, k: Known, done: Option<OnPlaced>, mismatch: Option<&'static str>) -> u64 {
+    // 同網址的普通下載不保證核對。獨立登記與暫存，避免共用未驗證的 id 或互刪檔案。
+    let (dir, (id, already)) = if mismatch.is_some() {
+        let tag = format!("verified-{}", dl::tag(&k.url));
+        (incoming(app).join(&tag), dl_begin_tagged(&k.url, tag))
+    } else {
+        (incoming(app), dl_begin(&k.url))
+    };
     if already {
         return id;
     }
@@ -592,9 +605,9 @@ pub(crate) fn download_known(app: &Shared, k: Known, done: Option<OnPlaced>) -> 
         d.insert("name".into(), json!(name));
         d.insert("total".into(), json!(k.size));
     });
-    let (dir, models) = (incoming(app), models_root(app));
+    let models = models_root(app);
     tokio::spawn(async move {
-        let r = fetch_known(id, &k, &dir.join(&name)).await;
+        let r = fetch_known(id, &k, &dir.join(&name), mismatch).await;
         match r {
             Ok(path) => {
                 let (kind, sub) = (k.kind.clone(), k.sub.clone());
@@ -623,7 +636,7 @@ pub(crate) fn download_known(app: &Shared, k: Known, done: Option<OnPlaced>) -> 
     id
 }
 
-async fn fetch_known(id: u64, k: &Known, dest: &Path) -> Result<PathBuf, String> {
+async fn fetch_known(id: u64, k: &Known, dest: &Path, mismatch: Option<&str>) -> Result<PathBuf, String> {
     if super::basename(&k.name).is_empty() || !model_dirs::is_model_file(dest) {
         return Err(format!("「{}」不是模型檔（要是 {} 其中一種）", k.name, model_dirs::EXTS.join("、")));
     }
@@ -638,7 +651,8 @@ async fn fetch_known(id: u64, k: &Known, dest: &Path) -> Result<PathBuf, String>
     let job = dl::Job {
         bearer: k.bearer.as_deref(),
         cookie: k.cookie.as_deref(),
-        size: k.size,
+        // 自訂核對會在傳輸完成後驗大小，讓錯檔走同一條清除與錯誤回報流程。
+        size: if mismatch.is_some() { None } else { k.size },
         tag: Some(&tag),
         ..dl::Job::new(&client, &k.url)
     };
@@ -655,11 +669,20 @@ async fn fetch_known(id: u64, k: &Known, dest: &Path) -> Result<PathBuf, String>
         dl_set(id, |d| {
             d.insert("note".into(), json!("核對檔案內容中…"));
         });
-        let t = dest.to_path_buf();
-        let got = blocking(move || crate::setup::sha256_file(&t).map_err(|e| e.to_string())).await?;
-        if !got.eq_ignore_ascii_case(want) {
+        let path = dest.to_owned();
+        let size = mismatch.and(k.size);
+        let want = want.to_owned();
+        let matches = blocking(move || -> std::io::Result<bool> {
+            if let Some(size) = size {
+                if path.metadata()?.len() != size {
+                    return Ok(false);
+                }
+            }
+            Ok(crate::setup::sha256_file(&path)?.eq_ignore_ascii_case(&want))
+        }).await.map_err(|e| e.to_string())?;
+        if !matches {
             let _ = tokio::fs::remove_file(dest).await;
-            return Err("下載完了，但內容跟來源公布的檔案核對不上（SHA256 不同），可能是下載途中壞掉：已經丟掉，再按一次會重新下載".into());
+            return Err(mismatch.unwrap_or("下載完了，但內容跟來源公布的檔案核對不上（SHA256 不同），可能是下載途中壞掉：已經丟掉，再按一次會重新下載").into());
         }
     }
     Ok(dest.to_path_buf())

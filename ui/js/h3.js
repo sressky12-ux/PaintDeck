@@ -78,6 +78,9 @@ let loras = [];           // [{name, strength}]
 const tasks = new Map();  // task → {row, state, msg, mode}
 const localJobs = new Set();
 let outs = [];            // 成品（圖庫紀錄）
+const outCbs = [];        // 有新成品時通知（videostage.js 的舞台預覽）
+/** 每多一支成品就呼叫 cb(圖庫紀錄) */
+export function onOut(cb) { outCbs.push(cb); }
 let loading = null;
 
 // ================================================================ 共用
@@ -1286,6 +1289,7 @@ async function addOuts(ids) {
 function addOutRec(rec) {
   if (!rec || outs.some((r) => r.id === rec.id)) return;
   outs = [rec, ...outs];
+  for (const cb of outCbs) cb(rec);
   const box = F("h3Out");
   if (outs.length === 1) box.replaceChildren();
   box.prepend(el("div", { class: "h3-outcell" },
