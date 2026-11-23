@@ -123,7 +123,45 @@ pub fn effective_with(dirs: &[Dir], comfyui: Option<&Path>) -> Vec<Dir> {
             out.push(Dir { kind: "diffusion_models".into(), ..d });
         }
     }
-    out
+    drop_nested(out, comfyui)
+}
+
+/// 拿掉包在別的資料夾裡面的（同一個分類）：ComfyUI 找模型會一路往子資料夾走，
+/// models\diffusion_models 跟 models\diffusion_models\Anima 都登記的話，同一個檔在選單會出現兩次（Anima\x 和 x）。
+/// 2026-11-23 玩家回報：掃描把放了清單模型的子資料夾（Anima、Qwen、MOSS）當成新的模型庫加了進去。
+/// comfyui 有給時，ComfyUI 自己的 models\<分類>、使用者自己 yaml 裡的資料夾底下的也拿掉
+fn drop_nested(dirs: Vec<Dir>, comfyui: Option<&Path>) -> Vec<Dir> {
+    let keep: Vec<bool> = dirs
+        .iter()
+        .map(|d| {
+            !comfyui.is_some_and(|c| read_by_comfy(c, &d.kind, &d.path))
+                && !dirs.iter().any(|o| o.kind == d.kind && !same(&o.path, &d.path) && within(&d.path, &o.path))
+        })
+        .collect();
+    dirs.into_iter().zip(keep).filter_map(|(d, k)| k.then_some(d)).collect()
+}
+
+/// child 就是 parent，或在 parent 底下（junction 指過去的也算）
+fn within(child: &Path, parent: &Path) -> bool {
+    same(child, parent)
+        || inside(child, parent)
+        || match (std::fs::canonicalize(child), std::fs::canonicalize(parent)) {
+            (Ok(c), Ok(p)) => inside(&c, &p),
+            _ => false,
+        }
+}
+
+/// 在 ComfyUI 自己的 models\<分類>（含舊名 unet、clip）底下（含本身）
+fn under_own_dir(comfyui: &Path, kind: &str, p: &Path) -> bool {
+    let m = comfyui.join("models");
+    within(p, &m.join(kind))
+        || (kind == "diffusion_models" && within(p, &m.join("unet")))
+        || (kind == "text_encoders" && within(p, &m.join("clip")))
+}
+
+/// ComfyUI 不靠生圖站的清單就會讀到：在它自己的 models\<分類> 底下，或在使用者自己 yaml 裡同分類的資料夾底下
+fn read_by_comfy(comfyui: &Path, kind: &str, p: &Path) -> bool {
+    under_own_dir(comfyui, kind, p) || comfy_extra(comfyui).iter().any(|y| y.kind == kind && within(p, &y.path))
 }
 
 /// 清單裡的資料夾，開著的 ComfyUI 還沒讀到（加了資料夾沒重開 ComfyUI；ComfyUI 不是生圖站開的所以沒帶到 yaml）。
@@ -361,8 +399,8 @@ pub fn save_checked(data: &Path, comfyui: &Path, dirs: Vec<Dir>) -> Result<(Vec<
             let s = d.path.to_string_lossy().replace('/', "\\");
             d.path = PathBuf::from(if s.len() > 3 { s.trim_end_matches('\\') } else { &s });
         }
-        // 生圖站自己的 ComfyUI 本來就會讀
-        if same(&d.path, &comfyui.join("models").join(kind)) {
+        // 生圖站自己的 ComfyUI 本來就會讀（子資料夾也會讀，再加一次選單會出現兩次）
+        if under_own_dir(comfyui, kind, &d.path) {
             continue;
         }
         if out.iter().any(|o| o.kind == d.kind && same(&o.path, &d.path)) {
@@ -430,7 +468,10 @@ fn write_yaml(comfyui: &Path, dirs: &[Dir]) -> Result<(), String> {
 pub fn ensure_yaml(comfyui: &Path) {
     let dirs = current();
     let eff = effective_with(&dirs, Some(comfyui));
-    if !eff.is_empty() && std::fs::read_to_string(yaml_path(comfyui)).ok().as_deref() != Some(yaml_render(&eff).as_str()) {
+    let old = std::fs::read_to_string(yaml_path(comfyui)).ok();
+    // 清單全被規則拿掉（例如只登記了 ComfyUI 自己 models 底下的子資料夾）也要把舊的 yaml 刪掉
+    let stale = if eff.is_empty() { old.is_some() } else { old.as_deref() != Some(yaml_render(&eff).as_str()) };
+    if stale {
         if let Err(e) = write_yaml(comfyui, &dirs) {
             eprintln!("{e}");
         }
@@ -953,7 +994,9 @@ pub fn scan_roots(roots: &[PathBuf], want: &[Want]) -> (Vec<Found>, Vec<Library>
 /// suggest＝建議加進清單的資料夾（找到的清單模型所在的資料夾＋沒在用的模型庫），網頁預設全勾
 pub fn scan_view(comfyui: &Path, dirs: &[Dir]) -> Value {
     let s = scan_state();
-    let used = |kind: &str, path: &Path| own_dir(comfyui, kind, path) || dirs.iter().any(|d| d.kind == kind && same(&d.path, path));
+    // ComfyUI 會往子資料夾找：已經會讀的資料夾底下的子資料夾也算在用（不然會建議加進去，選單變成 Anima\x 和 x 兩份）
+    let eff = effective(dirs);
+    let used = |kind: &str, path: &Path| read_by_comfy(comfyui, kind, path) || eff.iter().any(|d| d.kind == kind && within(path, &d.path));
     let mut suggest: Vec<Value> = vec![];
     let mut push = |kind: &str, path: &Path, why: Value| {
         if used(kind, path) || suggest.iter().any(|x| x["kind"] == kind && same(Path::new(x["path"].as_str().unwrap_or("")), path)) {
@@ -967,10 +1010,17 @@ pub fn scan_view(comfyui: &Path, dirs: &[Dir]) -> Value {
     for l in &s.libraries {
         push(&l.kind, &l.path, json!({"type": l.how, "files": l.files, "bytes": l.bytes}));
     }
-    // 同一個資料夾在清單裡找到幾個檔
+    // 建議裡互相包住的（清單模型在 models\diffusion_models\Anima、模型庫是 models\diffusion_models）只留外層
+    let spath = |x: &Value| PathBuf::from(x["path"].as_str().unwrap_or(""));
+    let nested: Vec<bool> = suggest
+        .iter()
+        .map(|x| suggest.iter().any(|o| o["kind"] == x["kind"] && !same(&spath(o), &spath(x)) && within(&spath(x), &spath(o))))
+        .collect();
+    let mut suggest: Vec<Value> = suggest.into_iter().zip(nested).filter_map(|(x, n)| (!n).then_some(x)).collect();
+    // 這個資料夾（含子資料夾）在清單裡找到幾個檔
     for x in suggest.iter_mut() {
-        let p = PathBuf::from(x["path"].as_str().unwrap_or(""));
-        let n = s.found.iter().filter(|f| f.kind == x["kind"].as_str().unwrap_or("") && same(&f.root, &p)).count();
+        let p = spath(x);
+        let n = s.found.iter().filter(|f| f.kind == x["kind"].as_str().unwrap_or("") && within(&f.root, &p)).count();
         x["manifest_files"] = json!(n);
     }
     let found: Vec<Value> = s
@@ -1285,6 +1335,39 @@ mod tests {
         assert!(effective_with(&[], None).is_empty());
         let _ = std::fs::remove_dir_all(&c);
         let _ = std::fs::remove_dir_all(&sdd);
+    }
+
+    /// 2026-11-23 玩家回報：掃描把 models\diffusion_models\Anima 這種子資料夾加進清單，選單同一個模型出現兩次（Anima\x 和 x）
+    #[test]
+    fn nested_folders_are_not_listed_twice() {
+        let d = tmp("nested");
+        let comfyui = d.join("ComfyUI");
+        let own_sub = comfyui.join("models").join("diffusion_models").join("Anima");
+        let unet_sub = comfyui.join("models").join("unet").join("MOSS");
+        let (ext, ext_sub) = (d.join("ext"), d.join("ext").join("Qwen"));
+        for p in [&own_sub, &unet_sub, &ext_sub] {
+            std::fs::create_dir_all(p).unwrap();
+        }
+        let sd = |kind: &str, p: &Path| Dir { kind: kind.into(), path: p.to_path_buf(), source: "".into(), added: "".into() };
+        let dirs = vec![
+            sd("diffusion_models", &own_sub),  // ComfyUI 自己的 models\diffusion_models 底下
+            sd("diffusion_models", &unet_sub), // 舊名 unet 底下
+            sd("diffusion_models", &ext_sub),  // 包在 ext 裡面
+            sd("diffusion_models", &ext),
+            sd("loras", &ext_sub), // 分類不同，照留
+        ];
+        let eff = effective_with(&dirs, Some(&comfyui));
+        let got: Vec<(&str, &Path)> = eff.iter().map(|x| (x.kind.as_str(), x.path.as_path())).collect();
+        assert_eq!(got, [("diffusion_models", ext.as_path()), ("loras", ext_sub.as_path())]);
+        // 沒給 ComfyUI 資料夾：只拿掉互相包住的
+        assert_eq!(effective_with(&dirs, None).len(), 4);
+        assert!(!yaml_text(&dirs, Some(&comfyui)).contains("Anima"));
+        // 存清單時就不收 ComfyUI 自己 models 底下的子資料夾；隔壁名字很像的資料夾不算在底下
+        assert!(under_own_dir(&comfyui, "diffusion_models", &own_sub));
+        assert!(under_own_dir(&comfyui, "diffusion_models", &unet_sub));
+        assert!(!under_own_dir(&comfyui, "loras", &own_sub));
+        assert!(!under_own_dir(&comfyui, "diffusion_models", &comfyui.join("models").join("diffusion_models_old")));
+        let _ = std::fs::remove_dir_all(&d);
     }
 
     #[test]
