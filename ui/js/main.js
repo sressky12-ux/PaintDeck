@@ -3,6 +3,7 @@ import { $, $$, api, toast } from "./util.js";
 import * as gen from "./gen.js";
 import * as gallery from "./gallery.js";
 import * as posewear from "./posewear.js";
+import * as booru from "./booru.js";
 import * as assets from "./assets.js";
 import * as loras from "./loras.js";
 import * as hub from "./hub.js";
@@ -50,6 +51,7 @@ function showPage(p) {
   if (p === "gallery") gallery.show();
   if (p === "assets") assets.show();
   if (p === "posewear") posewear.showPage();
+  if (p === "booru") booru.show();
   if (p === "loras") loras.showPage();
   if (p === "civitai") hub.show();
   if (p === "settings") settings.show();

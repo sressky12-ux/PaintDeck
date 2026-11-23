@@ -2,43 +2,63 @@
 // 「自動清理」（後端 tagclean.rs）先把雜訊、重複、衝突、跟畫風 LoRA 打架的 tag 標成排除，每個都附原因、點一下可加回；
 // 每個 tag 旁邊有中文對照；有掛 LoRA 時觸發詞放在品質詞後面。
 // 另外可以請讀圖模型（有通用版就用它，沒有才用 PE i2i Heretic；task=caption）寫一段英文說明（含畫風），接在 tag 後面，也可以順便要中文摘要
-import { $, el, api, toast, openModal, closeModal, debounce, copyText, store } from "./util.js";
+// 2026-11-23 玩家：「反推好像没办法自己上传图片了」→ 視窗上方顯示正在推哪張，「換一張圖…」、拖進視窗、Ctrl+V 貼上都能換成自己的圖
+import { $, el, api, toast, openModal, closeModal, debounce, copyText, store, pickFile, uploadFile, makeDrop } from "./util.js";
 
 const RATING = { general: "safe", sensitive: "sensitive", questionable: "nsfw", explicit: "explicit" };
 const KIND = [["雜訊", "雜訊"], ["寫實", "寫實／畫風類"], ["衝突", "衝突"], ["重複", "重複"]];  // 原因的開頭 → 摘要名稱（「髮色衝突」也算衝突）
 let src = null, res = null, off = new Set(), cb = null, triggers = () => [];
 let qwen = false;  // 現在選的是 Qwen 2.1 模型：說明改寫成官方格式的長段落，套用時不加 Danbooru tag
 let inputName = null, capBusy = null;  // 寫說明用的輸入圖檔名（圖庫的圖要先複製到 input）、進行中的請求
+let runSeq = 0;  // 換圖、調門檻時，晚回來的舊結果丟掉
 
 // getTriggers：回傳目前掛著（有啟用）的 LoRA 觸發詞；有的話自動清理會拿掉寫實類 tag、套用時把觸發詞放前面
 export function open(source, onApply, family = "anima", getTriggers = () => []) {
-  if (capBusy) cancelCaption();
-  src = source; cb = onApply; off = new Set(); res = null; inputName = source.name || null;
+  cb = onApply;
   qwen = family === "qwen21" || family === "moss";
   triggers = getTriggers;
   $("#tgClean").checked = store.get("tg_clean", true);
   $("#tgZh").checked = store.get("tg_zh", true);
   $("#tgCapZh").checked = store.get("tg_cap_zh", true);
+  $("#tgCapGo").textContent = qwen ? "AI 寫英文段落描述（Qwen 2.1／MOSS）" : "AI 寫英文說明（含畫風）";
+  $("#tgCapUseLabel").textContent = qwen ? "套用時只用這段描述（Qwen／MOSS 不需要 tag）" : "套用時接在 tag 後面";
+  openModal("#taggerModal");
+  use(source);
+}
+
+/** 換成這張圖重新反推：source＝{name}（ComfyUI input 裡的檔）或 {id}（圖庫的圖） */
+function use(source) {
+  if (capBusy) cancelCaption();
+  src = source; off = new Set(); res = null; inputName = source.name || null;
+  $("#tgImg").src = source.name ? `/input/${encodeURIComponent(source.name)}` : `/thumb/${source.id}`;
   $("#tgCleanInfo").textContent = "";
   $("#tgCapZhText").textContent = "";
   $("#tgCapZhText").hidden = true;
-  $("#tgCapGo").textContent = qwen ? "AI 寫英文段落描述（Qwen 2.1／MOSS）" : "AI 寫英文說明（含畫風）";
-  $("#tgCapUseLabel").textContent = qwen ? "套用時只用這段描述（Qwen／MOSS 不需要 tag）" : "套用時接在 tag 後面";
   $("#tgResult").textContent = "分析中…（第一次要載入模型，約 10～20 秒）";
   $("#tgCap").value = "";
   for (const id of ["tgCap", "tgCapHint", "tgCapUseRow"]) $("#" + id).hidden = true;
+  $("#tgCapGo").hidden = false; $("#tgCapCancel").hidden = true;
   capStatus("");
-  openModal("#taggerModal");
   run();
 }
 
+// 自己的圖：上傳到 ComfyUI 的 input 再推
+async function useFile(f) {
+  if (!f || !f.type.startsWith("image/")) return toast("這不是圖片", "err");
+  $("#tgResult").textContent = "上傳中…";
+  try { use({ name: (await uploadFile(f)).name }); } catch (e) { $("#tgResult").textContent = e.message; toast(e.message, "err"); }
+}
+
 async function run() {
+  const my = ++runSeq;
   try {
-    res = await api("/api/tagger", { json: { ...src, general: +$("#tgThr").value, style_lora: triggers().length > 0 } });
+    const r = await api("/api/tagger", { json: { ...src, general: +$("#tgThr").value, style_lora: triggers().length > 0 } });
+    if (my !== runSeq) return;
+    res = r;
     resetOff();
     render();
   } catch (e) {
-    $("#tgResult").textContent = e.message;
+    if (my === runSeq) $("#tgResult").textContent = e.message;
   }
 }
 
@@ -170,3 +190,14 @@ $("#tgCapCancel").onclick = cancelCaption;
 $("#tgReplace").onclick = () => { const t = text(); if (t) { cb(t, true); closeModal("#taggerModal"); } };
 $("#tgAppend").onclick = () => { const t = text(); if (t) { cb(t.replace(/^masterpiece, best quality, \w+, /, ""), false); closeModal("#taggerModal"); } };
 $("#tgCopy").onclick = async () => { const t = text(); if (t) { await copyText(t); toast("已複製", "ok"); } };
+// 換一張圖：選檔、拖進視窗、Ctrl+V 貼上（視窗開著時貼上的圖給反推；capture 先接走，生成頁的貼上不會再收到）
+$("#tgPick").onclick = async () => { const f = await pickFile(); if (f) useFile(f); };
+makeDrop($("#taggerModal .dialog"), useFile);
+document.addEventListener("paste", (e) => {
+  if ($("#taggerModal").hidden) return;
+  const f = [...(e.clipboardData?.files || [])].find((x) => x.type.startsWith("image/"));
+  if (!f) return;
+  e.preventDefault();
+  e.stopPropagation();
+  useFile(f);
+}, true);

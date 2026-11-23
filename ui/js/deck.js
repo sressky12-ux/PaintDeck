@@ -11,6 +11,7 @@ const SPK = '<path d="M3 9h4l5-4v14l-5-4H3z"/>';
 export const ICONS = {
   cam: '<path d="M8 6V4h5v2"/><rect x="3" y="6" width="18" height="14" rx="2"/><circle cx="12" cy="13" r="4"/><circle class="af" cx="12" cy="13" r="1.8"/><rect class="f" x="16" y="8" width="3" height="2"/>',
   slides: '<path d="M7 3h12a2 2 0 0 1 2 2v12"/><rect x="3" y="7" width="14" height="14" rx="2"/><rect class="a" x="6" y="11" width="8" height="6" rx="1.5"/>',
+  pic: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 16l5-5 4 4 3-3 6 6"/><circle class="af" cx="16" cy="9" r="1.8"/>',
   cart: '<path d="M4 3h16v15h-2v3H6v-3H4z"/><rect class="a" x="7" y="6" width="10" height="7" rx="1"/><path d="M10 18v3M14 18v3"/>',
   dish: '<path d="M3 9a9 9 0 0 0 12 12z"/><path d="M9 15l5-5"/><circle class="af" cx="15" cy="9" r="2"/><path d="M17 3a4 4 0 0 1 4 4"/>',
   punch: '<path d="M7 3h13v18H4V6z"/><rect class="f" x="7" y="7" width="2" height="3"/><rect class="f" x="15" y="7" width="2" height="3"/><rect class="af" x="11" y="11" width="2" height="3"/><rect class="f" x="15" y="11" width="2" height="3"/><rect class="f" x="7" y="15" width="2" height="3"/><rect class="f" x="11" y="15" width="2" height="3"/>',

@@ -21,6 +21,7 @@ import * as wfpanel from "./wfpanel.js";
 import * as models from "./models.js";
 import * as drawer from "./assetdrawer.js";
 import * as posewear from "./posewear.js";
+import * as booru from "./booru.js";
 import * as lk from "./lockedchips.js";
 import * as imgmeta from "./imgmeta.js";
 import { refreshGenNode } from "./nodes.js";
@@ -199,6 +200,25 @@ export function init() {
   F("xyOpen").onclick = () => play.openXY();
   for (const id of ["sketchOpen", "initSketch", "ctrlSketch"]) F(id).onclick = () => play.openSketch();
 
+  // 畫廊頁（booru.js）：booru 的圖送圖生圖、多圖參考；原圖的 tag 換掉或接在提示詞後面
+  booru.init({
+    toInit: (r) => { if (!["img2img", "inpaint", "outpaint"].includes(S.mode)) setMode("img2img"); setInit(r); },
+    toRef: (r) => {
+      if (!["qwen21", "mmimage"].includes(fam())) {
+        const f = familyModel("qwen21") ? "qwen21" : familyModel("mmimage") ? "mmimage" : null;
+        if (!f) { toast("多圖參考要 Qwen 2.1 或 MiniMax H3 Image 模型：到下載中心或安裝精靈裝「Qwen 2.1 編輯」", "err"); return null; }
+        F("model").value = familyModel(f); modelDefaults(); familySwitch();
+      }
+      if (S.mode !== "multiref") setMode("multiref");
+      return refs.add(r, true);
+    },
+    setPrompt: (t, how) => {
+      if (how === "append") appendPrompt(t);
+      else { F("prompt").value = t; save(); }
+      F("prompt").dispatchEvent(new Event("input", { bubbles: true }));
+    },
+  });
+
   F("model").onchange = () => { modelDefaults(); familySwitch(); save(); swapCart(); assetDrawer?.refresh(); };
   // 工作流參數面板（選了「⚙ 生圖工作流」才出現）、把內建功能匯出成 ComfyUI 工作流
   wfpanel.init({ adopt: adoptSampler });
@@ -259,7 +279,7 @@ export function init() {
   };
   F("initParams").onclick = () => S.init?.params && applyParams(S.init.params, false);
   document.addEventListener("paste", async (e) => {
-    if (!onGenPage() || !$("#imModal").hidden || !$("#loraPrev").hidden) return; // 讀圖片參數、換 LoRA 預覽圖的視窗開著：貼給它們
+    if (!onGenPage() || !$("#imModal").hidden || !$("#loraPrev").hidden || !$("#taggerModal").hidden) return; // 讀圖片參數、換 LoRA 預覽圖、反推的視窗開著：貼給它們
     const files = [...(e.clipboardData?.files || [])].filter((x) => x.type.startsWith("image/"));
     if (!files.length) return;
     e.preventDefault();

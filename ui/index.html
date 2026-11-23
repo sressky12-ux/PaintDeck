@@ -37,8 +37,9 @@
       <button class="pkey" data-page="agent" data-ic="bubble" type="button" title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">10</span><span class="led"></span>助手</button>
       <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">11</span><span class="led"></span>訓練</button>
       <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">12</span><span class="led"></span>API</button>
-      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">13</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
-      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">14</span><span class="led"></span>設定</button>
+      <button class="pkey" data-page="booru" data-ic="pic" type="button" title="畫廊：直接搜 Danbooru、Gelbooru、Safebooru 的參考圖（圖源＝ComfyUI-Aaalice-Nodes），圖丟進圖生圖、多圖參考，或一鍵複用原圖的 tag"><span class="n">13</span><span class="led"></span>畫廊</button>
+      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">14</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
+      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">15</span><span class="led"></span>設定</button>
     </nav>
           <button type="button" class="akey" id="navPinAction" hidden></button>
         </div>
@@ -682,6 +683,11 @@
 <!-- ======================= 衣姿（posewear 官網原樣：ui/posewear/，tools/posewear_vendor.py 產生；後端 server/api_posewear.rs、api_pwproxy.rs） ======================= -->
 <main id="page-posewear" class="page">
   <div class="st-body pw-page"><iframe id="pwFrame" title="衣姿" allow="clipboard-read; clipboard-write; fullscreen"></iframe></div>
+</main>
+
+<!-- ======================= 畫廊（booru 參考圖，booru.js） ======================= -->
+<main id="page-booru" class="page">
+  <section class="panel lib screws bq" id="booruBox"></section>
 </main>
 
 <!-- ======================= LoRA ======================= -->
@@ -1948,6 +1954,13 @@
 <div class="modal" id="taggerModal" hidden>
   <div class="dialog">
     <div class="row between"><b>反推提示詞</b><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
+    <div class="tg-src">
+      <img id="tgImg" alt="正在反推的圖">
+      <div class="tg-src-r">
+        <span class="muted sm">正在反推這張。要推別張：按「換一張圖」，或把圖拖進這個視窗、Ctrl+V 貼上。</span>
+        <button class="akey sm" id="tgPick" type="button">換一張圖…</button>
+      </div>
+    </div>
     <span class="fader-row"><span class="name">門檻</span><output id="tgThrOut" class="vfd">0.35</output></span>
     <input type="range" id="tgThr" min="0.2" max="0.8" step="0.05" value="0.35" aria-label="門檻">
     <div class="row gap wrap">

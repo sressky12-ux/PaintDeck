@@ -28,6 +28,7 @@ mod api_pe;
 mod api_play;
 mod api_refmod;
 mod api_wardrobe;
+mod api_booru;
 mod api_posewear;
 mod api_pwproxy;
 mod api_runninghub;
@@ -501,6 +502,10 @@ pub fn router(app: Shared) -> Router {
         .route("/api/wardrobe/status", get(api_wardrobe::status))
         .route("/api/wardrobe/install", post(api_wardrobe::install))
         .route("/api/wardrobe/x/{*rest}", get(api_wardrobe::forward).post(api_wardrobe::forward))
+        // 畫廊（booru 參考圖）：ComfyUI-Aaalice-Nodes 的 Booru Gallery，繪匣只裝外掛＋轉送
+        .route("/api/booru/status", get(api_booru::status))
+        .route("/api/booru/install", post(api_booru::install))
+        .route("/api/booru/x/{*rest}", get(api_booru::forward).post(api_booru::forward))
         .route("/api/runninghub", get(api_runninghub::get))
         .route("/api/runninghub/config", post(api_runninghub::config))
         .route("/api/runninghub/test", post(api_runninghub::test))
@@ -939,6 +944,7 @@ pub async fn start(paths: Paths, comfy_url: &str) -> Result<Shared, String> {
             let mut ix = TagIndex::load(&dir);
             // WeiLin 詞庫的 danbooru 翻譯：不管用哪份 data\tags 都接上（只補對照表沒有的 tag）
             ix.add_zh_file(&a.paths.res.join("tags").join("weilin").join("zh_extra.json"));
+            ix.add_library_file(&a.paths.res.join("tags").join("weilin").join("library.json"));
             ix
         })
         .await;

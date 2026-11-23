@@ -2,7 +2,7 @@ import { $, $$, el, store } from "./util.js";
 import { app } from "./state.js";
 import * as queue from "./queue.js";
 
-export const PAGE_ORDER = ["gen", "taglib", "gallery", "assets", "posewear", "loras", "civitai", "director", "comic", "agent", "train", "api", "jobs", "settings"];
+export const PAGE_ORDER = ["gen", "taglib", "gallery", "assets", "posewear", "loras", "civitai", "director", "comic", "agent", "train", "api", "booru", "jobs", "settings"];
 export const DEFAULT_PINS = ["gen", "taglib", "gallery", "assets", "director"];
 
 export function pinnedKeys(pins, current) {
