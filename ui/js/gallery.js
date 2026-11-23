@@ -7,7 +7,6 @@ let page = 1;                     // 目前第幾頁（從 1 開始）；每頁�
 let view = "all";                 // all／fav／trash
 let lb = { list: [], i: 0, gal: false };  // gal：從圖庫開的，翻到頭會接著翻上／下一頁
 const sel = new Set();            // 選取的圖庫編號（換頁也留著）
-const known = new Map();          // 看過的圖的紀錄（跨頁選取時 A／B 比較要用）
 let selMode = false, lastClicked = null;
 
 const F = (id) => $("#" + id);
@@ -190,7 +189,6 @@ async function loadPage(p, keep = false) {
     if (p > 1 && !r.items.length) return loadPage(pages(), keep);
     page = p;
     items = r.items;
-    items.forEach((rec) => known.set(rec.id, rec));
     const frag = document.createDocumentFragment();
     // --i：進場動畫一張張排上來的順序（最多錯開 24 張，後面的一起出現）
     items.forEach((rec, i) => { const t = tile(rec); if (!keep) t.style.setProperty("--i", Math.min(i, 24)); frag.append(t); });
@@ -241,7 +239,6 @@ function emptyState() {
 }
 
 function tile(rec) {
-  known.set(rec.id, rec);
   const t = el("div", { class: "g" + (sel.has(rec.id) ? " selected" : "") + (rec.missing ? " missing" : ""), "data-id": rec.id, tabindex: 0,
     role: "button", "aria-label": (rec.idea || rec.prompt || "圖片").slice(0, 80), "data-i18n-keep": rec.idea || rec.prompt ? "aria-label" : undefined },
     el("img", { src: `/thumb/${rec.id}`, loading: "lazy", alt: "", width: rec.width, height: rec.height,
@@ -305,7 +302,7 @@ async function selectAll(allPages = false) {
     try {
       for (let off = 0; off < total; off += 500) {
         const r = await api("/api/gallery?" + query(off, 500));
-        r.items.forEach((x) => { known.set(x.id, x); sel.add(x.id); });
+        r.items.forEach((x) => sel.add(x.id));
         if (r.items.length < 500) break;
       }
     } catch (e) { toast("沒辦法選取全部：" + e.message, "err"); }
@@ -317,7 +314,7 @@ async function selectAll(allPages = false) {
 async function batch(act) {
   const ids = [...sel];
   if (!ids.length) return;
-  if (act === "compare") return openCompare(ids.map((id) => known.get(id)).filter(Boolean));
+  if (act === "compare") return openCompare(ids);
   if (act === "zip") return exportZip(ids);
   if (act === "multiref") {
     const gen = await import("./gen.js");
@@ -333,7 +330,7 @@ async function batch(act) {
     const bad = new Set(r.failed || []), done = ids.filter((id) => !bad.has(id));
     toast(`已${label} ${r.count} 張` + (bad.size ? `；${bad.size} 張沒辦法${label}：${r.error || ""}` : ""), bad.size ? "err" : "ok");
     if (act === "fav" || act === "unfav") {
-      for (const x of known.values()) if (sel.has(x.id)) x.fav = act === "fav" ? 1 : 0;
+      for (const x of items) if (sel.has(x.id)) x.fav = act === "fav" ? 1 : 0;
       $$("#galGrid .g").forEach((t) => { if (sel.has(+t.dataset.id)) t.querySelector(".fav").hidden = act !== "fav"; });
       if (view === "fav" && act === "unfav") removeTiles(ids);
     } else {
@@ -349,7 +346,7 @@ async function batch(act) {
 function removeTiles(ids) {
   const s = new Set(ids);
   items = items.filter((x) => !s.has(x.id));
-  ids.forEach((id) => { $(`#galGrid [data-id="${id}"]`)?.remove(); known.delete(id); });
+  ids.forEach((id) => $(`#galGrid [data-id="${id}"]`)?.remove());
   loadPage(page, true);
 }
 
@@ -546,22 +543,22 @@ function initCompare() {
   });
 }
 
-export function openCompare(recs) {
-  if (recs.length !== 2) return toast("比較要剛好選兩張", "err");
-  cmp = { a: recs[0], b: recs[1], x: 50 };
+function openCompare(ids) {
+  if (ids.length !== 2) return toast("比較要剛好選兩張", "err");
+  cmp = { a: ids[0], b: ids[1], x: 50 };
   openModal("#cmpModal");
   loadCmp();
 }
 
 async function loadCmp() {
   F("cmpA").onload = drawCmp;
-  F("cmpA").src = `/img/${cmp.a.id}`;
-  F("cmpB").src = `/img/${cmp.b.id}`;
+  F("cmpA").src = `/img/${cmp.a}`;
+  F("cmpB").src = `/img/${cmp.b}`;
   drawCmp();
   const box = F("cmpDiff");
   box.textContent = "比對參數中…";
   try {
-    const [a, b] = await Promise.all([api(`/api/image/${cmp.a.id}`), api(`/api/image/${cmp.b.id}`)]);
+    const [a, b] = await Promise.all([api(`/api/image/${cmp.a}`), api(`/api/image/${cmp.b}`)]);
     const pick = (r) => ({ 提示詞: r.prompt, 負面提示詞: r.negative, 種子: r.seed, 模型: r.params?.model?.replace(/\.safetensors$/, ""),
       步數: r.params?.steps, CFG: r.params?.cfg, 取樣器: r.params?.sampler, 排程: r.params?.scheduler, 尺寸: `${r.width}×${r.height}`,
       LoRA: (r.params?.loras || []).map((l) => `${l.name.replace(/\.safetensors$/, "")} ${l.strength}`).join("、") || "（沒用）", 重繪幅度: r.params?.denoise });
