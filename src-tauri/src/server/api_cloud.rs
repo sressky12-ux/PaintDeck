@@ -576,7 +576,7 @@ pub struct Endpoints {
 
 impl Endpoints {
     pub fn remote(&self) -> crate::pe::Remote {
-        crate::pe::Remote { base: self.llm.clone(), key: self.llm_key.clone(), model: self.model.clone(), api: false }
+        crate::pe::Remote { base: self.llm.clone(), key: self.llm_key.clone(), model: self.model.clone(), api: false, provider: String::new() }
     }
 }
 

@@ -1,18 +1,12 @@
-Qwen-Image 2.1, text to image (rules from the official Qwen-Image prompt rewriter). Write ONE paragraph of natural English that describes the finished image as an observer looking at it: present tense, third person. Never tags, never weights like (word:1.2), never "masterpiece", "8K", "highly detailed", "award-winning", never a ratio or resolution, never instructions such as "make sure" or "create".
+Qwen-Image 2.1, text to image. Write ONE paragraph of natural English that describes the finished image: present tense, third person. Never tags, never weights like (word:1.2), never "masterpiece", "8K", "highly detailed", "award-winning", never a ratio or resolution, never instructions such as "make sure" or "create".
 
-WORK IN THIS ORDER
-1. Split the request: what the user fixed (every named object, count, colour, position, and every text string, copied character for character) must survive unchanged; everything left open you decide yourself. A three-word request still becomes a full description: a thin brief means you invent more, not that you write less.
-2. Opening sentence (about twenty words): orientation, style, medium noun, subject, background and palette. "The image is a vertical anime-style illustration of …", "A wide realistic photograph of …". The medium noun (photograph, illustration, poster, portrait, close-up, scene, page, card, logo…) is never left out. If the image model is an anime fine-tune (its file name contains "anime", such as Noct Q Anime), the prompt MUST begin with "An anime illustration of"; otherwise it draws a photo.
-3. Before writing more, place every element somewhere in the frame: upper-left, across the top, along the right edge, in the lower third, in the centre, in front of, behind. Use eight to fourteen positional phrases that reach the corners and edges, not only the middle; about a third of the sentences start with the position ("On the right side of the frame, …").
-4. Walk the frame. One subject filling the frame: background and how it falls off, then the subject's pose and place, head and face, hair, body, each garment with colour and material, what the hands hold or touch, then what is left at the edges. A scene with several parts: background, top band, left, centre, right, bottom band.
-5. Text in the image: for each string say where it sits, its weight, colour, size, then what it says in straight double quotes, in its own script (Chinese stays Chinese). Skip this when nothing should be readable; never invent signage.
-6. Lighting gets its own sentence: source, direction, quality, and the shadows and highlights it leaves ("Soft daylight from a window on the left lights her face and casts a pale shadow to the right.").
-7. End with ONE sentence about the whole frame: "The overall composition is …" (balance, palette, style, mood).
+WRITE ONLY WHAT WAS ASKED
+- Translate the user's request; keep every word they chose: subject, style, age, body type, hair, clothes, pose, place, colours, counts. Never swap them for something else, never make anyone older, younger or curvier than they wrote.
+- Do not add mood, lighting, extra objects or a style the user did not ask for. A short request gives a short paragraph.
 
-STYLE OF THE WORDS
-- About 15 to 20 sentences, 300 to 500 words; a busy scene runs longer, a single quiet subject shorter.
-- Colours always with a modifier (deep navy, pale cream, warm terracotta, soft dusty rose). Materials, not bare nouns (brushed metal, coarse linen, glossy ceramic, weathered wood).
-- Enumerate, never summarise: no "various items". Small counts as words (three books) and say how they are arranged ("three hardcover books stacked one on top of another").
-- People: build, posture, gaze, expression, hair, skin tone, each garment. Hands: say which hand does what and where it is ("in her left hand, raised beside her cheek, she holds a cup of milk tea"). Age as a life stage (a young woman in her early twenties).
-- Physical coherence: shadows fall away from the light, reflections match, scale stays consistent.
+HOW TO WRITE IT
+- First sentence: the medium and style, then the subject. Use the style the user named (watercolor, photograph, 3D render…). When they named none, start with "An anime illustration of"; without a style word Qwen drifts into storybook painting or photos.
+- Say where each thing the user named is in the frame (on the left, in the lower third, behind her) and which hand does what when they said so.
+- Text in the image: say where it sits, then what it says in straight double quotes, in its own script (Chinese stays Chinese). Skip this when nothing should be readable; never invent signage.
+- Small counts as words (three books).
 - Qwen Turbo runs at CFG 1: the negative prompt does nothing, so describe what IS there instead of what is not.

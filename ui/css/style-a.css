@@ -1,0 +1,182 @@
+/* A 風格樣張與網址開關共用的設計變數 */
+html.style-a {
+  --a-case: #e6dfcd; --a-panel: #e2d8c2; --a-well: #cbc1a7; --a-hi: #f7f2e4; --a-lo: #a99f86;
+  --a-key: #efe8d6; --a-key-side: #b5aa8f; --a-key-down: #4a4438;
+  --a-ink: #352e23; --a-ink-2: #5c5444; --a-ink-off: #706858;
+  --a-screen: #0b120d; --a-ph-info: #8dffb0; --a-ph-num: #ffb547; --a-ph-err: #ff8072;
+  --a-go: #e57d32; --a-danger: #a83222; --a-ok: #1f5f35; --a-warn: #7a4300; --a-err: #a8201a;
+  --a-focus: #844211; --a-field: #f6f1e4; --a-field-line: #a2967b;
+  --a-stripe-1: #e2a72b; --a-stripe-2: #e67b32; --a-stripe-3: #be4531; --a-stripe-4: #704e32;
+  --a-fz-xs: 11px; --a-fz-sm: 12px; --a-fz-md: 13px; --a-fz-lg: 15px; --a-fz-xl: 16px; --a-fz-2xl: 18px;
+  --a-r-sm: 3px; --a-r-md: 6px; --a-r-lg: 10px; --a-r-round: 999px;
+  --a-sh-key: 0 2px 0 var(--a-key-side), inset 0 1px 0 var(--a-hi);
+  --a-sh-down: inset 0 2px 4px color-mix(in srgb, var(--a-screen) 32%, transparent);
+  --a-sh-well: inset 0 0 0 1px var(--a-lo), inset 0 2px 3px color-mix(in srgb, var(--a-screen) 14%, transparent);
+  --a-sh-float: 0 8px 24px color-mix(in srgb, var(--a-screen) 35%, transparent);
+  --a-sp-1: 4px; --a-sp-2: 8px; --a-sp-3: 12px; --a-sp-4: 16px; --a-sp-5: 20px; --a-sp-6: 24px;
+
+  /* app.css 的 :root[data-theme] 權重較高。保留別名的優先權，實際色值隨下方兩組深色變數切換。 */
+  --case: var(--a-case) !important; --case-2: var(--a-panel) !important; --case-3: var(--a-well) !important;
+  --case-hi: var(--a-hi) !important; --case-lo: var(--a-lo) !important;
+  --label: var(--a-ink) !important; --label-dim: var(--a-ink-2) !important;
+  --groove: color-mix(in srgb, var(--a-lo) 45%, transparent) !important;
+  --key: var(--a-key) !important; --key-side: var(--a-key-side) !important;
+  --key-dark: var(--a-key-down) !important; --key-dark-side: var(--a-lo) !important;
+  --stripe-1: var(--a-stripe-1) !important; --stripe-2: var(--a-stripe-2) !important;
+  --stripe-3: var(--a-stripe-3) !important; --stripe-4: var(--a-stripe-4) !important;
+  --acc: var(--a-go) !important; --bezel: var(--a-lo) !important;
+  --screen: var(--a-screen); --viewer: var(--a-screen) !important;
+  --ph-green: var(--a-ph-info); --ph-amber: var(--a-ph-num); --ph-red: var(--a-ph-err);
+  --ph-dim: color-mix(in srgb, var(--a-ph-info) 70%, var(--a-screen));
+  --led-off: var(--a-key-down) !important;
+  --ok: var(--a-ok) !important; --warn: var(--a-warn) !important; --err: var(--a-err) !important;
+  --ok-dim: color-mix(in srgb, var(--a-ok) 70%, var(--a-case)) !important;
+  --field: var(--a-field) !important; --field-line: var(--a-field-line) !important;
+  --mount: var(--a-field) !important; --mount-side: var(--a-key-side) !important;
+  --f-ui: "Microsoft JhengHei UI", "Microsoft JhengHei", "Noto Sans TC", system-ui, sans-serif;
+  --f-data: "IBM Plex Mono", var(--f-ui), monospace; --f-label: var(--f-ui); --f-vfd: var(--f-ui);
+}
+@media (prefers-color-scheme: dark) {
+  html.style-a:not([data-theme="light"]) {
+    --a-case: #2a2925; --a-panel: #302e28; --a-well: #1b1a17; --a-hi: #48453d; --a-lo: #0f0e0c;
+    --a-key: #3a3832; --a-key-side: #151410; --a-key-down: #24221e;
+    --a-ink: #eee6d6; --a-ink-2: #c2b9a5; --a-ink-off: #a39b88;
+    --a-screen: #0b120d; --a-ph-info: #8dffb0; --a-ph-num: #ffb547; --a-ph-err: #ff8072;
+    --a-go: #e57d32; --a-danger: #ac3b2a; --a-ok: #8dffb0; --a-warn: #ffb547; --a-err: #ff8072;
+    --a-focus: #ffb547; --a-field: #25231f; --a-field-line: #766d5c;
+    --a-stripe-1: #e2a72b; --a-stripe-2: #e67b32; --a-stripe-3: #be4531; --a-stripe-4: #906a48;
+  }
+}
+html.style-a[data-theme="dark"] {
+  --a-case: #2a2925; --a-panel: #302e28; --a-well: #1b1a17; --a-hi: #48453d; --a-lo: #0f0e0c;
+  --a-key: #3a3832; --a-key-side: #151410; --a-key-down: #24221e;
+  --a-ink: #eee6d6; --a-ink-2: #c2b9a5; --a-ink-off: #a39b88;
+  --a-screen: #0b120d; --a-ph-info: #8dffb0; --a-ph-num: #ffb547; --a-ph-err: #ff8072;
+  --a-go: #e57d32; --a-danger: #ac3b2a; --a-ok: #8dffb0; --a-warn: #ffb547; --a-err: #ff8072;
+  --a-focus: #ffb547; --a-field: #25231f; --a-field-line: #766d5c;
+  --a-stripe-1: #e2a72b; --a-stripe-2: #e67b32; --a-stripe-3: #be4531; --a-stripe-4: #906a48;
+}
+
+/* 機殼、面板與絲印 */
+html.style-a body { --f-label: var(--f-ui); }
+html.style-a .unit-head {
+  background: linear-gradient(var(--a-hi), var(--a-case) 9px, var(--a-panel));
+  border-radius: var(--a-r-lg) var(--a-r-lg) var(--a-r-sm) var(--a-r-sm);
+}
+html.style-a .screws::before, html.style-a .screws::after,
+html.style-a .group > .lbl[data-silk]::before { content: none; }
+html.style-a .vents { display: none; }
+html.style-a .panel {
+  background-color: var(--a-panel); border-radius: var(--a-r-md); box-shadow: var(--a-sh-well);
+}
+html.style-a .lbl, html.style-a .dock-title {
+  font-family: var(--f-ui); font-size: var(--a-fz-sm); color: var(--a-ink-2);
+}
+html.style-a .dock-head { border-color: var(--a-lo); }
+html.style-a .unit-head .badge .model-no {
+  --f-label: "Barlow Condensed", var(--f-ui);
+  font-family: var(--f-label); font-size: var(--a-fz-sm);
+}
+
+/* 鍵面、按下的凹槽與上緣燈 */
+html.style-a :is(.akey, .minikey, .btn, .chip, .cap-chip) {
+  background: var(--a-key); color: var(--a-ink); border-radius: var(--a-r-sm); box-shadow: var(--a-sh-key);
+}
+html.style-a :is(.akey, .minikey, .btn, .chip, .bigkey, .cap-chip):enabled:hover {
+  filter: brightness(1.06);
+}
+html.style-a :is(.bigkey, #genBtn, .akey.go, .btn.primary) {
+  background: var(--a-go); color: var(--a-screen); border-radius: var(--a-r-md);
+  border-top: 1px solid color-mix(in srgb, var(--a-go) 65%, var(--a-field));
+  box-shadow: var(--a-sh-key); font-weight: 800;
+}
+html.style-a :is(.minikey.red, .akey.warn, .btn.danger) {
+  background: var(--a-danger); color: light-dark(var(--a-field), var(--a-ink)); box-shadow: var(--a-sh-key);
+}
+html.style-a :is(.akey, .minikey, .btn, .chip, .cap-chip, .bigkey, #genBtn):is(:active, .on) {
+  transform: translateY(1px); box-shadow: var(--a-sh-down);
+}
+html.style-a .chip.on { background: var(--a-well); color: var(--a-ink); }
+html.style-a :is(button, input, select, textarea):disabled { opacity: .55; cursor: not-allowed; }
+html.style-a :focus-visible { outline: 2px solid var(--a-focus); outline-offset: 2px; }
+html.style-a .piano {
+  background: var(--a-well); border-radius: var(--a-r-md); box-shadow: var(--a-sh-well);
+}
+html.style-a .piano button, html.style-a #modeSeg.piano button {
+  padding: 12px 8px 5px; min-height: 36px; border-radius: var(--a-r-sm);
+  background: var(--a-key); color: var(--a-ink); box-shadow: var(--a-sh-key);
+}
+html.style-a .piano button::before { top: 4px; background: transparent; box-shadow: none; }
+html.style-a .piano button.on, html.style-a #modeSeg.piano button.on,
+html.style-a .piano button:active {
+  transform: translateY(1px); box-shadow: var(--a-sh-down);
+}
+html.style-a .piano button.on::before { background: var(--a-ph-info); }
+html.style-a .rocker { background: var(--a-well); box-shadow: var(--a-sh-well); border-radius: var(--a-r-md); }
+html.style-a .rocker .cap { background: var(--a-key); box-shadow: var(--a-sh-key); border-radius: var(--a-r-sm); }
+html.style-a .rocker button { color: var(--a-ink-2); }
+html.style-a .rocker button[aria-checked="true"] { color: var(--a-ink); }
+
+/* 紙面輸入與機台讀數；螢幕裡的輸入保留原本的透明底與疊字。 */
+html.style-a :where(input[type="text"], input[type="number"], input[type="search"], input[type="password"], input[type="date"], textarea, select):not(:where(.scr *, .chip-sel *, #prompt, #promptHl)) {
+  background-color: var(--a-field); color: var(--a-ink); border-radius: var(--a-r-sm);
+  outline: 1px solid var(--a-field-line); outline-offset: -1px; box-shadow: var(--a-sh-down);
+}
+html.style-a :is(input, textarea, select):focus-visible { outline: 2px solid var(--a-focus); outline-offset: 1px; }
+html.style-a .check { color: var(--a-ink); }
+html.style-a input[type="checkbox"] {
+  border-radius: var(--a-r-sm); background: var(--a-well); box-shadow: var(--a-sh-well);
+}
+html.style-a input[type="checkbox"]::before {
+  border-radius: var(--a-r-sm); background: var(--a-key); box-shadow: var(--a-sh-key);
+}
+html.style-a input[type="checkbox"]::after {
+  border-radius: var(--a-r-round); background: var(--a-lo); box-shadow: none;
+}
+html.style-a input[type="checkbox"]:checked::after { background: var(--a-ok); }
+html.style-a input[type="range"]::-webkit-slider-runnable-track {
+  border-radius: var(--a-r-round); background: var(--a-well); box-shadow: var(--a-sh-well);
+}
+html.style-a input[type="range"]::-webkit-slider-thumb {
+  border-radius: var(--a-r-sm); background: var(--a-key); box-shadow: var(--a-sh-key);
+}
+html.style-a .scr, html.style-a .readout, html.style-a .vfd {
+  background: var(--a-screen); color: var(--a-ph-info); border-radius: var(--a-r-sm); box-shadow: var(--a-sh-well);
+}
+html.style-a #promptBox :is(#prompt, #promptHl, #negative, #negHl) { font-family: var(--f-ui); }
+html.style-a .readout { font-size: var(--a-fz-md); }
+html.style-a .vfd, html.style-a .readout .a, html.style-a .readout > span:nth-child(2):not(.sep, .r) {
+  font-family: var(--f-data); color: var(--a-ph-num);
+}
+html.style-a .vfd.g { color: var(--a-ph-info); }
+html.style-a .vfd.r, html.style-a .readout .r { color: var(--a-ph-err); }
+
+/* 卡片、浮層與狀態 */
+html.style-a .card { background: var(--a-key); border-radius: var(--a-r-md); box-shadow: var(--a-sh-key); }
+html.style-a .card .ph { background-color: var(--a-screen); border-radius: var(--a-r-sm); box-shadow: var(--a-sh-well); }
+html.style-a .card .t { color: var(--a-ink); font-size: var(--a-fz-md); }
+html.style-a .card .st { color: var(--a-ink-2); font-size: var(--a-fz-xs); }
+html.style-a .card .badge { border-radius: var(--a-r-sm); font-size: var(--a-fz-xs); }
+html.style-a .card .badge:not(.ok, .nsfw, .paid, .no) { background: var(--a-screen); color: var(--a-ph-info); }
+html.style-a .modal { background: color-mix(in srgb, var(--a-screen) 50%, transparent); }
+html.style-a .dialog, html.style-a .cap-pop, html.style-a .drawer {
+  background: var(--a-panel); border-radius: var(--a-r-lg); box-shadow: var(--a-sh-float);
+}
+html.style-a .toast {
+  background: var(--a-screen); color: var(--a-ph-info); border-radius: var(--a-r-md); box-shadow: var(--a-sh-float);
+}
+html.style-a .toast.err { color: var(--a-ph-err); }
+html.style-a .notice {
+  background: var(--a-panel); color: var(--a-ink); border-color: var(--a-go); border-radius: var(--a-r-sm);
+}
+html.style-a .prog, html.style-a .bar { background: var(--a-well); border-radius: var(--a-r-round); box-shadow: var(--a-sh-well); }
+html.style-a .prog > div, html.style-a .bar.warn > div { background: var(--a-ph-num); }
+html.style-a .bar > div { background: var(--a-ok); }
+html.style-a .bar.crit > div { background: var(--a-err); }
+html.style-a .empty-state { color: var(--a-ink-2); font-size: var(--a-fz-md); }
+html.style-a .empty-state.err { color: var(--a-err); }
+html.style-a .spinner { border-color: var(--a-well); border-top-color: var(--a-go); border-radius: var(--a-r-round); }
+
+html.style-a #page-gen .vlbl { display: none; }
+html.style-a .prompt-tabs [aria-selected=true], html.style-a #viewSrc [aria-pressed=true] { box-shadow: var(--a-sh-down); background: var(--a-well); }
+html.style-a #viewMoreMenu [data-act=delete] { color: var(--a-danger); }

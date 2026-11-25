@@ -7,7 +7,9 @@ import * as gen from "./gen.js";
 import { mmprojFix } from "./pe.js";
 import * as drawer from "./assetdrawer.js";
 import * as loraPick from "./loras.js";
+import * as speedup from "./turbo.js";
 import { app } from "./state.js";
+import * as llm from "./llm.js";
 
 const F = (id) => document.getElementById(id);
 const BRAINS = ["9b", "35b", "cloud", "api"];
@@ -21,7 +23,7 @@ const BRAIN_NOTE = {
 const KIND_ZH = { style: "畫風", character: "角色", clothing: "服裝", concept: "概念", pose: "姿勢", detail: "細節", lighting: "光影", other: "其他" };
 const FAM_NAME = { qwen21: "Qwen 2.1", moss: "MOSS-Image", anima: "Anima" };
 // 工具的中文名（跟 src-tauri/src/agent_tools.rs 的 zh 一樣）
-const TOOL_ZH = { models: "看模型清單", set_model: "換生圖模型", gallery: "查圖庫", image_info: "看圖的參數", look: "看圖", edit: "改圖", upscale: "放大",
+const TOOL_ZH = { models: "看模型清單", set_model: "換生圖模型", set_speed: "加速", gallery: "查圖庫", image_info: "看圖的參數", look: "看圖", edit: "改圖", upscale: "放大",
   remove_bg: "去背", fix: "修臉修手", outpaint: "擴圖", video: "做影片", character_sheet: "角色多視圖", comic: "畫漫畫", assets: "看資產庫",
   trash: "移到回收區", guide: "讀寫法", docs: "讀說明書", api: "直接呼叫 API", open_page: "切換頁面" };
 // 寫法庫（跟 src-tauri/src/agent.rs 的 GUIDES 一樣）
@@ -59,6 +61,32 @@ export async function show() {
   }
   loadCloud();
   loadLoras();
+  loadPreset();
+}
+
+// ---------------------------------------------------------------- 指令預設（跟 API 頁對照表「生圖助手」那一格同一個設定）
+let presetBrain = "page";  // 對照表助手那格的腦袋：存預設時照原樣帶回去，不動它
+async function loadPreset() {
+  let d;
+  try { d = await api("/api/llm"); } catch { return; }
+  const v = llm.agentPresetView(d);
+  presetBrain = v.brain;
+  const sel = F("agPreset");
+  sel.replaceChildren(...v.options.map(([val, t]) => el("option", { value: val }, t)));
+  sel.value = v.value;
+  F("agPresetNote").textContent = v.note;
+  F("agPresetNote").hidden = !v.note;
+  F("agPresetEdit").disabled = !v.value;
+}
+
+async function savePreset(id) {
+  try {
+    // 腦袋那格可能剛在別的視窗改過：存之前重讀一次，照最新的帶回去
+    presetBrain = llm.agentPresetView(await api("/api/llm")).brain;
+    await api("/api/llm/routes", { json: { agent: { brain: presetBrain, preset: id } } });
+    toast(id ? `助手改套「${F("agPreset").selectedOptions[0]?.textContent || id}」` : "助手不套預設了", "ok");
+  } catch (e) { toast(e.message, "err"); }
+  loadPreset();
 }
 
 async function loadSessions(want) {
@@ -152,12 +180,42 @@ function baseInfo() {
   }
   if (!b) { box.textContent = "還沒設定：先到「生成」頁選好模型和設定，再回來按下面的按鈕。"; return; }
   const fam = FAM_NAME[b.family] || b.family || "";
-  let t = `${b.model}（${fam}）・${b.steps} 步・CFG ${b.cfg}${b.loras?.length ? `・固定掛 LoRA ${b.loras.length} 個` : ""}`;
+  const speed = turboOk(b) && b.turbo_lora ? `・加速 LoRA ${b.turbo_lora === true ? "（預設）" : turboName(b.turbo_lora)}` : "";
+  let t = `${b.model}（${fam}）・${b.steps} 步・CFG ${b.cfg}${speed}${b.loras?.length ? `・固定掛 LoRA ${b.loras.length} 個` : ""}`;
   if (S.settings.brain === "cloud" && b.family !== "moss") t += "\n雲端只能畫 MOSS-Image：換一個 MOSS 的模型，或把腦袋切回本機。";
   box.textContent = t;
   box.style.whiteSpace = "pre-wrap";
   paintBaseEdit(b);
+  paintSpeed();
 }
+
+// 底下膠囊列的「⚡ 加速」開關（Anima 的加速 LoRA、MOSS 的 DMD 加速 LoRA；其他模型、只寫詞時藏起來）
+function paintSpeed() {
+  const btn = F("agSpeed");
+  if (!btn) return;
+  const b = S?.settings?.base;
+  const s = speedup.speedState(b);
+  btn.hidden = !s.kind || S?.settings?.mode === "prompt";
+  btn.setAttribute("aria-pressed", String(s.on));
+  btn.querySelector(".v").textContent = s.on ? `開・${b.steps} 步` : "關";
+}
+
+function toggleSpeed() {
+  const b = S?.settings?.base;
+  if (!b) return;
+  const m = app.state?.models || {};
+  const patch = speedup.speedToggle(b, { turbos: m.turbo_loras || [], loras: m.loras || [], last: store.get("agLastTurbo", "") });
+  if (patch.error) return toast(patch.error, "err");
+  if (typeof b.turbo_lora === "string" && b.turbo_lora) store.set("agLastTurbo", b.turbo_lora);
+  setBase(patch);
+}
+
+// 加速 LoRA 只有 Anima、而且模型本身不是 turbo 才能掛（同生成頁的 turboRow、後端 api_agent_tools::speed_ok）
+const turboOk = (b) => b?.family === "anima" && !/turbo/i.test(b.model || "");
+const turboName = (n) => {
+  const t = (app.state?.models?.turbo_loras || []).find((x) => x.name === n);
+  return t ? speedup.turboLabel(t) : String(n).replace(/^.*[\\/]/, "").replace(/\.safetensors$/i, "");
+};
 
 // 生圖設定直接在助手頁改：模型只列助手能用的三家；換模型走後端（家族預設跟助手自己換模型同一套）
 function paintBaseEdit(b) {
@@ -176,6 +234,9 @@ function paintBaseEdit(b) {
   fill(F("agBModel"), models, b.model, (n) => `${n.replace(/\.safetensors$/i, "")}（${FAM_NAME[fams[n]] || fams[n] || "?"}）`);
   fill(F("agBSampler"), m.samplers || [], b.sampler);
   fill(F("agBSched"), m.schedulers || [], b.scheduler);
+  F("agBTurboRow").hidden = !turboOk(b);
+  const tl = m.turbo_loras || [];
+  speedup.fillTurbo(F("agBTurbo"), tl, b.turbo_lora);
   F("agBSteps").value = b.steps ?? "";
   F("agBCfg").value = b.cfg ?? "";
   if (document.activeElement !== F("agBNeg")) F("agBNeg").value = b.negative || "";
@@ -956,6 +1017,16 @@ export function init() {
     saveSettings({ brain: b.dataset.b, ...(b.dataset.b === "cloud" && S?.settings?.think === "off" ? { think: "high" } : {}) });
   });
   F("agApiCfg").onclick = () => openApiCfg();
+  // 「⚡ 加速」放在膠囊列（main.js 的 mountDock 先跑，這顆接在生圖設定、雲端、LoRA 後面）
+  F("agCapRow").append(el("button", { type: "button", class: "cap-chip ag-speed", id: "agSpeed", hidden: true, "aria-pressed": "false",
+    title: "加速 LoRA 開關：Anima 掛加速 LoRA（10～12 步、CFG 1），MOSS 掛 DMD 加速 LoRA 0.35（10 步）；關掉就回到一般步數，品質優先", onclick: toggleSpeed },
+  el("span", { class: "k" }, "⚡ 加速"), el("span", { class: "v" }, "關")));
+  F("agPreset").onchange = (e) => savePreset(e.target.value);
+  // 助手獨立視窗沒有別的頁可以跳，編輯鈕藏起來
+  F("agPresetEdit").hidden = new URLSearchParams(location.search).get("solo") === "agent";
+  F("agPresetEdit").onclick = () => { const id = F("agPreset").value; app.showPage("api"); llm.editPreset(id); };
+  // 在別的視窗（或 API 頁）改了對照表，回到這裡就更新
+  addEventListener("focus", () => { if (shown) loadPreset(); });
   F("apProvider").onchange = (e) => { const p = API_PRESETS[e.target.value]; F("apUrl").value = p.url; F("apModel").value = p.model; };
   F("apSave").onclick = async () => { if (await saveApi()) apMsg("存好了", "ok"); };
   F("apTest").onclick = async () => {
@@ -984,6 +1055,8 @@ export function init() {
     paintSettings();
     if (familyOf() !== loraFam) loadLoras();
   };
+  // 加速：步數、CFG 跟生成頁換加速時一樣（turbo.js），取樣器、排程不動
+  F("agBTurbo").onchange = (e) => setBase({ turbo_lora: e.target.value || false, ...speedup.turboSteps(e.target.value) });
   F("agBSteps").onchange = (e) => setBase({ steps: Math.max(1, Math.round(+e.target.value || 1)) });
   F("agBCfg").onchange = (e) => setBase({ cfg: +e.target.value || 1 });
   F("agBSampler").onchange = (e) => setBase({ sampler: e.target.value });

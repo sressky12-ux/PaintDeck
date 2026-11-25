@@ -869,7 +869,9 @@ pub async fn write(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let msgs = json!([{"role": "system", "content": system}, {"role": "user", "content": parts}]);
     let (brain, remote, preset) = brain_of(&app, &b, "h3writer")?;
     let rid = format!("h3w-{:x}", super::api_director::random_seed());
-    let (content, _) = app.pe.agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref()).await.map_err(bad)?;
+    // 套了指令預設：素材板要 JSON 分鏡，其他只要提示詞本身
+    let note = if mode == "board" { crate::brains::FORMAT_JSON } else { crate::brains::FORMAT_TEXT_PROMPT };
+    let (content, _) = app.pe.agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref(), Some(note)).await.map_err(bad)?;
     if mode == "board" {
         if let Some(plan) = board_plan_of(&content) {
             return ok(json!({"plan": plan}));

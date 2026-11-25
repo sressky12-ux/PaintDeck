@@ -236,7 +236,7 @@ function renderPager() {
 function emptyState() {
   if (view === "trash") return el("div", { class: "empty-state" }, "回收區是空的。");
   if (F("galQ").value || activeFilters()) return el("div", { class: "empty-state" }, "沒有符合條件的圖。", el("button", { class: "btn sm", onclick: () => F("galClearF").click() }, "清除篩選"));
-  if (view === "fav") return el("div", { class: "empty-state" }, "還沒有收藏的圖。在圖上按「☆ 收藏」或燈箱裡按 F。");
+  if (view === "fav") return el("div", { class: "empty-state" }, "還沒有收藏的圖。滑鼠移到圖上，點右上角的 ☆；或打開大圖按 F。");
   return el("div", { class: "empty-state" }, "還沒有圖片。到「生成」分頁畫第一張吧。", el("button", { class: "btn sm primary", onclick: () => app.showPage("gen") }, "去生成"));
 }
 
@@ -247,13 +247,37 @@ function tile(rec) {
     el("img", { src: `/thumb/${rec.id}`, loading: "lazy", alt: "", width: rec.width, height: rec.height,
       onerror: (e) => { e.target.closest(".g").classList.add("missing"); e.target.removeAttribute("src"); } }),
     el("span", { class: "check", "aria-hidden": "true" }, "✓"),
-    el("span", { class: "fav", hidden: !rec.fav }, "★"),
+    view === "trash" ? null : el("button", { type: "button", class: "fav",
+      onclick: (e) => { e.stopPropagation(); toggleFav(rec); }, onkeydown: (e) => e.stopPropagation() }),
     el("span", { class: "miss-tag" }, "檔案不見了"),
     rec.gen_seconds != null ? el("span", { class: "dur", title: "從開始畫到存進圖庫（排隊不算）" }, fmtSecs(rec.gen_seconds)) : null,
     el("div", { class: "cap", translate: "no" }, rec.idea ? `💡 ${rec.idea}` : rec.prompt || ""));
+  paintFav(t, rec.fav);
   t.addEventListener("click", (e) => onTileClick(e, rec));
   t.addEventListener("keydown", (e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onTileClick(e, rec); } });
   return t;
+}
+
+// 格子右上角的收藏鈕：收藏了是 ★（一直看得到），沒收藏是 ☆（滑鼠移上去才出現）
+function paintFav(t, on) {
+  const b = t?.querySelector(".fav");
+  if (!b) return;
+  b.classList.toggle("on", !!on);
+  b.textContent = on ? "★" : "☆";
+  b.title = on ? "取消收藏" : "加入收藏";
+  b.setAttribute("aria-label", b.title);
+  b.setAttribute("aria-pressed", String(!!on));
+}
+
+async function toggleFav(rec) {
+  const act = rec.fav ? "unfav" : "fav";
+  try {
+    await api("/api/images/batch", { json: { ids: [rec.id], action: act } });
+  } catch (e) { return toast(`改收藏失敗：${e.message}`, "err"); }
+  rec.fav = act === "fav" ? 1 : 0;
+  paintFav($(`#galGrid [data-id="${rec.id}"]`), rec.fav);
+  if (view === "fav" && !rec.fav) removeTiles([rec.id]);
+  loadFacets();
 }
 
 // ---------------------------------------------------------------- 多選
@@ -334,7 +358,7 @@ async function batch(act) {
     toast(`已${label} ${r.count} 張` + (bad.size ? `；${bad.size} 張沒辦法${label}：${r.error || ""}` : ""), bad.size ? "err" : "ok");
     if (act === "fav" || act === "unfav") {
       for (const x of known.values()) if (sel.has(x.id)) x.fav = act === "fav" ? 1 : 0;
-      $$("#galGrid .g").forEach((t) => { if (sel.has(+t.dataset.id)) t.querySelector(".fav").hidden = act !== "fav"; });
+      $$("#galGrid .g").forEach((t) => { if (sel.has(+t.dataset.id)) paintFav(t, act === "fav"); });
       if (view === "fav" && act === "unfav") removeTiles(ids);
     } else {
       removeTiles(done);
@@ -448,7 +472,7 @@ async function lbAction(e) {
   if (act === "video" || act === "frames") F("lbVid").pause();
   const r = await imageAction(act, rec, b);
   if (r === "deleted") dropFromLb(rec);
-  if (act === "fav") $(`#galGrid [data-id="${rec.id}"] .fav`)?.toggleAttribute("hidden", !rec.fav);
+  if (act === "fav") paintFav($(`#galGrid [data-id="${rec.id}"]`), rec.fav);
 }
 
 function dropFromLb(rec) {

@@ -13,8 +13,8 @@ function load() {
   const source = src('loras.js').replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   const context = vm.createContext({ console, store: { get: (_k, d) => d, set() {} }, app: {}, $: () => null, el: () => null, api() {}, toast() {},
     openModal() {}, closeModal() {}, debounce: (f) => f, pickFile() {}, makeDrop() {} });
-  vm.runInContext(source + '\nglobalThis.subject = { loraNames, pickAddLabel };', context, { filename: 'loras.js' });
-  return { loraNames: (...a) => JSON.parse(JSON.stringify(context.subject.loraNames(...a))), pickAddLabel: context.subject.pickAddLabel };
+  vm.runInContext(source + '\nglobalThis.subject = { loraNames, pickAddLabel, turboHint };', context, { filename: 'loras.js' });
+  return { loraNames: (...a) => JSON.parse(JSON.stringify(context.subject.loraNames(...a))), pickAddLabel: context.subject.pickAddLabel, turboHint: context.subject.turboHint };
 }
 
 test('loraNames：有 title 用 title，檔名不同才另外給', () => {
@@ -49,4 +49,16 @@ test('卡匣兩行卡：生成頁、漫畫台都用 .two，名字不切 ...', ()
   assert.match(src('comic.js'), /class: "lora-item cm-lora two"/);
   const css = fs.readFileSync(path.join(__dirname, '../ui/css/app.css'), 'utf8');
   assert.match(css, /\.lora-item\.two \.nm \{ white-space: normal; overflow: visible; text-overflow: clip;/);
+});
+
+// 2026-11-24 玩家：「LoRA 選擇器搜 Turbo 找不到加速 LoRA」→ 搜到加速相關的字就告訴他去哪裡開（加速 LoRA 照舊不放進一般清單）
+test('turboHint：Anima 或沒指定家族、搜 turbo／加速／speed 才提示', () => {
+  const { turboHint } = load();
+  assert.match(turboHint('anima', 'Turbo'), /^加速 LoRA 不在這裡：生成頁在「加速」選單/);
+  assert.ok(turboHint(null, '加速'));
+  assert.ok(turboHint(null, 'SPEED up'));
+  assert.ok(turboHint(() => true, 'turbo'), '工作流組（判斷函式）也提示');
+  assert.equal(turboHint('qwen21', 'turbo'), '');
+  assert.equal(turboHint('anima', 'detail'), '');
+  assert.equal(turboHint('anima', ''), '');
 });

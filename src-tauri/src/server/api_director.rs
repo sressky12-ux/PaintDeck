@@ -594,12 +594,14 @@ fn frame_reference_list(family: &str, p: &Value, chars: &[Value], seg: &Value) -
 async fn ask(app: &Shared, id: &str, sys: &str, user: &str, max_tokens: i64, parse: impl Fn(&str) -> bool) -> Result<String, String> {
     let mut last = String::new();
     for attempt in 0..2 {
-        let r = super::api_llm::chat(app, "director", "page", &rid(id), sys, user, &[], max_tokens, if attempt == 0 { 0.7 } else { 0.9 }).await?;
+        let (reply, spent) = crate::pe::format_attempt(attempt, super::api_llm::chat(app, "director", "page", &rid(id), sys, user, &[], max_tokens, if attempt == 0 { 0.7 } else { 0.9 })).await;
+        let r = reply?;
         if parse(&r) {
             return Ok(r);
         }
         eprintln!("導演台：模型輸出讀不出來（第 {} 次）：{}", attempt + 1, r.chars().take(300).collect::<String>());
         last = r;
+        if spent { break; }
     }
     Err(format!("模型輸出的格式壞掉了，可以再按一次。輸出開頭：{}", last.chars().take(120).collect::<String>()))
 }

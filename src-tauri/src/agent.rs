@@ -10,7 +10,7 @@
 //!   {"action":"reply", message}
 //!
 //! 存檔：data\agent\sessions\<id>.json（設定＋事件清單；事件同時是畫面上的對話和下一次給模型的上下文）
-use crate::director::{json_in, tx, valid_id, write_atomic};
+use crate::director::{json_in, json_with, tx, valid_id, write_atomic};
 use crate::families::{ANIMA, KREA2, MMIMG, MOSS, QWEN21};
 use crate::py::{now, truthy};
 use regex::Regex;
@@ -337,7 +337,7 @@ pub fn prompt_system(system: &str, guide: &str, guide_name: &str, family: &str) 
 /// 只寫詞模式：讀回 {"action":"prompt",…} 或 {"action":"reply",…}；不合格回傳要退回的英文說明。
 /// guide_name 決定檢查：Qwen 改圖／多圖可以寫中文，Anima 修 tag，圖片才有尺寸
 pub fn parse_prompt_action(raw: &str, family: &str, guide_name: &str) -> Result<Map<String, Value>, String> {
-    let Some(m) = json_in(raw) else {
+    let Some(m) = act_json(raw) else {
         return Err("Your reply was not a JSON object. Reply with exactly ONE JSON object, nothing else.".into());
     };
     let action = tx(m.get("action").unwrap_or(&Value::Null)).trim().to_lowercase();
@@ -892,7 +892,7 @@ fn repair_check(raw: &str) -> Option<Map<String, Value>> {
         .filter(|t| !t.trim().is_empty())
         .collect();
     let fixed = format!("{}{}{}", &raw[..open], json!(items), &raw[close + 1..]);
-    json_in(&fixed)
+    act_json(&fixed)
 }
 
 /// 35B 會把 prompt 的 tag 寫完先關掉字串，英文句子另外當成沒有鍵名的字串放在後面：
@@ -907,7 +907,7 @@ fn repair_prompt_tail(raw: &str) -> Option<Map<String, Value>> {
         let joined = format!("{}, {}\"{}", &c[1], &c[2], &c[3]);
         fixed.replace_range(c.get(0)?.range(), &joined);
     }
-    (fixed != raw).then(|| json_in(&fixed)).flatten()
+    (fixed != raw).then(|| act_json(&fixed)).flatten()
 }
 
 /// 9B 會把 refs／denoise 寫進提示詞字串裡、而且沒把字串收好（"prompt":"…, refs:[1],"width":832）：整個 JSON 壞掉。
@@ -917,12 +917,18 @@ fn repair_field_leak(raw: &str) -> Option<Map<String, Value>> {
         Regex::new(r#"("prompt"\s*:\s*"(?:[^"\\]|\\.)*?)\s*,?\s*\b(refs?|denoise)\s*[:=]\s*(\[[^\]]*\]|[0-9]+(?:\.[0-9]+)?)\s*,\s*""#).unwrap()
     });
     let fixed = LEAK.replace(raw, r#"${1}","${2}":${3},""#).to_string();
-    (fixed != raw).then(|| json_in(&fixed)).flatten()
+    (fixed != raw).then(|| act_json(&fixed)).flatten()
 }
 
 /// 模型輸出 → 正規化的動作；不合格回傳要退回給它的英文說明
+/// 助手回覆的 JSON 會有的鍵：前面有破限預設的雜訊時，從左到右找第一個有這些鍵的物件（外層壞掉就交給下面的修補）
+const ACT_KEYS: &[&str] = &["action", "prompt", "tool", "best", "message", "reply", "say", "note"];
+fn act_json(raw: &str) -> Option<Map<String, Value>> {
+    json_with(raw, ACT_KEYS)
+}
+
 pub fn parse_action(raw: &str, c: &Check) -> Result<Map<String, Value>, String> {
-    let Some(m) = json_in(raw).or_else(|| repair_check(raw)).or_else(|| repair_prompt_tail(raw)).or_else(|| repair_field_leak(raw)) else {
+    let Some(m) = act_json(raw).or_else(|| repair_check(raw)).or_else(|| repair_prompt_tail(raw)).or_else(|| repair_field_leak(raw)) else {
         return Err("Your reply was not a JSON object. Reply with exactly ONE JSON object, nothing else.".into());
     };
     let mut action = tx(m.get("action").unwrap_or(&Value::Null)).trim().to_lowercase();
@@ -1255,10 +1261,12 @@ pub fn add_triggers(prompt: &str, loras: &[&LoraInfo], family: &str) -> (String,
     }
     let joined = add.join(", ");
     if family == ANIMA {
-        // masterpiece, best quality, score_7, <rating>, 後面
-        let parts: Vec<&str> = prompt.splitn(5, ',').collect();
-        if parts.len() == 5 && ["safe", "sensitive", "nsfw", "explicit"].contains(&parts[3].trim()) {
-            return (format!("{},{},{},{}, {joined},{}", parts[0], parts[1], parts[2], parts[3], parts[4]), add);
+        // 品質 tag 後面的評級（masterpiece, best quality[, score_7], <rating>）之後
+        let parts: Vec<&str> = prompt.split(',').collect();
+        if let Some(r) = parts.iter().take(4).position(|t| ["safe", "sensitive", "nsfw", "explicit"].contains(&t.trim())) {
+            if r + 1 < parts.len() {
+                return (format!("{}, {joined},{}", parts[..=r].join(","), parts[r + 1..].join(",")), add);
+            }
         }
     }
     (format!("{joined}, {prompt}"), add)
@@ -1570,6 +1578,13 @@ mod tests {
     }
 
     #[test]
+    fn short_reply_aliases() {
+        let c = check(&[], None, &[], false, 2);
+        assert_eq!(parse_action(r#"{"say":"Hello"}"#, &c).unwrap()["message"], "Hello");
+        assert_eq!(parse_prompt_action(r#"{"note":"Hello"}"#, ANIMA, "anima").unwrap()["message"], "Hello");
+    }
+
+    #[test]
     fn cjk_only_outside_quotes() {
         assert!(has_cjk_outside_quotes("一個女孩站在雪地"));
         assert!(!has_cjk_outside_quotes("A shop sign that reads \"咖啡\" above the door"));
@@ -1661,6 +1676,11 @@ mod tests {
         assert!(add.is_empty() && p == "JGDXstyle, a knight");
         let (p, _) = add_triggers("masterpiece, best quality, score_7, safe, 1girl, solo", &[&l], ANIMA);
         assert_eq!(p, "masterpiece, best quality, score_7, safe, jgdxstyle, 1girl, solo");
+        // 新寫法沒有 score_7：一樣補在評級後面
+        let (p, _) = add_triggers("masterpiece, best quality, safe, 1girl, solo", &[&l], ANIMA);
+        assert_eq!(p, "masterpiece, best quality, safe, jgdxstyle, 1girl, solo");
+        let (p, _) = add_triggers("1girl, solo, long hair", &[&l], ANIMA);
+        assert_eq!(p, "jgdxstyle, 1girl, solo, long hair");
     }
 
     /// 2026-11-11 網友回報：9B 助手一進做愛場景，LoRA 觸發詞（@4x0style）就不見、怎麼叫它加都沒用。
@@ -1806,7 +1826,7 @@ mod tests {
             assert!(sys.contains(k), "{k}");
         }
         let full = system_prompt(sys, default_text(guide_id(ANIMA)).unwrap(), ANIMA, "(none)");
-        assert!(full.contains("masterpiece, best quality") && full.contains("832x1216") && !full.contains("{model_guide}"));
+        assert!(full.contains("WRITE ONLY WHAT WAS ASKED") && full.contains("832x1216") && !full.contains("{model_guide}"));
         assert!(full.contains("- character_sheet ") && !full.contains("{tools}") && full.matches("Besides drawing").count() == 1, "工具段落填在 {{tools}}，不重複接");
         assert_eq!(guide_id(QWEN21), "agent_qwen21");
         assert_eq!(guide_id(MOSS), "agent_moss");

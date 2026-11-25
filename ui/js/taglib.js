@@ -95,12 +95,24 @@ function tabBtn(name, on, onclick, title) {
  * prefix：localStorage 鍵的開頭
  */
 /**
- * 詞庫浮層的位置（固定舞台 A 案：按「詞」從提示詞卡上緣往上彈出，卡片不變高）。
- * anchor 是提示詞卡在畫面上的方框；回傳 fixed 定位用的 left、width、bottom（離視窗底多遠）、max-height。
- * 卡片太靠上時高度至少 160，寧可蓋到上面的東西也要看得到詞。
+ * 詞庫浮層的高度：want 是拖過記下來的（0／沒存過＝預設 min(60vh, 560)），夾在 [200, 視窗高 − 80]。
  */
-export function sheetRect(anchor, viewH, minTop = 56) {
-  return { left: anchor.left, width: anchor.width, bottom: viewH - anchor.top + 6, maxHeight: Math.max(160, anchor.top - 6 - minTop) };
+export function sheetH(want, viewH) {
+  const h = want > 0 ? want : Math.min(viewH * 0.6, 560);
+  return Math.round(Math.max(200, Math.min(h, viewH - 80)));
+}
+
+/**
+ * 詞庫浮層的位置（固定舞台 A 案：按「詞」從提示詞卡上緣往上彈出，卡片不變高）。
+ * anchor 是提示詞卡在畫面上的方框；回傳 fixed 定位用的 left、width、top、height。
+ * 上面空間不夠放就往下長，蓋住提示詞卡上半（2026-11-24 玩家：「詞庫面板太小，點分類很難點」），
+ * 但整個留在畫面裡：頂邊不高過 minTop，底邊離視窗底至少 8。
+ */
+export function sheetRect(anchor, viewH, want = 0, minTop = 56, minHeight = 0) {
+  const bottom = Math.max(0, viewH - 8);
+  const height = Math.max(0, Math.min(Math.max(minHeight, sheetH(want, viewH)), bottom - minTop));
+  const top = Math.min(bottom - height, Math.max(minTop, anchor.top - 6 - height));
+  return { left: anchor.left, width: anchor.width, top, height };
 }
 
 export function create({ box, btn = null, main, watch = [], prefix = "taglib", sheet = null }) {
@@ -199,6 +211,7 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib", s
       list.replaceChildren(...subList(s));
     }
     paintOn();
+    if (sheet && shown()) placeSheet();
   }
 
   const save = () => { store.set(prefix + "_g", pos.g); store.set(prefix + "_s", pos.s); store.set(prefix + "_src", src); };
@@ -212,10 +225,56 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib", s
   }
 
   // 浮層模式：開著的時候跟著提示詞卡移動；點詞庫和提示詞卡以外的地方、或按 Esc 就收起來
-  let sheetEvents = null;
+  let sheetEvents = null, dragH = 0;
+  const sheetKey = prefix + "_sheet_h";
   function placeSheet() {
-    const r = sheetRect(sheet.anchor.getBoundingClientRect(), innerHeight);
-    Object.assign(ui.box.style, { left: r.left + "px", width: r.width + "px", bottom: r.bottom + "px", maxHeight: r.maxHeight + "px" });
+    const anchor = sheet.anchor.getBoundingClientRect();
+    const want = dragH || store.get(sheetKey, 0);
+    let r = sheetRect(anchor, innerHeight, want);
+    const box = ui.box;
+    box.style.width = r.width + "px";
+    box.style.height = r.height + "px";
+    // 標題和分類會換行，小類與清單的高度又跟著百分比變。只有真的溢出才量能放下的最小高度。
+    if (box.scrollHeight > box.clientHeight) {
+      let low = r.height, high = Math.max(low, innerHeight - 56 - 8);
+      while (low < high) {
+        const mid = Math.floor((low + high) / 2);
+        box.style.height = mid + "px";
+        if (box.scrollHeight > box.clientHeight) low = mid + 1; else high = mid;
+      }
+      r = sheetRect(anchor, innerHeight, want, 56, low);
+    }
+    Object.assign(box.style, { left: r.left + "px", top: r.top + "px", height: r.height + "px" });
+  }
+  // 浮層上緣的把手：往上拖變高、往下拖變矮，放開記住；按兩下回預設高度。滑鼠、觸控都走 pointer 事件
+  function sheetGrip() {
+    const grip = el("div", { class: "tl-grip", role: "separator", "aria-orientation": "horizontal", tabindex: "0",
+      "aria-label": "調整詞庫高度", title: "拖曳調整詞庫高度，按兩下恢復預設高度" });
+    let y0 = 0, h0 = 0;
+    const done = () => { if (dragH) store.set(sheetKey, dragH); dragH = 0; placeSheet(); };   // 只點一下沒拖就不記
+    grip.addEventListener("pointerdown", (e) => {
+      if (e.button) return;
+      e.preventDefault();
+      grip.setPointerCapture(e.pointerId);
+      y0 = e.clientY;
+      h0 = ui.box.offsetHeight;
+    });
+    grip.addEventListener("pointermove", (e) => {
+      if (!grip.hasPointerCapture(e.pointerId)) return;
+      dragH = sheetH(h0 + y0 - e.clientY, innerHeight);
+      placeSheet();
+    });
+    grip.addEventListener("pointerup", (e) => { if (grip.hasPointerCapture(e.pointerId)) done(); });
+    grip.addEventListener("pointercancel", () => { dragH = 0; placeSheet(); });
+    grip.addEventListener("dblclick", () => { store.set(sheetKey, 0); dragH = 0; placeSheet(); });
+    grip.addEventListener("keydown", (e) => {
+      const d = { ArrowUp: 40, ArrowDown: -40 }[e.key];
+      if (!d) return;
+      e.preventDefault();
+      dragH = sheetH(ui.box.offsetHeight + d, innerHeight);
+      done();
+    });
+    return grip;
   }
   function watchSheet(on) {
     sheetEvents?.abort();
@@ -225,7 +284,9 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib", s
     const signal = sheetEvents.signal;
     placeSheet();
     addEventListener("resize", placeSheet, { signal });
-    addEventListener("scroll", placeSheet, { signal, capture: true });
+    addEventListener("scroll", (e) => {
+      if (!(e.target instanceof Node && ui.box.contains(e.target))) placeSheet();
+    }, { signal, capture: true });
     document.addEventListener("pointerdown", (e) => {
       if (!ui.box.contains(e.target) && !btn?.contains(e.target) && !sheet.anchor.contains(e.target)) open(false);
     }, { signal, capture: true });
@@ -267,6 +328,7 @@ export function create({ box, btn = null, main, watch = [], prefix = "taglib", s
   ui = { box, q, srcSel, groups, subs, list, info };
   if (sheet) {
     box.classList.add("tl-sheet");
+    box.prepend(sheetGrip());
     (document.getElementById("capLayer") || document.body).append(box);
   }
   if (btn) {

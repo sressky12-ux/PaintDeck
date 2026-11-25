@@ -156,7 +156,7 @@ html.app .unit { max-width: none; border-radius: 0; }
 .page.on { display: grid; }
 /* 助手獨立視窗（?solo=agent）：只留助手頁，機殼頂列和左邊分頁都藏起來 */
 html.solo .unit-head, html.solo #tabs { display: none; }
-html.solo .deck { grid-template-columns: 1fr; }
+html.solo .deck { grid-template-columns: minmax(0, 1fr); }
 html.solo .unit { padding-top: 12px; }
 .panel { position: relative; background: var(--case-2); border-radius: 10px; box-shadow: inset 0 2px 3px var(--groove), inset 0 -1px 0 var(--case-hi); padding: 12px; min-height: 0; min-width: 0; }
 .screws::before, .screws::after { content: ""; position: absolute; width: 9px; height: 9px; border-radius: 50%; top: 6px; pointer-events: none;
@@ -352,7 +352,16 @@ input[type=range]:focus-visible { outline-offset: 0; }
 #tagLibBtn.on { color: var(--warn); }
 .taglib { margin-top: 8px; padding: 8px; border: 1px solid color-mix(in srgb, var(--ok) 22%, transparent); border-radius: 6px; background: rgba(0,0,0,.18); display: flex; flex-direction: column; gap: 6px; font: 12px/1.35 var(--f-ui); }
 /* 固定舞台 A 案：生成頁的詞庫是從提示詞卡上緣往上彈出的浮層（taglib.js sheetRect），放在 #capLayer，卡片不變高 */
-.taglib.tl-sheet { position: fixed; margin: 0; overflow: auto; pointer-events: auto; background: var(--case); border-color: var(--case-hi); border-radius: 10px 10px 6px 6px; padding: 10px 12px; box-shadow: 0 -8px 30px rgba(0,0,0,.45); }
+.taglib.tl-sheet { position: fixed; margin: 0; overflow: hidden; pointer-events: auto; background: var(--case); border-color: var(--case-hi); border-radius: 10px 10px 6px 6px; padding: 14px 12px 10px; box-shadow: 0 -8px 30px rgba(0,0,0,.45); }
+/* 浮層裡只有詞的清單會捲：標題列、大類、小類固定在上面（小類全部換行攤開，超過浮層 40% 高才自己捲）；高度由 taglib.js placeSheet 給 */
+.tl-sheet > * { flex: none; }
+.tl-sheet .tl-subs { max-height: 40%; overflow-y: auto; }
+/* 清單至少留一小塊；控制項換行放不下時由 placeSheet 加高浮層 */
+.tl-sheet .tl-list { flex: 1 1 0; min-height: min(5rem, 30%); max-height: none; }
+/* 上緣的把手：上下拖改高度，按兩下回預設 */
+.tl-grip { position: absolute; top: 0; left: 0; right: 0; height: 12px; cursor: ns-resize; touch-action: none; }
+.tl-grip::before { content: ""; position: absolute; left: 50%; top: 4px; width: 44px; height: 4px; margin-left: -22px; border-radius: 2px; background: var(--case-hi); }
+.tl-grip:hover::before, .tl-grip:focus-visible::before { background: var(--acc); }
 .tl-head b { color: var(--warn); }
 .tl-q { flex: 1 1 160px; min-width: 0; }
 .tl-info { flex: 1 1 100%; }
@@ -677,7 +686,14 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
   box-shadow: 0 2px 0 var(--mount-side), 0 4px 8px rgba(0,0,0,.28); transition: transform .12s; }
 .gallery .g:hover { transform: translateY(-2px) rotate(-.4deg); }
 .gallery .g img { width: 100%; height: auto; display: block; }
-.gallery .g .fav { position: absolute; top: 9px; right: 11px; color: #ffcc4d; text-shadow: 0 1px 3px #000; }
+/* 收藏鈕：收藏了一直看得到；沒收藏的 ☆ 滑鼠移上去（或鍵盤選到）才出現 */
+.gallery .g .fav { position: absolute; top: 7px; right: 7px; min-width: 30px; height: 30px; padding: 0; border: 0; border-radius: 50%;
+  background: rgba(0,0,0,.45); color: #ffcc4d; font-size: 18px; line-height: 30px; text-shadow: 0 1px 3px #000; cursor: pointer;
+  opacity: 0; transition: opacity .15s, transform .12s; }
+.gallery .g .fav.on { opacity: 1; background: transparent; }
+.gallery .g:hover .fav, .gallery .g:focus-within .fav { opacity: 1; }
+.gallery .g .fav:hover { transform: scale(1.15); background: rgba(0,0,0,.6); }
+@media (hover: none) { .gallery .g .fav { opacity: .75; } }
 .gallery .g .cap { position: absolute; left: 5px; right: 5px; bottom: 16px; padding: 16px 7px 5px; font-size: 11px; color: #f4efe2; background: linear-gradient(transparent, rgba(0,0,0,.82));
   opacity: 0; transition: opacity .15s; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 .gallery .g:hover .cap, .gallery .g:focus-visible .cap { opacity: 1; }
@@ -1014,7 +1030,7 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 @media (max-width: 900px) {
   body { overflow: auto; padding: 0; }
   .unit { height: auto; min-height: 100%; border-radius: 0; padding: 0 10px 10px; }
-  .deck { grid-template-columns: 1fr; }
+  .deck { grid-template-columns: minmax(0, 1fr); }
   .pkey { min-width: 64px; }
   .viewer { height: 60vh; }
   .lib-scroll { overflow: visible; }
@@ -1292,12 +1308,15 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 @keyframes ag-flash { 0%, 100% { box-shadow: 0 0 0 0 rgba(255, 196, 0, 0); } 30% { box-shadow: 0 0 0 4px rgba(255, 196, 0, .85); } }
 .ag-flash { animation: ag-flash 1.2s ease-out; border-radius: 6px; }
 @media (prefers-reduced-motion: reduce) { .ag-flash { animation: none; outline: 3px solid rgba(255, 196, 0, .85); } }
+.ag-preset { grid-column: 1 / -1; }
+.ag-preset select { flex: 1; min-width: 0; }
 .ag-flags { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 2px 14px; }
 .ag-flags .check { align-items: flex-start; }
 /* 助手的生圖設定：直接在這裡改 */
 .ag-base { display: grid; gap: 6px; margin: 6px 0; }
 .ag-base select, .ag-base input, .ag-base textarea { width: 100%; }
 .ag-base-row { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 6px 10px; }
+.ag-base-turbo { grid-column: 1 / -1; }   /* 加速 LoRA 的名字長，自己一整行 */
 .ag-base-loras { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
 .ag-base-lora { display: inline-flex; align-items: center; gap: 6px; padding: 3px 4px 3px 8px; border-radius: 4px; background: var(--case-3); font-size: 12px; }
 .ag-base-lora input { width: 56px; }
@@ -1332,7 +1351,7 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 #page-director .sheet > details:not([open]) > summary::before { content: "▸"; }
 .sh-body { max-height: 52vh; overflow: auto; padding: 4px 2px; }
 .sh-head { gap: 10px; align-items: center; margin-bottom: 8px; }
-.sh-head .piano button { padding: 4px 10px; }
+.sh-head .piano button { padding: 12px 10px 5px; }
 input.sh-num { width: 64px; flex: none; }
 .sh-head label, .sh-sec b, .sh-seg-hd b, .sh-prompt b { white-space: nowrap; }
 .sh-est { display: flex; flex-wrap: wrap; gap: 4px 14px; font-size: 12px; }
@@ -1879,6 +1898,7 @@ body.docking { cursor: grabbing; user-select: none; }
 .llm-params { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 6px; }
 .llm-param { display: flex; flex-direction: column; gap: 3px; font-size: 12px; color: var(--label-dim); }
 .llm-report { display: grid; gap: 2px; background: var(--case-2); border-radius: 5px; padding: 8px 10px; }
+.llm-tips { margin: 6px 0; padding-left: 1.3em; display: grid; gap: 2px; }   /* 破限預設的三點說明 */
 .llm-keys { display: grid; gap: 6px; font-size: 13px; }
 .llm-st { color: var(--label-dim); } .llm-st.ok { color: var(--ok); }
 @media (max-width: 640px) { .llm-routes thead { display: none; } .llm-routes tr { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; padding: 6px 0; border-top: 1px solid var(--groove); } .llm-routes td { border: 0; padding: 0; } .llm-routes td:first-child { grid-column: 1 / -1; font-weight: 700; } }
@@ -2008,6 +2028,8 @@ body.docking { cursor: grabbing; user-select: none; }
 }
 .cap-chip .v { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--ph-amber); background: var(--screen); border-radius: 3px; padding: 0 .25rem; font: 1.0625rem var(--f-vfd); }
 .cap-chip .v:empty { display: none; }
+.cap-chip.ag-speed[aria-pressed=true] { outline: 2px solid var(--acc); outline-offset: -2px; }
+.cap-chip.ag-speed[aria-pressed=false] .v { color: var(--label-dim); }
 .cap-chip[aria-expanded=true], .dock-panel.flash { outline: 2px solid var(--acc); outline-offset: -2px; }
 #capLayer { position: fixed; inset: 0; z-index: 35; pointer-events: none; }
 .cap-pop { position: absolute; display: flex; flex-direction: column; width: min(340px, calc(100vw - 16px)); max-height: 60vh; padding: .65rem;
@@ -2018,27 +2040,17 @@ body.docking { cursor: grabbing; user-select: none; }
 .cap-body { overflow: auto; overscroll-behavior: contain; }
 
 /* 全站頂列 */
-.unit { grid-template-rows: auto minmax(0, 1fr); }
+/* 欄寬一定要 minmax(0, 1fr)：不然頂列（或任何一頁）的最小寬度會把整頁撐寬，body 是 overflow: hidden，右邊就被切掉 */
+.unit { grid-template-rows: auto minmax(0, 1fr); grid-template-columns: minmax(0, 1fr); }
 html.solo .unit { grid-template-rows: minmax(0, 1fr); }
-.unit-head { position: relative; z-index: 12; }
+.unit-head { position: relative; z-index: 12; min-width: 0; }
 .top { gap: clamp(.25rem, .55vw, .8rem); }
 #topProg { position: absolute; inset: auto 0 0; width: 100%; height: 3px; }
 .top .assist-btn { position: static; transform: none; padding: .4rem .85rem; }
 .top .assist-btn:active { transform: translateY(2px); }
-.nav-slot, .theme-slot, #statusStrip { position: relative; }
-.nav-slot, #navPins, .pill { min-width: 0; }
-.pill, #navPins { display: flex; align-items: center; gap: .2rem; }
-.pill { padding: .2rem; background: var(--case-2); border-radius: .65rem; box-shadow: inset 0 1px 3px var(--groove); }
-#navPins { overflow-x: auto; scrollbar-width: thin; }
-.tkey { flex: none; display: inline-flex; align-items: center; gap: .22rem; padding: .38rem .42rem; color: var(--label); background: var(--key);
-  border: 0; border-radius: .45rem; box-shadow: 0 2px var(--key-side); font: 700 .78rem var(--f-ui); white-space: nowrap; cursor: pointer; }
-.tkey small { color: var(--label-dim); font-family: var(--f-label); }
-.tkey.on { box-shadow: inset 0 -3px var(--acc); background: var(--case-hi); }
+.theme-slot, #statusStrip { position: relative; }
 .top-pop, .theme-slot #rocker { position: absolute; top: calc(100% + .35rem); z-index: 2; }
 .top-pop { color: var(--label); background: var(--case); padding: .75rem; border: 1px solid var(--case-lo); border-radius: .55rem; box-shadow: 0 8px 24px var(--groove); }
-#navAll { left: 0; width: min(28rem, 96vw); }
-.nav-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: .65rem; }
-#navPinAction { margin-top: .75rem; }
 #statusStrip { margin: 0; overflow: visible; min-width: 0; gap: .5rem; padding: .35rem .5rem; font-size: 1rem; }
 #statusStrip > button:not(.sys) { background: transparent; border: 0; font: inherit; color: var(--ph-amber); cursor: pointer; padding: 0; }
 #statusDetails, .theme-slot #rocker { right: 0; }
@@ -2046,16 +2058,20 @@ html.solo .unit { grid-template-rows: minmax(0, 1fr); }
 #aiBtn { position: relative; padding: .35rem .5rem; }
 #aiBtn.pip::after { content: ""; position: absolute; right: -2px; top: -3px; width: .48rem; height: .48rem; border-radius: 50%; background: var(--ph-amber); }
 #sysPop { top: 4rem; bottom: auto; max-height: 80vh; overflow: auto; }
-@media (max-width: 1450px) { .top .model-no, #aiState { display: none; } }
+/* 頂列擠不下就收：topbar.js 量完整版要多寬，放不下先加 top-snug（藏型號、AI 狀態字），再不下加 top-tight（只留目前頁的鍵） */
+.top.top-snug :is(.model-no, #aiState) { display: none; }
+.top.top-tight :is(#statusStrip > :is(#sysBtn, .st-pe, #statusMore), #comfyTxt) { display: none; }
+.top.top-tight #statusStrip .dot { margin: 0; }
+/* 沒有 JS 量（top-fit 沒加上）時的備案：照視窗寬度猜 */
+@media (max-width: 1450px) { .top:not(.top-fit) :is(.model-no, #aiState) { display: none; } }
 @media (max-width: 1180px) {
-  #navPins .tkey:not(.on), #statusStrip > :is(#sysBtn, .st-pe, #statusMore), #comfyTxt { display: none; }
-  #statusStrip .dot { margin: 0; }
+  .top:not(.top-fit) :is(#statusStrip > :is(#sysBtn, .st-pe, #statusMore), #comfyTxt) { display: none; }
+  .top:not(.top-fit) #statusStrip .dot { margin: 0; }
 }
 @media (max-width: 740px) {
   .top { flex-wrap: wrap; }
   .top .grow { flex: 0; }
   .top .wctl { margin-left: auto; }
-  #navAll { position: fixed; top: auto; left: 2vw; }
 }
 
 /* 生成與隨機頁共用同一張提示詞卡。 */
@@ -2065,31 +2081,27 @@ html.solo .unit { grid-template-rows: minmax(0, 1fr); }
 .stage-tasks-btn { flex: none; }
 .stage-tasks-btn[aria-pressed=true] { box-shadow: inset 0 -3px var(--acc), 0 3px var(--key-side); }
 .stage-tasks-btn .vfd { margin-left: 4px; }
-#modeSeg.piano.row { display: flex; flex-wrap: wrap; justify-content: center; }
+#modeSeg.piano.row { display: flex; flex-wrap: nowrap; justify-content: center; }   /* 折成兩排會吃掉觀景窗的高度 */
 #page-gen .monitor, [data-dock=compose] { width: min(100%, 1100px); margin-inline: auto; }
-#page-gen .monitor { min-height: 0; position: relative; grid-template-rows: auto minmax(0, 1fr); }
+#page-gen .monitor { min-height: 0; position: relative; container: monitor / inline-size; grid-template-rows: auto minmax(0, 1fr) auto; }
 #viewMeta { font: .72rem var(--f-ui); color: var(--ph-dim); }
 #page-gen .readout > #osdl, #page-gen .readout > #osdr { flex: none; }   /* #viewMeta 搬進 readout 後，左邊的 READY 不要被擠成「REA…」 */
-/* 右區「這張圖」（2026-11-23 左右兩欄）：成品動作分組攤開、一直看得到（以前滑鼠停在圖上才出現，其他收在「⋯」） */
-[data-dock=imgacts] { display: grid; gap: .5rem; }
-[data-dock=imgacts]:has(> #viewActions:not([hidden])) > #imgActsEmpty { display: none; }
-#imgActsEmpty { margin: .2rem 0; line-height: 1.6; }
-#viewActions { display: grid; gap: .6rem; }
-#viewActions .va-grp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; }
-#viewActions .va-lbl { grid-column: 1 / -1; font: 700 .7rem/1 var(--f-label); letter-spacing: .12em; color: var(--label-dim); }
-#viewActions .va-grp > .akey { min-width: 0; justify-content: center; text-align: center; white-space: normal; }
-#viewActions .va-end > .go { grid-column: 1 / -1; }
-/* 右區收起、那塊收起、視窗太窄：stage.js placeActs 搬到觀景窗下面，排成一排 */
-#page-gen .monitor:has(> #viewActions.under:not([hidden])) { grid-template-rows: auto minmax(0, 1fr) auto; }
-#viewActions.under { display: flex; flex-wrap: wrap; justify-content: center; gap: .3rem; padding: .45rem .5rem .15rem; }
-#viewActions.under .va-grp { display: contents; }
-#viewActions.under .va-lbl { display: none; }
-#viewActions.under .va-grp > .akey { white-space: nowrap; }
+#viewActions { position: relative; display: flex; align-items: stretch; justify-content: center; gap: .3rem; }
+#viewActions > button { min-width: 0; white-space: nowrap; }
+#viewMoreMenu { position: absolute; right: 0; bottom: calc(100% + .4rem); z-index: 9; display: grid;
+  max-height: min(55vh, 26rem); overflow: auto; padding: .4rem; gap: .2rem; background: var(--case); box-shadow: 0 4px 16px var(--groove); }
+#viewMoreMenu > .akey { justify-content: start; }
+#viewMoreMenu [data-act=delete] { color: var(--danger, #bb392a); }
+@container monitor (max-width: 48rem) {
+  #viewActions > [data-act] { padding-inline: .45rem; }
+  #viewActions .va-name { display: none; }
+}
 /* 左右兩欄都開著、視窗不夠寬（1366 這種）：中間變窄，模式鍵拿掉圖示、縮邊距，排成一排，觀景窗多留一點高度 */
 @media (max-width: 1500px) {
   #page-gen #modeSeg.piano.row button { padding-inline: 8px; gap: 0; }
   #page-gen #modeSeg.piano.row .ic { display: none; }
 }
+@media (max-width: 1300px) { #page-gen #modeSeg.piano.row button { padding-inline: 5px; } }
 [data-dock=compose] { gap: .22rem; padding: 0; }
 [data-dock=compose] [data-dock=prompt] { padding: 0; }
 #promptBox { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .2rem .5rem; }
@@ -2099,16 +2111,21 @@ html.solo .unit { grid-template-rows: minmax(0, 1fr); }
 #promptBox > .lbl .tools select { flex: 0 1 auto; max-width: 7rem; }
 #promptBox > .lbl::after { display: none; }
 #promptBox .stage-add { border: 1px dashed var(--case-lo); font-size: .75rem; }
-#promptBox .batch-row { grid-row: auto; grid-column: 2; align-self: start; font-size: .72rem; }
-#negDetails { grid-column: 1; grid-row: auto; }
-#promptBox .batch-row { order: 1; }
-#negDetails { order: 1; }
+#promptBox .batch-row { justify-self: end; font-size: .72rem; }
+.prompt-tabs, #viewSrc { display: flex; gap: .35rem; flex: none; align-items: center; }
+#page-gen #viewSrc .akey { min-height: 0; height: 1.15rem; padding-block: 0; padding-inline: .45rem; font-size: .72rem; line-height: 1; }   /* 讀數列一行高，切換鍵不要把它撐高、壓到觀景窗 */
+.prompt-tabs { margin-bottom: .25rem; }
+.prompt-tabs [aria-selected=true], #viewSrc [aria-pressed=true] { box-shadow: inset 0 -2px var(--acc); }
+.tab-dot { display: inline-block; width: .45rem; height: .45rem; margin-inline-start: .25rem; border-radius: 50%; background: var(--ph-amber); }
+#promptBox:has(.prompt-scr[data-tab=neg]) :is(#promptZhBtn, #promptSecBtn, #promptWarn),
+.prompt-scr[data-tab=pos] .neg-pane, .prompt-scr[data-tab=neg] #posPane { display: none; }
 #genAssets:has([aria-expanded=false]), #genAssets .adr-head { display: none; }
 .stage-refs { display: flex; gap: .4rem; }
-.stage-refs #initDrop { min-height: 0; width: 4rem; padding: .1rem; }
-.stage-refs #initDrop img { max-height: 3.25rem; }
-.stage-refs #initDrop:not(.has), .stage-refs #initDrop .drop-hint, .stage-refs #refTray:empty,
-body:has(#initBox[hidden]) .stage-refs #initDrop, body:has(#refBox[hidden]) .stage-refs #refTray { display: none; }
+#win #initDrop { position: absolute; inset: 0; min-height: 0; }
+#win #initDrop img { max-height: 100%; cursor: default; }
+#win:has(#initDrop:not([hidden])) > :is(#viewImg, #viewVid, #viewEmpty, #gummy, #boot, #liveBadge) { visibility: hidden; }
+.stage-refs #refTray:empty, body:has(#refBox[hidden]) .stage-refs #refTray { display: none; }
+.stage-refs #refTray { display: none; }
 .stage-refs #refTray { flex: 1; min-width: 0; display: flex; gap: .35rem; overflow-x: auto; }
 /* 提示詞卡上的參考圖：縮成一條橫列，免得把生成鍵擠出卡外（側欄的大托盤照舊） */
 .stage-refs .ref-card { flex: 0 0 4.6rem; }
@@ -2119,8 +2136,8 @@ body:has(#initBox[hidden]) .stage-refs #initDrop, body:has(#refBox[hidden]) .sta
 .stage-refs .ref-add { min-height: 0; display: flex; align-items: center; gap: .3rem; padding: .3rem .65rem; font-size: 1rem; flex: 0 0 auto; }
 .stage-refs .ref-add .sm { white-space: nowrap; }
 #promptBox .prompt-scr { padding: .25rem .55rem; }
-#promptBox #prompt { min-height: 0; height: 4.8em; }
-#promptBox .foot { margin: 0; }
+#promptBox :is(#prompt, #negative) { min-height: 0; height: 4.8em; resize: none; overflow-y: auto; }
+#promptBox .prompt-scr .foot { min-height: 1.5rem; align-items: center; margin: 0; }
 #promptStats { order: 1; margin-left: auto; }
 #promptBox .foot-r { margin-left: 0; }
 #genRow, #capRow { display: flex; align-items: center; gap: .4rem; flex-wrap: wrap; }
@@ -2132,10 +2149,14 @@ body:has(#initBox[hidden]) .stage-refs #initDrop, body:has(#refBox[hidden]) .sta
 #capRow [data-cap=source]::before, #capRow [data-cap=pe]::before { content: ""; width: .4rem; height: .4rem; border-radius: 50%; background: var(--ph-green); }
 #capRow [data-cap=pe]::before { background: var(--led-off); }
 body:has(#peStatus.run) #capRow [data-cap=pe]::before { background: var(--ph-amber); }
-[data-dock=compose].expanded #prompt { height: 30vh !important; }
-#page-gen:has(> [data-zone=bottom]:not(.collapsed) [data-id=compose]:not(.folded) :is(.expanded, #tagLib:not([hidden]), #negDetails[open], .adr-cards, #promptZh:not([hidden]), #promptSecs:not([hidden]))) {
-  grid-template-rows: var(--dock-t) var(--gap-t) minmax(0, 1fr) var(--gap-b) 60vh;
+[data-dock=compose].expanded :is(#prompt, #negative) { height: 30vh !important; }
+/* 觀景窗保底：觀景窗至少是「觀景窗外框＋提示詞卡」的一半。外框（讀數列、動作列、邊框）加模式列約 300px，
+   所以提示詞卡最多「頁高一半減 150px」；平常照 dock 存的高度但不超過這條，打開負面詞、詞庫、對照時直接長到這條，多的在卡裡捲 */
+#page-gen.dock-host { grid-template-rows: var(--dock-t) var(--gap-t) minmax(0, 1fr) var(--gap-b) min(var(--dock-b), calc(50% - 150px)); }
+#page-gen:has(> [data-zone=bottom]:not(.collapsed) [data-id=compose]:not(.folded) :is(.expanded, #tagLibBtn[aria-pressed=true], .prompt-scr[data-tab=neg], .adr-cards, .prompt-scr[data-tab=neg] #negZh:not([hidden]), .prompt-scr[data-tab=pos] :is(#promptZh, #promptSecs):not([hidden]))) {
+  grid-template-rows: var(--dock-t) var(--gap-t) minmax(0, 1fr) var(--gap-b) calc(50% - 150px);
 }
+[data-id=compose] > .dock-body { overflow: auto; }
 #page-gen > [data-zone=bottom]:has([data-id=compose].solo) { max-width: 1100px; width: 100%; justify-self: center; }
 #page-gen > [data-zone=bottom]:not(.tabs):has([data-id=compose]:only-child) { grid-template-rows: minmax(0, 1fr); }
 #page-gen > [data-zone=bottom]:not(.tabs):has([data-id=compose]:only-child) > .dock-zbar { position: absolute; right: 1rem; top: .25rem; z-index: 1; }
@@ -2173,7 +2194,7 @@ body:has(#peStatus.run) #capRow [data-cap=pe]::before { background: var(--ph-amb
 /* 頁首列：短片／長片＋拍攝單＋狀態燈；下面的短片或長片吃滿剩下的高度 */
 #page-director .vhead-sec { grid-template-rows: auto; padding-block: .3rem; }
 .vhead { gap: .5rem; min-height: 0; }
-.vhead #videoSub button { padding-block: .3rem; }
+.vhead #videoSub button { padding-block: 12px 5px; }
 #shOpen.on { box-shadow: inset 0 -3px var(--acc); background: var(--case-hi); }
 #page-director .vstage-sec { grid-template-rows: minmax(0, 1fr); }
 .h3-host { min-height: 0; height: 100%; }
@@ -2367,3 +2388,21 @@ body:has(#peStatus.run) #capRow [data-cap=pe]::before { background: var(--ph-amb
 .bq-chips .lbl { margin: 0 2px 0 6px; }
 .bq-chips .lbl:first-child { margin-left: 0; }
 .bq-pill { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+.deck { grid-template-columns: 150px minmax(0, 1fr); }
+.side-nav { min-height: 0; overflow-y: auto; padding: .5rem; }
+.side-nav #tabs, .sn-group { display: grid; gap: .35rem; }
+.side-nav #tabs { gap: .8rem; }
+.sn-lbl { color: var(--label-dim); font-weight: 700; }
+.side-nav .pkey, #queueInfo { display: flex; align-items: center; gap: .55rem; padding: .45rem .6rem; min-width: 0; }
+.side-nav .pkey .ic, #queueInfo .ic { width: 1.1rem; height: 1.1rem; flex: none; }
+.side-nav .n, #queueInfo .n { display: none; }
+#queueInfo .cnt { position: static; }
+#queueInfo { padding-inline-end: 1.2rem; }   /* 右上角的指示燈不要壓到「任務」兩個字 */
+html.solo .side-nav { display: none; }
+@media (max-width: 1279px) {
+  .deck { grid-template-columns: 52px minmax(0, 1fr); }
+  .side-nav { padding-inline: .3rem; }
+  .side-nav .pkey { justify-content: center; }
+  .side-nav :is(.sn-name, .sn-lbl) { display: none; }
+}

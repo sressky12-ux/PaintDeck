@@ -153,7 +153,8 @@ pub async fn chat(app: &Shared, feature: &str, page: &str, rid: &str, system: &s
         brains::Brain::Cloud => Some(app.agent.cloud.endpoints().ok_or("雲端還沒開好：先到「雲端」開機")?.remote()),
         _ => None,
     };
-    app.pe.general_chat_with(rid, system, user, images, max_tokens, temperature, &sel, cloud.as_ref(), preset.as_ref()).await
+    // 套了指令預設：最後補這個功能的格式提醒（翻譯要編號行、導演台要 JSON）
+    app.pe.general_chat_with(rid, system, user, images, max_tokens, temperature, &sel, cloud.as_ref(), preset.as_ref(), brains::format_note(feature)).await
 }
 
 // ---------------------------------------------------------------- 舊的單組設定（助手 API 視窗、MCP 還在用）：讀寫「預設」那組

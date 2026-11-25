@@ -125,18 +125,120 @@ pub fn family_defaults(fam: &str, model: &str, anima_neg: &str) -> Map<String, V
     ])
 }
 
-/// 生成頁設定換成另一顆模型：家族變了就拿掉固定 LoRA（家族不合會被丟掉）和加速 LoRA
+/// 舊對話只有模型檔名；讀取時補家族，畫面、工具和系統提示詞共用同一份設定。
+pub(super) fn normalize_base_family(base: &mut Map<String, Value>, family_of: impl FnOnce(&str) -> &'static str) {
+    if base.get("family").and_then(Value::as_str).is_none_or(str::is_empty) {
+        if let Some(model) = base.get("model").and_then(Value::as_str).filter(|s| !s.is_empty()) {
+            let family = family_of(model);
+            if family != crate::families::OTHER { base.insert("family".into(), json!(family)); }
+        }
+    }
+}
+
+/// 生成頁設定換成另一顆模型：家族變了就拿掉固定 LoRA（家族不合會被丟掉）和加速 LoRA。
+/// Anima 換 Anima、原本開著加速 LoRA：加速照開，步數、CFG 用加速的（2026-11-24 玩家：「照抄了還是 30 步」——以前換模型會變回 30 步 CFG 4、加速 LoRA 卻還掛著）；
+/// 換成本身就是 turbo 的模型就拿掉加速 LoRA
 pub fn switch_base(base: &Map<String, Value>, model: &str, fam: &str, anima_neg: &str) -> Map<String, Value> {
     let mut b = base.clone();
     let same = tx(base.get("family").unwrap_or(&Value::Null)) == fam;
+    let speed = turbo_on(base);
     for (k, v) in family_defaults(fam, model, anima_neg) {
         b.insert(k, v);
     }
     if !same {
         b.insert("loras".into(), json!([]));
         b.shift_remove("turbo_lora");
+    } else if let (Some(t), true) = (speed, speed_ok(&b)) {
+        b = with_turbo(&b, Some(&t));
+    } else {
+        b.shift_remove("turbo_lora");
+    }
+    // MOSS 換 MOSS：DMD 加速 LoRA 跟著固定 LoRA 留下來，步數也照加速的 10 步（助手的「⚡ 加速」、生成頁「MOSS 快速」同一組數字）
+    if same && fam == MOSS && b.get("loras").and_then(Value::as_array).is_some_and(|l| l.iter().any(|x| tx(&x["name"]).to_lowercase().contains("moss_speed_dmd"))) {
+        b.insert("steps".into(), json!(10));
     }
     b
+}
+
+// ================================================================ Anima 加速 LoRA（生成頁的「加速」選單；網頁那份在 ui/js/turbo.js）
+/// 加速 LoRA 要幾步：官方 anima-turbo-lora 10 步，其他 12 步（CFG 都是 1）
+pub fn turbo_steps(name: &str) -> i64 {
+    if name.to_lowercase().contains("anima-turbo-lora") { 10 } else { 12 }
+}
+
+/// 這組設定能不能掛加速 LoRA：Anima、模型本身不是 turbo（graphs.rs 也只在這時候掛）
+pub fn speed_ok(base: &Map<String, Value>) -> bool {
+    tx(base.get("family").unwrap_or(&Value::Null)) == ANIMA && !tx(base.get("model").unwrap_or(&Value::Null)).to_lowercase().contains("turbo")
+}
+
+/// 目前實際生效的加速 LoRA 檔名（turbo_lora: true＝graphs.rs 的預設那顆）
+pub fn turbo_on(base: &Map<String, Value>) -> Option<String> {
+    let t = base.get("turbo_lora");
+    (speed_ok(base) && crate::py::truthy(t)).then(|| t.and_then(Value::as_str).unwrap_or(crate::graphs::TURBO_LORA).to_string())
+}
+
+/// 開／關加速 LoRA：步數、CFG 跟生成頁 modelDefaults 一樣（開 10／12 步 CFG 1，關 30 步 CFG 4），取樣器、排程不動
+pub fn with_turbo(base: &Map<String, Value>, turbo: Option<&str>) -> Map<String, Value> {
+    let mut b = base.clone();
+    let (lora, steps, cfg) = match turbo {
+        Some(t) => (json!(t), turbo_steps(t), 1.0),
+        None => (json!(false), 30, 4.0),
+    };
+    b.insert("turbo_lora".into(), lora);
+    b.insert("steps".into(), json!(steps));
+    b.insert("cfg".into(), json!(cfg));
+    b
+}
+
+/// 預設的加速 LoRA：官方的優先，沒有就清單第一顆（同 gen.js defTurbo）
+pub fn default_turbo(list: &[String]) -> Option<&String> {
+    list.iter().find(|n| turbo_steps(n) == 10).or(list.first())
+}
+
+/// set_speed 的 turbo 對到實際檔名：true＝預設那顆、false＝關、字串＝檔名（不分大小寫、只寫檔名、包含且只有一個符合都算）
+pub fn pick_turbo(want: &Value, list: &[String]) -> Result<Option<String>, String> {
+    let none = || "No Anima speed-up LoRA is installed on this computer, so speed-up is not possible; tell the user it can be downloaded (anima-turbo-lora) and that drawing stays at 30 steps for now.".to_string();
+    match want {
+        Value::Bool(false) => Ok(None),
+        Value::Bool(true) => default_turbo(list).cloned().map(Some).ok_or_else(none),
+        v => {
+            let w = tx(v);
+            let pairs: Vec<(String, String)> = list.iter().map(|n| (n.clone(), ANIMA.to_string())).collect();
+            match match_model(&pairs, &w) {
+                Some((n, _)) => Ok(Some(n.clone())),
+                None if list.is_empty() => Err(none()),
+                None => Err(format!("No speed-up LoRA named \"{w}\". Speed-up LoRAs: {}. Or use true for the default one.", list.join(", "))),
+            }
+        }
+    }
+}
+
+/// set_speed：換好的生圖設定；不是 Anima、或模型本身就是 turbo 就說明為什麼不行
+pub fn speed_base(base: &Map<String, Value>, want: &Value, list: &[String]) -> Result<Map<String, Value>, String> {
+    let model = tx(base.get("model").unwrap_or(&Value::Null));
+    let fam = tx(base.get("family").unwrap_or(&Value::Null));
+    if fam != ANIMA {
+        return Err(format!("Speed-up LoRAs exist only for Anima models; you draw with {model} (family {fam}), which has no speed setting here. Switch to an Anima model with set_model first if the user wants that."));
+    }
+    if !speed_ok(base) {
+        return Err(format!("{model} is already a turbo model (8 steps, CFG 1) and needs no speed-up LoRA. For slower, higher-quality drawing switch to a non-turbo Anima model with set_model."));
+    }
+    Ok(with_turbo(base, pick_turbo(want, list)?.as_deref()))
+}
+
+/// 每一輪告訴助手目前的加速狀態（英文一行；不能掛加速 LoRA 就不講）
+pub fn speed_line(base: &Map<String, Value>, list: &[String]) -> Option<String> {
+    if !speed_ok(base) {
+        return None;
+    }
+    let avail = if list.is_empty() { "none installed".to_string() } else { list.join(", ") };
+    let turbo = turbo_on(base);
+    let steps = base.get("steps").and_then(crate::py::int).unwrap_or_else(|| turbo.as_deref().map_or(30, turbo_steps));
+    let cfg = base.get("cfg").and_then(crate::py::float).unwrap_or(if turbo.is_some() { 1.0 } else { 4.0 });
+    Some(match turbo {
+        Some(t) => format!("Speed: Anima speed-up LoRA {t} is on ({steps} steps, CFG {cfg}). set_speed with false turns it off (30 steps, CFG 4, best quality)."),
+        None => format!("Speed: off ({steps} steps, CFG {cfg}, best quality); speed-up LoRAs available: {avail}. When the user wants faster drawing or fewer steps, call set_speed."),
+    })
 }
 
 /// 模型名稱對到 ComfyUI 的檔名：完整 → 不分大小寫 → 包含（只有一個符合才算）
@@ -309,8 +411,26 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
                     a.push(json!(n));
                 }
             }
-            out.text = clip(&json!({"current": cx.base.get("model"), "by_family": by}).to_string(), RESULT_CHARS);
+            // Anima 的加速 LoRA 不算模型，但助手要知道有哪些、現在有沒有開（set_speed 用）
+            let speed = super::api_agent::speed_loras(app).await;
+            out.text = clip(&json!({"current": cx.base.get("model"), "speed_loras_anima": speed, "speed_on": turbo_on(cx.base), "by_family": by}).to_string(), RESULT_CHARS);
             out.zh = format!("這台電腦有 {} 個生圖模型", list.len());
+        }
+        "set_speed" => {
+            let list = super::api_agent::speed_loras(app).await;
+            let b = speed_base(cx.base, &args["turbo"], &list)?;
+            let (steps, cfg) = (b["steps"].clone(), b["cfg"].clone());
+            match turbo_on(&b) {
+                Some(t) => {
+                    out.text = format!("Speed-up LoRA {t} is on: your generate action now uses {steps} steps, CFG {cfg}.");
+                    out.zh = format!("加速開啟：{}（{steps} 步）", t.rsplit(['\\', '/']).next().unwrap_or(&t).trim_end_matches(".safetensors"));
+                }
+                None => {
+                    out.text = format!("Speed-up is off: your generate action now uses {steps} steps, CFG {cfg} (slower, best quality).");
+                    out.zh = format!("加速關閉（{steps} 步）");
+                }
+            }
+            out.base = Some(Value::Object(b));
         }
         "set_model" => {
             let (list, neg) = models(app).await?;
@@ -540,6 +660,101 @@ mod tests {
         assert!(b.get("turbo_lora").is_none() && tx(&b["negative"]).contains("gpt-image"));
         let same = switch_base(base.as_object().unwrap(), "anima-base.safetensors", ANIMA, "anima neg");
         assert_eq!((same["steps"].clone(), same["sampler"].clone(), same["loras"].clone(), same["negative"].clone()), (json!(30), json!("er_sde"), json!([{"name": "x"}]), json!("anima neg")));
+        assert!(same.get("turbo_lora").is_none(), "原本是 turbo 模型，加速 LoRA 沒在用，換過去不要突然開");
+    }
+
+    #[test]
+    fn legacy_anima_speed_and_model_switches() {
+        let mut base = json!({"model":"old.safetensors","turbo_lora":"TurboAnima-V4.safetensors"}).as_object().unwrap().clone();
+        normalize_base_family(&mut base, |model| { assert_eq!(model, "old.safetensors"); ANIMA });
+        let off = speed_base(&base, &json!(false), &[]).unwrap();
+        assert_eq!(off["steps"], 30);
+        let same = switch_base(&base, "new.safetensors", ANIMA, "");
+        assert_eq!((same["turbo_lora"].clone(), same["steps"].clone(), same["cfg"].clone()), (base["turbo_lora"].clone(), json!(12), json!(1.0)));
+        for (model, fam) in [("turbo.safetensors", ANIMA), ("other.safetensors", MOSS)] {
+            assert!(!switch_base(&base, model, fam, "").contains_key("turbo_lora"));
+        }
+    }
+
+    #[test]
+    fn switching_anima_model_keeps_speed_lora() {
+        let base = json!({"model": "Anima\\anima-aesthetic-v1.1.safetensors", "family": "anima", "steps": 12, "cfg": 1.0, "sampler": "er_sde", "scheduler": "simple", "turbo_lora": "TurboAnima-V4.safetensors", "loras": [{"name": "x"}]});
+        let base = base.as_object().unwrap();
+        let b = switch_base(base, "anima-preview3-base.safetensors", ANIMA, "neg");
+        assert_eq!((b["turbo_lora"].clone(), b["steps"].clone(), b["cfg"].clone(), b["loras"].clone()), (json!("TurboAnima-V4.safetensors"), json!(12), json!(1.0), json!([{"name": "x"}])));
+        let mut official = base.clone();
+        official.insert("turbo_lora".into(), json!("anima-turbo-lora-v0.2.safetensors"));
+        assert_eq!(switch_base(&official, "anima-preview3-base.safetensors", ANIMA, "neg")["steps"], json!(10));
+        official.insert("turbo_lora".into(), json!(true));
+        assert_eq!(switch_base(&official, "anima-preview3-base.safetensors", ANIMA, "neg")["steps"], json!(10), "true＝預設的官方那顆");
+        // 換成 turbo 模型：拿掉加速 LoRA，turbo 模型自己的 8 步
+        let t = switch_base(base, "anima-turbo-v1.1.safetensors", ANIMA, "neg");
+        assert_eq!((t.get("turbo_lora"), t["steps"].clone(), t["cfg"].clone()), (None, json!(8), json!(1.0)));
+        // 換家族：拿掉
+        let q = switch_base(base, "moss.safetensors", MOSS, "neg");
+        assert!(q.get("turbo_lora").is_none());
+        // 沒開加速：照舊 30 步 CFG 4
+        let mut off = base.clone();
+        off.insert("turbo_lora".into(), json!(false));
+        let o = switch_base(&off, "anima-preview3-base.safetensors", ANIMA, "neg");
+        assert_eq!((o["steps"].clone(), o["cfg"].clone()), (json!(30), json!(4.0)));
+    }
+
+    // 助手底下的「⚡ 加速」對 MOSS 是掛 DMD 加速 LoRA＋10 步：換另一顆 MOSS 時 LoRA 會留著，步數也要留 10 步
+    #[test]
+    fn switching_moss_model_keeps_dmd_speed_steps() {
+        let dmd = json!({"name": "moss\\moss_speed_dmd_lodestones.safetensors", "strength": 0.35});
+        let base = json!({"model": "moss_image_sft.safetensors", "family": "moss", "steps": 10, "cfg": 3.0, "loras": [dmd.clone()]});
+        let b = switch_base(base.as_object().unwrap(), "moss_image_base.safetensors", MOSS, "neg");
+        assert_eq!((b["steps"].clone(), b["loras"].clone()), (json!(10), json!([dmd])));
+        let plain = json!({"model": "moss_image_sft.safetensors", "family": "moss", "steps": 25, "cfg": 3.0, "loras": []});
+        assert_eq!(switch_base(plain.as_object().unwrap(), "moss_image_base.safetensors", MOSS, "neg")["steps"], json!(25));
+    }
+
+    #[test]
+    fn set_speed_turns_speed_lora_on_and_off() {
+        let list = vec!["Anima\\TurboAnima-V4.safetensors".to_string(), "anima-turbo-lora-v0.2.safetensors".to_string()];
+        let base = json!({"model": "anima-aesthetic-v1.1.safetensors", "family": "anima", "steps": 30, "cfg": 4.0, "sampler": "er_sde", "scheduler": "simple"});
+        let base = base.as_object().unwrap();
+        let on = speed_base(base, &json!(true), &list).unwrap();
+        assert_eq!((on["turbo_lora"].clone(), on["steps"].clone(), on["cfg"].clone(), on["sampler"].clone()), (json!("anima-turbo-lora-v0.2.safetensors"), json!(10), json!(1.0), json!("er_sde")));
+        let named = speed_base(base, &json!("turboanima-v4"), &list).unwrap();
+        assert_eq!((named["turbo_lora"].clone(), named["steps"].clone()), (json!("Anima\\TurboAnima-V4.safetensors"), json!(12)));
+        let off = speed_base(&on, &json!(false), &list).unwrap();
+        assert_eq!((off["turbo_lora"].clone(), off["steps"].clone(), off["cfg"].clone()), (json!(false), json!(30), json!(4.0)));
+        assert!(speed_base(base, &json!("nope"), &list).unwrap_err().contains("TurboAnima-V4"));
+        assert!(speed_base(base, &json!(true), &[]).unwrap_err().contains("No Anima speed-up LoRA"));
+        assert_eq!(default_turbo(&list[..1]).map(String::as_str), Some("Anima\\TurboAnima-V4.safetensors"));
+        // 不是 Anima、或本身是 turbo 模型：說明為什麼不行
+        let mut q = base.clone();
+        q.insert("family".into(), json!(QWEN21));
+        assert!(speed_base(&q, &json!(true), &list).unwrap_err().contains("only for Anima"));
+        let mut t = base.clone();
+        t.insert("model".into(), json!("anima-turbo-v1.1.safetensors"));
+        assert!(speed_base(&t, &json!(true), &list).unwrap_err().contains("already a turbo model"));
+    }
+
+    #[test]
+    fn speed_line_tells_the_assistant() {
+        let list = vec!["anima-turbo-lora-v0.2.safetensors".to_string()];
+        let base = json!({"model": "anima-aesthetic-v1.1.safetensors", "family": "anima", "turbo_lora": "TurboAnima-V4.safetensors"});
+        let base = base.as_object().unwrap();
+        assert_eq!(speed_line(base, &list).unwrap(), "Speed: Anima speed-up LoRA TurboAnima-V4.safetensors is on (12 steps, CFG 1). set_speed with false turns it off (30 steps, CFG 4, best quality).");
+        let off = with_turbo(base, None);
+        let l = speed_line(&off, &list).unwrap();
+        assert!(l.starts_with("Speed: off (30 steps, CFG 4") && l.contains("anima-turbo-lora-v0.2.safetensors") && l.contains("set_speed"), "{l}");
+        assert!(speed_line(&off, &[]).unwrap().contains("none installed"));
+        for mut custom in [base.clone(), off] {
+            custom.insert("steps".into(), json!(20));
+            custom.insert("cfg".into(), json!(2.5));
+            assert!(speed_line(&custom, &list).unwrap().contains("(20 steps, CFG 2.5"));
+            custom.insert("steps".into(), json!("18"));
+            custom.insert("cfg".into(), json!("3.5"));
+            assert!(speed_line(&custom, &list).unwrap().contains("(18 steps, CFG 3.5"));
+        }
+        let mut q = base.clone();
+        q.insert("family".into(), json!(MOSS));
+        assert!(speed_line(&q, &list).is_none());
     }
 
     #[test]

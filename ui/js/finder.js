@@ -2,6 +2,7 @@
 // 搜生成頁現在用得到（沒被模式、模型藏起來）的按鈕、勾選、選單、區塊標題，加上各模式、各膠囊。
 // 選了就切模式，或打開那個膠囊／那一區、展開那塊面板，再捲過去閃一下、把焦點放上去。
 // 上半是純函式（tests/finder.test.cjs 測），下半是 DOM。
+import { app } from "./state.js";
 import { $, $$, el } from "./util.js";
 
 /** 一筆的分數：完全相符 > 開頭相符 > 包含 > 只有「在哪」對得上；0＝沒中。不分大小寫 */
@@ -36,7 +37,7 @@ const short = (s) => (s.length > 34 ? s.slice(0, 33) + "…" : s);
 function usable(e) {
   for (let n = e; n && n.id !== "page-gen"; n = n.parentElement) {
     if (n.classList?.contains("dock-panel")) return true;
-    if (n.hidden) return false;
+    if (n.hidden && n.id !== "viewMoreMenu") return false;
   }
   return true;
 }
@@ -70,10 +71,10 @@ function collect() {
     const title = clean($(`.dock-panel[data-id="${c.dataset.cap}"] .dock-title`)?.textContent) || clean(c.textContent);
     add({ label: title, where: "膠囊", kind: "cap", el: c, panel: c.dataset.cap });
   }
-  const skip = ".dock-head, .dock-zbar, .dock-rail, .cap-chip, #modeSeg, #viewMoreMenu, #viewMore";
+  const skip = ".dock-head, .dock-zbar, .dock-rail, .cap-chip, #modeSeg, #viewMore";
   // 滑桿、數字框、文字框只收有名字的（main.js labelControls 會幫沒名字的補 aria-label）；勾選框收外面那個 label.check
   for (const e of $$("#page-gen :is(button, a.akey, label.check, select, .lbl, input[type=range], input[type=number], input[type=text], textarea)")) {
-    if (e.closest(skip) || !usable(e)) continue;
+    if (e.closest(skip) || e.disabled || !usable(e) || (e.closest("#viewMoreMenu") && $("#viewMore").disabled)) continue;
     const label = short(labelOf(e)), at = whereOf(e);
     if (e.matches(".lbl") && at.where.endsWith(label)) continue;   // 區塊標題跟面板同名（LoRA 卡匣）：膠囊那筆就夠了
     add({ label, ...at, kind: "el", el: e });
@@ -97,7 +98,7 @@ function filter() {
 }
 
 export function open() {
-  if (!$("#page-gen").classList.contains("on")) return;
+  if (!$("#page-gen").classList.contains("on")) app.showPage("gen");
   dock?.closeCaps();
   items = collect();
   $("#finder").hidden = false;
@@ -115,6 +116,9 @@ function choose(it) {
   if (it.kind === "cap") return;
   setTimeout(() => {
     const e = it.el;
+    if (e.closest("#viewMoreMenu")?.hidden) $("#viewMore").click();
+    const pane = e.closest(".prompt-scr [role=tabpanel]");
+    if (pane) document.getElementById(pane.getAttribute("aria-labelledby")).click();
     e.scrollIntoView({ block: "center", behavior: "smooth" });
     e.classList.add("find-flash");
     setTimeout(() => e.classList.remove("find-flash"), 1600);
@@ -135,10 +139,10 @@ export function init(api) {
     else if (e.key === "Enter" && shown[sel]) { e.preventDefault(); choose(shown[sel]); }
     else if (e.key === "Escape") { e.preventDefault(); close(); $("#findBtn").focus(); }
   });
-  // 生成頁、沒有視窗開著時才搶 Ctrl+K
+  // 頂列找功能的快捷鍵，獨立助手和已開啟的對話框保留自己的鍵盤操作。
   document.addEventListener("keydown", (e) => {
     if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "k") return;
-    if (!$("#page-gen").classList.contains("on") || document.querySelector(".modal:not([hidden])")) return;
+    if (document.documentElement.classList.contains("solo") || document.querySelector(".modal:not([hidden]):not(#finder)")) return;
     e.preventDefault();
     if ($("#finder").hidden) open(); else close();
   });

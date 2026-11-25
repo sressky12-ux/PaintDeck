@@ -240,7 +240,7 @@ pub async fn polish(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let rid = format!("h3s-{:x}", super::api_director::random_seed());
     let (content, _) = app
         .pe
-        .agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref())
+        .agent_chat(&rid, &msgs, 6144, 0.6, None, &brain, remote.as_ref(), preset.as_ref(), crate::brains::format_note("shotsheet"))
         .await
         .map_err(bad)?;
     let blocks = text_blocks(&content);

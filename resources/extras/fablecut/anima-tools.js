@@ -306,7 +306,7 @@ const TOOLS = [
   },
   {
     name: "anima_gallery",
-    description: "搜尋圖庫（最新的在前）：q 搜提示詞、mode（txt2img／img2img／video…）、model、family、lora、fav、from／to（Unix 秒）、trash（回收區）。回傳精簡清單：編號、時間、模式、尺寸、提示詞開頭、想法、我的最愛。要看圖用 anima_image。",
+    description: "搜尋圖庫（最新的在前）：q 搜提示詞、mode（txt2img／img2img／video…；comic＝漫畫台的整頁）、model、family、lora、fav、from／to（Unix 秒）、trash（回收區）。回傳精簡清單：編號、時間、模式、尺寸、提示詞開頭、想法、我的最愛。要看圖用 anima_image。",
     inputSchema: {
       type: "object",
       properties: {

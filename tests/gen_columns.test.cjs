@@ -45,32 +45,23 @@ test('dock.js：zone 面板也能有膠囊、render 完叫 onRender', () => {
   assert.match(dock, /spec\.onRender\?\.\(\)/);
 });
 
-test('右區：這張圖面板排在任務上面，main.js 傳 onRender 給 stage.placeActs', () => {
-  const ids = stagePanels.map((p) => p.id);
-  assert.match(stagePanels.find((p) => p.id === 'imgacts').rest, /zone: "right"/);
-  assert.ok(ids.indexOf('imgacts') < ids.indexOf('tasks'));
-  assert.match(main, /onRender: \(\) => stage\.placeActs\(\)/);
-  assert.match(stage, /export function placeActs\(\)/);
+const monitor = html.match(/<section class="panel monitor[^]*?<\/section>/)[0];
+const actions = monitor.slice(monitor.indexOf('id="viewActions"'));
+const items = (s) => [...s.matchAll(/data-act="(\w+)"/g)].map(m => m[1]);
+
+test('觀景窗底框固定放動作列，右區只留任務', () => {
+  assert.ok(monitor.indexOf('id="viewActions"') > monitor.indexOf('id="viewer"'));
+  assert.deepEqual(stagePanels.filter(p => p.rest.includes('zone: "right"')).map(p => p.id), ['tasks']);
 });
 
-test('這張圖：成品動作全部攤開分組，「⋯」裡沒有東西', () => {
-  const box = html.slice(html.indexOf('data-dock="imgacts"'), html.indexOf('data-dock="tasks"'));
-  assert.match(box, /id="imgActsEmpty"/);
-  const acts = box.slice(box.indexOf('id="viewActions"'), box.indexOf('id="viewMoreMenu"'));
-  for (const a of ['reuse', 'img2img', 'inpaint', 'upscale', 'multiref', 'sheet', 'charsheet', 'strip', 'play', 'tagger',
-    'fav', 'download', 'lib', 'asset', 'studio', 'frames', 'lorapreview', 'video', 'delete']) {
-    assert.match(acts, new RegExp(`data-act="${a}"`), a);
-  }
-  assert.match(acts, /class="va-grp"/);
-  const menu = box.slice(box.indexOf('id="viewMoreMenu"'), box.indexOf('</div>', box.indexOf('id="viewMoreMenu"')));
-  assert.doesNotMatch(menu, /data-act=/);
-  // 舊的 id 留著（只能新增，不能刪）
-  assert.match(box, /id="viewMore"[^>]*hidden/);
+test('底框六個動作照使用順序，最後接更多', () => {
+  assert.deepEqual(items(actions.split('id="viewMore"')[0]), ['reuse', 'img2img', 'inpaint', 'upscale', 'fav', 'sheet']);
+  assert.match(actions, /id="viewMore"[^>]*>更多 ▾</);
 });
 
-test('右區收起時成品動作搬到觀景窗下面，一直看得到（不再滑鼠停上去才出現）', () => {
-  const css = read('ui/css/app.css');
-  assert.doesNotMatch(css, /\.monitor:hover #viewActions/);
-  assert.match(css, /#viewActions\.under\s*\{/);
-  assert.match(stage, /classList\.toggle\("under", !inPanel\)/);
+test('更多選單十三項照順序，移到回收區固定最後', () => {
+  const menu = actions.split('id="viewMoreMenu"')[1];
+  assert.match(menu, /role="menu"/);
+  assert.deepEqual(items(menu), ['multiref', 'charsheet', 'play', 'strip', 'tagger', 'download', 'lib', 'asset',
+    'studio', 'lorapreview', 'video', 'frames', 'delete']);
 });

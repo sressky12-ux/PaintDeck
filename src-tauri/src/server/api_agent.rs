@@ -70,7 +70,11 @@ fn emit(app: &Shared, id: &str, phase: &str, msg: impl Into<String>) {
 }
 
 fn load(app: &Shared, id: &str) -> Result<Value, ApiError> {
-    app.agent.store.session(id).ok_or_else(|| not_found("找不到這個對話"))
+    let mut s = app.agent.store.session(id).ok_or_else(|| not_found("找不到這個對話"))?;
+    if let Some(base) = s.pointer_mut("/settings/base").and_then(Value::as_object_mut) {
+        super::api_agent_tools::normalize_base_family(base, |model| families::family_of(&app.paths.unet_roots(), model));
+    }
+    Ok(s)
 }
 
 async fn update(app: &Shared, id: &str, f: impl FnOnce(&mut Value)) -> Result<Value, ApiError> {
@@ -408,7 +412,41 @@ pub async fn stop(State(app): State<Shared>, Body(b): Body) -> ApiResult {
 /// 本機 ComfyUI 沒開（只用雲端時常見）就直接看 loras 資料夾，名字照 ComfyUI 的寫法（相對路徑、系統分隔字元）；
 /// 資料夾也是空的就是沒有 LoRA（不能當成錯誤：雲端腦袋本來就不需要本機 ComfyUI，2026-10-20 RunPod 實測踩到）
 async fn catalog(app: &Shared, family: &str) -> Result<Vec<LoraInfo>, String> {
-    let names = match app.comfy.options("LoraLoaderModelOnly", "lora_name").await {
+    let names = lora_names(app).await;
+    let meta = app.db.lora_meta().map_err(|e| e.to_string())?;
+    let (roots, fam) = (app.paths.lora_roots(), family.to_string());
+    let mut list: Vec<LoraInfo> = blocking(move || {
+        names
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|n| !graphs::is_turbo_lora(n) && families::lora_family(&roots, n, meta.get(*n)) == fam)
+            .map(|n| LoraInfo::from_meta(n, meta.get(n).unwrap_or(&Value::Null)))
+            .collect()
+    })
+    .await;
+    list.sort_by(|a, b| b.fav.cmp(&a.fav).then(b.desc.is_empty().cmp(&a.desc.is_empty()).reverse()).then(a.name.cmp(&b.name)));
+    Ok(list)
+}
+
+/// Anima 的加速 LoRA（生成頁「加速」選單那幾顆，同 api_gen 的 turbo_loras）：助手的 models、set_speed 和每輪的加速狀態用
+pub(super) async fn speed_loras(app: &Shared) -> Vec<String> {
+    let names = lora_names(app).await;
+    let Ok(meta) = app.db.lora_meta() else { return vec![] };
+    let roots = app.paths.lora_roots();
+    blocking(move || {
+        names
+            .iter()
+            .filter_map(Value::as_str)
+            .filter(|n| graphs::is_turbo_lora(n) && families::lora_family(&roots, n, meta.get(*n)) == ANIMA)
+            .map(str::to_string)
+            .collect()
+    })
+    .await
+}
+
+/// ComfyUI 看得到的 LoRA 檔名；ComfyUI 沒開就直接看 loras 資料夾
+async fn lora_names(app: &Shared) -> Vec<Value> {
+    match app.comfy.options("LoraLoaderModelOnly", "lora_name").await {
         Ok(n) => n,
         Err(_) => {
             let roots = app.paths.lora_roots();
@@ -431,20 +469,7 @@ async fn catalog(app: &Shared, family: &str) -> Result<Vec<LoraInfo>, String> {
             .await;
             found
         }
-    };
-    let meta = app.db.lora_meta().map_err(|e| e.to_string())?;
-    let (roots, fam) = (app.paths.lora_roots(), family.to_string());
-    let mut list: Vec<LoraInfo> = blocking(move || {
-        names
-            .iter()
-            .filter_map(Value::as_str)
-            .filter(|n| !graphs::is_turbo_lora(n) && families::lora_family(&roots, n, meta.get(*n)) == fam)
-            .map(|n| LoraInfo::from_meta(n, meta.get(n).unwrap_or(&Value::Null)))
-            .collect()
-    })
-    .await;
-    list.sort_by(|a, b| b.fav.cmp(&a.fav).then(b.desc.is_empty().cmp(&a.desc.is_empty()).reverse()).then(a.name.cmp(&b.name)));
-    Ok(list)
+    }
 }
 
 /// 生成頁固定掛的 LoRA（強度照生成頁）
@@ -645,7 +670,15 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
             guide += "\n\n";
             guide += &app.pe.embed.agent_block(&s, ag::family_guide(family), &ask).await;
         }
-        let system = ag::system_prompt(&app.pe.agent_text("agent"), &guide, family, &ag::loras_text(&cat, &fixed, allow));
+        let mut system = ag::system_prompt(&app.pe.agent_text("agent"), &guide, family, &ag::loras_text(&cat, &fixed, allow));
+        // 加速狀態（Anima 才有）：接在程式裡，不寫進使用者可以改的工作說明（pe.rs agent_text），存過舊版說明的人也看得到
+        let mut sb = base.clone();
+        sb.insert("family".into(), json!(family));   // 舊對話的 base 可能沒記家族
+        if !words && super::api_agent_tools::speed_ok(&sb) {
+            if let Some(line) = super::api_agent_tools::speed_line(&sb, &speed_loras(app).await) {
+                system = format!("{system}\n\n{line}");
+            }
+        }
         // 哪顆腦袋、套哪組指令預設：照 API 頁的對照表（「照頁面」＝助手頁上選的）
         let (sel, preset, hint) = app.brains.resolve("agent", &tx(&st["brain"]))?;
         if let Some(h) = hint.filter(|h| !events.iter().any(|e| ag::ev_kind(e) == "note" && tx(&e["text"]) == *h)) {
@@ -729,7 +762,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
             app.agent.cloud.touch();
             let (content, reasoning) = app
                 .pe
-                .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref())
+                .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref(), Some(crate::brains::FORMAT_AGENT_PROMPT))
                 .await?;
             app.agent.cloud.touch();
             let secs = t0.elapsed().as_secs_f64();
@@ -771,7 +804,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         app.agent.cloud.touch();
         let (content, reasoning) = app
             .pe
-            .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref())
+            .agent_chat(&rid(id), &msgs, ag::think_max_tokens(think), 0.7, ag::think_budget(think), &brain, remote.as_ref(), preset.as_ref(), Some(crate::brains::FORMAT_AGENT))
             .await?;
         app.agent.cloud.touch();
         let secs = t0.elapsed().as_secs_f64();
@@ -1101,7 +1134,7 @@ async fn learn_run(
         emit_learn(app, "progress", format!("讀線索：{}", l.stem()), done, total);
         let msgs = json!([{"role": "system", "content": ag::SYSTEM_LORA_META},
                           {"role": "user", "content": ag::lora_clues_text(l, &note_of(l), &tags_of(l), c)}]);
-        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None).await?;
+        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None, None).await?;
         match ag::parse_lora_desc(&r, "meta") {
             Some(d) => save_desc(app, &l.name, d, None)?,
             None => eprintln!("認識 LoRA {}：讀不出說明：{}", l.name, r.chars().take(200).collect::<String>()),
@@ -1164,7 +1197,7 @@ async fn learn_run(
             {"type": "text", "text": ag::lora_clues_text(l, &note_of(l), &tags_of(l), c)},
         ]);
         let msgs = json!([{"role": "system", "content": ag::SYSTEM_LORA_PROBE}, {"role": "user", "content": content}]);
-        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None).await?;
+        let (r, _) = app.pe.agent_chat("agent-learn", &msgs, 500, 0.3, None, brain, None, None, None).await?;
         match ag::parse_lora_desc(&r, "probe") {
             Some(d) => {
                 let (a2, l2, f2) = (app.clone(), l.clone(), b_file.clone());

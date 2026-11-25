@@ -1,5 +1,5 @@
 // 2026-11-23 使用者：「那個[反推圖片提示詞]的，死去哪了」——固定舞台改版後，反推只剩成品動作列「⋯」裡、
-// 和 ENGINE 膠囊彈出框的輸入圖區。釘住：提示詞卡工具列有反推鍵、成品動作列的反推不收進「⋯」
+// 和 ENGINE 膠囊彈出框的輸入圖區。釘住：提示詞卡工具列有反推鍵、成品動作列的反推收進「⋯」
 const test = require("node:test");
 const assert = require("node:assert");
 const fs = require("node:fs");
@@ -14,11 +14,11 @@ test("提示詞卡工具列有反推鍵，跟庫、詞、衣排在一起", () =>
   assert.match(gen, /F\("promptTagger"\)\.onclick/);
 });
 
-test("成品動作列的反推在外面，不在「⋯」選單裡", () => {
+test("成品動作列的反推在更多選單裡", () => {
   const row = html.slice(html.indexOf('id="viewActions"'), html.indexOf('id="viewMoreMenu"'));
   const menu = html.slice(html.indexOf('id="viewMoreMenu"'), html.indexOf("</div>", html.indexOf('id="viewMoreMenu"')));
-  assert.match(row, /data-act="tagger"/);
-  assert.doesNotMatch(menu, /data-act="tagger"/);
+  assert.doesNotMatch(row, /data-act="tagger"/);
+  assert.match(menu, /data-act="tagger"/);
 });
 
 // 2026-11-23 玩家：「佬，反推好像没办法自己上传图片了」——反推視窗綁死開啟時那張圖（有成品就一定推成品），

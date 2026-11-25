@@ -466,8 +466,13 @@ impl Db {
             wh.push("fav=1");
         }
         if let Some(m) = text(&g.mode) {
-            wh.push("mode=?");
-            args.push(Sql::Text(m));
+            if m == "comic" {
+                // 漫畫台畫的整頁、修好角色的整頁（mode 欄記的是 txt2img／multiref，要看參數裡的 comic）
+                wh.push("json_extract(params, '$.comic.kind') IN ('page', 'fix')");
+            } else {
+                wh.push("mode=?");
+                args.push(Sql::Text(m));
+            }
         }
         if let Some(q) = text(&g.q) {
             wh.push("(prompt LIKE ? OR negative LIKE ? OR idea LIKE ? OR CAST(seed AS TEXT)=?)");
@@ -524,6 +529,16 @@ impl Db {
             params_from_iter(args),
         )?;
         Ok((total, rows))
+    }
+
+    /// 漫畫台某個作品畫過的整頁（kind=page）和修好角色的整頁（kind=fix，src＝修的是哪一頁），新的在前
+    pub fn comic_images(&self, comic_id: &str) -> DbResult<Vec<Row>> {
+        self.q(
+            "SELECT id, seed, created, json_extract(params, '$.comic.kind') AS kind, json_extract(params, '$.comic.from') AS src \
+             FROM images WHERE deleted=0 AND json_extract(params, '$.comic.id')=? \
+             AND json_extract(params, '$.comic.kind') IN ('page', 'fix') ORDER BY id DESC LIMIT 300",
+            [comic_id],
+        )
     }
 
     /// 篩選選單用：圖庫裡出現過的模型、LoRA，以及各分類張數
@@ -789,6 +804,32 @@ mod tests {
         assert_eq!(db.q1("SELECT deleted FROM images WHERE id=?", [a]).unwrap().unwrap()["deleted"], json!(2));
         let r = db.image(b).unwrap().unwrap();
         assert_eq!((r["prompt"].as_str(), r["job"].as_str()), (Some("new"), Some("job-b")));
+        drop(db);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn comic_images_find_pages_and_fixes_of_one_project() {
+        let dir = std::env::temp_dir().join(format!("anima_db_comic_{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("t.db");
+        let _ = std::fs::remove_file(&path);
+        let db = Db::open(&path).unwrap();
+        let info = json!({"mode": "txt2img", "prompt": "p"});
+        let add = |name: &str, params: Value| db.add_image(name, "AnimaWeb", "output", &info, &params, None).unwrap();
+        let page = add("a.png", json!({"comic": {"id": "c1", "kind": "page"}}));
+        let fix = add("b.png", json!({"comic": {"id": "c1", "kind": "fix", "from": page}}));
+        add("c.png", json!({"comic": {"id": "c1", "kind": "fix_part", "from": page}}));
+        add("d.png", json!({"comic": {"id": "c2", "kind": "page"}}));
+        add("e.png", json!({}));
+        let gone = add("f.png", json!({"comic": {"id": "c1", "kind": "page"}}));
+        db.run("UPDATE images SET deleted=1 WHERE id=?", [gone]).unwrap();
+        let rows = db.comic_images("c1").unwrap();
+        let got: Vec<(i64, String, Option<i64>)> = rows.iter().map(|r| (r["id"].as_i64().unwrap(), r["kind"].as_str().unwrap_or("").to_string(), r["src"].as_i64())).collect();
+        assert_eq!(got, [(fix, "fix".into(), Some(page)), (page, "page".into(), None)]);
+        // 圖庫「模式」篩選選「漫畫台」：兩個作品的整頁、修好的整頁都算，修到一半的單格（fix_part）和別的圖不算
+        let (n, _) = db.gallery(&GalleryQuery { mode: Some("comic".into()), limit: 50, ..Default::default() }).unwrap();
+        assert_eq!(n, 3);
         drop(db);
         let _ = std::fs::remove_dir_all(&dir);
     }

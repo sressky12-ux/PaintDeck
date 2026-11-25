@@ -10,7 +10,7 @@ function load() {
   const source = fs.readFileSync(path.join(__dirname, '../ui/js/llm.js'), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   const context = vm.createContext({ console, $: () => null, el: () => ({}), api: async () => ({}), toast() {}, app: {}, openPrompt() {}, openCloudSettings() {} });
-  vm.runInContext(source + '\nglobalThis.subject = { brainOptions, moveBlock, removeBlock, reportLines, BUILTIN_ID };', context, { filename: 'llm.js' });
+  vm.runInContext(source + '\nglobalThis.subject = { brainOptions, moveBlock, removeBlock, reportLines, jailbreakTemplate, parseExtra, agentPresetView, BUILTIN_ID };', context, { filename: 'llm.js' });
   return context.subject;
 }
 
@@ -54,4 +54,56 @@ test('每個功能都對到一份可以改的內建指令（預演台除外）',
   const { BUILTIN_ID } = load();
   for (const f of ['agent', 'rewrite', 'translate', 'shotsheet', 'h3writer', 'director']) assert.ok(BUILTIN_ID[f], f);
   assert.equal(BUILTIN_ID.previz, '');
+});
+
+// 2026-11-24 玩家：「破限預設怎麼加？直接導入就回覆格式錯誤」
+test('破限範本：破限段在功能內建指令前面、預填留空、參數照功能', () => {
+  const { jailbreakTemplate } = load();
+  const p = plain(jailbreakTemplate());
+  assert.equal(p.name, '破限範本（助手、改寫可用）');
+  assert.deepEqual(p.blocks.map((b) => b.kind), ['text', 'builtin', 'request']);
+  assert.equal(p.blocks[0].name, '破限');
+  assert.equal(p.blocks[0].role, 'system');
+  assert.equal(p.blocks[0].enabled, true);
+  assert.match(p.blocks[0].content, /貼在這裡/);
+  assert.equal(p.prefill, '');
+  assert.deepEqual(p.params, {});
+  const html = fs.readFileSync(path.join(__dirname, '../ui/index.html'), 'utf8');
+  assert.match(html, /id="lpJailbreak"[^>]*>新增破限範本（給助手用）</);
+});
+
+test('額外請求參數：空白是 null、JSON 物件照收、其他都算錯', () => {
+  const { parseExtra } = load();
+  assert.equal(parseExtra('  '), null);
+  assert.deepEqual(plain(parseExtra('{"reasoning_effort": "low"}')), { reasoning_effort: 'low' });
+  assert.equal(parseExtra('[1]'), false);
+  assert.equal(parseExtra('3'), false);
+  assert.equal(parseExtra('{壞掉'), false);
+});
+
+// 2026-11-24 使用者：「在助手欄位即可改[預設]的設定」
+test('助手欄的預設下拉：跟對照表「生圖助手」那格同一個設定，腦袋照原樣帶回', () => {
+  const { agentPresetView } = load();
+  const presets = [{ id: 'p1', name: '盧克之光' }, { id: 'p2', name: '破限範本' }];
+  const v = plain(agentPresetView({ presets, routes: { agent: { brain: 'page', preset: 'p2' } } }));
+  assert.deepEqual(v.options, [['', '不套'], ['p1', '盧克之光'], ['p2', '破限範本']]);
+  assert.equal(v.value, 'p2');
+  assert.equal(v.brain, 'page');
+  assert.equal(v.note, '');
+  // 沒設定過、讀不到
+  assert.deepEqual(plain(agentPresetView({ presets, routes: {} })), { options: [['', '不套'], ['p1', '盧克之光'], ['p2', '破限範本']], value: '', brain: 'page', note: '' });
+  assert.equal(agentPresetView(null).options.length, 1);
+  // 選的預設被刪了：留一個選項讓下拉顯示得出來，並說明
+  const gone = plain(agentPresetView({ presets, routes: { agent: { brain: 'page', preset: 'x9' } } }));
+  assert.deepEqual(gone.options.at(-1), ['x9', '（選的預設不見了）']);
+  assert.equal(gone.value, 'x9');
+  assert.match(gone.note, /刪掉/);
+  // 對照表把腦袋固定成某組連線：照原樣帶回，並提醒上面的腦袋不算數
+  const fixed = plain(agentPresetView({ presets, routes: { agent: { brain: 'api:abc', preset: null } } }));
+  assert.equal(fixed.brain, 'api:abc');
+  assert.equal(fixed.value, '');
+  assert.match(fixed.note, /腦袋固定/);
+  const html = fs.readFileSync(path.join(__dirname, '../ui/index.html'), 'utf8');
+  assert.match(html, /<select id="agPreset"/);
+  assert.match(html, /id="agPresetEdit"/);
 });

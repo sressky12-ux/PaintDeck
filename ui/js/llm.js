@@ -35,6 +35,45 @@ export function removeBlock(blocks, i) {
   return blocks.filter((_, k) => k !== i);
 }
 
+/**
+ * 「新增破限範本（給助手用）」（2026-11-24 玩家：「破限預設怎麼加？直接導入就回覆格式錯誤」）：
+ * 破限段在功能內建指令前面、預填留空、參數照功能，助手和改寫這些要固定格式回覆的功能也能用
+ */
+export function jailbreakTemplate() {
+  return { id: "", name: "破限範本（助手、改寫可用）",
+    blocks: [{ id: "", name: "破限", role: "system", content: "（把你的破限文字貼在這裡，取代這一行。思維鏈、狀態欄、正文格式、字數這類規定回覆格式的內容不要貼進來）", enabled: true, kind: "text" },
+      { id: "builtin", name: "功能內建指令", role: "system", content: "", enabled: true, kind: "builtin" },
+      { id: "request", name: "功能的請求內容", role: "user", content: "", enabled: true, kind: "request" }],
+    params: {}, prefill: "", squash_system: false, user_name: "User", char_name: "Assistant" };
+}
+
+/**
+ * 助手欄的「預設」下拉（2026-11-24 使用者：「在助手欄位即可改[預設]的設定」）：
+ * 跟對照表「生圖助手」那一格是同一個設定。d＝GET /api/llm。回傳 {options: [[值, 字]], value, brain, note}
+ */
+export function agentPresetView(d) {
+  const r = d?.routes?.agent || {};
+  const list = d?.presets || [];
+  const options = [["", "不套"], ...list.map((p) => [p.id, p.name])];
+  const notes = [];
+  if (r.preset && !list.some((p) => p.id === r.preset)) {
+    options.push([r.preset, "（選的預設不見了）"]);
+    notes.push("選的預設已經刪掉，現在等於不套");
+  }
+  const brain = r.brain || "page";
+  if (brain !== "page") notes.push("API 頁對照表把助手的腦袋固定了，上面選哪顆都不算數");
+  return { options, value: r.preset || "", brain, note: notes.join("；") };
+}
+
+/** 從助手欄跳過來編某一組預設 */
+export async function editPreset(id) {
+  await show();
+  if (!D?.presets.some((x) => x.id === id)) return;
+  F("lpSel").value = id;
+  await loadPreset(id);
+  F("lpSel").scrollIntoView({ block: "center" });
+}
+
 /** 匯入報告 → 一行一件 */
 export function reportLines(report) {
   return (report || []).length ? report.map((r) => "・" + r) : ["・全部照原樣匯入"];
@@ -166,6 +205,8 @@ function paintEditor() {
   F("lpName").value = editing.name;
   F("lpPrefill").value = editing.prefill || "";
   F("lpSquash").checked = !!editing.squash_system;
+  F("lpRewrite").checked = !!editing.params?.rewrite;
+  F("lpExtra").value = editing.params?.extra ? JSON.stringify(editing.params.extra) : "";
   F("lpUser").value = editing.user_name || "";
   F("lpChar").value = editing.char_name || "";
   const pbox = F("lpParams");
@@ -198,6 +239,16 @@ function paintBlocks() {
   });
 }
 
+/** 額外請求參數：空白＝null；JSON 物件照回；其他（壞 JSON、陣列、數字）＝false */
+export function parseExtra(text) {
+  const t = String(text || "").trim();
+  if (!t) return null;
+  try {
+    const v = JSON.parse(t);
+    return v && typeof v === "object" && !Array.isArray(v) ? v : false;
+  } catch { return false; }
+}
+
 async function savePreset() {
   if (!editing) return;
   editing.name = F("lpName").value.trim() || "未命名預設";
@@ -205,8 +256,21 @@ async function savePreset() {
   editing.squash_system = F("lpSquash").checked;
   editing.user_name = F("lpUser").value;
   editing.char_name = F("lpChar").value;
+  const extra = parseExtra(F("lpExtra").value);
+  if (extra === false) { toast("額外請求參數要是一個 JSON 物件，例 {\"reasoning_effort\": \"low\"}", "err"); return; }
+  editing.params = { ...editing.params, rewrite: F("lpRewrite").checked, extra };
   try { editing = await api("/api/llm/preset", { json: editing }); toast("預設存好了", "ok"); await show(); F("lpSel").value = editing.id; }
   catch (e) { toast("存不了：" + e.message, "err"); }
+}
+
+async function addJailbreak() {
+  try {
+    editing = await api("/api/llm/preset", { json: jailbreakTemplate() });
+    await show();
+    F("lpSel").value = editing.id;
+    paintEditor();
+    toast("破限範本建好了：把破限文字貼進「破限」那段、儲存，再到上面的對照表給助手套用", "ok");
+  } catch (e) { toast("建不了：" + e.message, "err"); }
 }
 
 async function delPreset() {
@@ -258,6 +322,7 @@ export function init() {
   F("lfClose").onclick = () => { F("llmForm").hidden = true; };
   F("lpSel").onchange = () => loadPreset(F("lpSel").value);
   F("lpNew").onclick = newPreset;
+  F("lpJailbreak").onclick = addJailbreak;
   F("lpAddBlock").onclick = () => { if (!editing) return; editing.blocks.push({ id: "", name: "新段落", role: "system", content: "", enabled: true, kind: "text" }); paintBlocks(); };
   F("lpSave").onclick = savePreset;
   F("lpDelete").onclick = delPreset;

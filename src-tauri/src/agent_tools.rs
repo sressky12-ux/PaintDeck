@@ -37,8 +37,9 @@ pub struct Tool {
 pub const PAGES: &[&str] = &["gen", "gallery", "assets", "loras", "civitai", "director", "comic", "settings"];
 
 pub const TOOLS: &[Tool] = &[
-    Tool { name: "models", args: "{}", desc: "List the image models on this computer by family, and which one you use now.", zh: "看模型清單" },
-    Tool { name: "set_model", args: r#"{"model":"exact file name from models"}"#, desc: "Switch the image model your generate action uses (its family's default steps and CFG come with it). Use it when the user asks for another model, or when a job needs another family (Qwen 2.1 for edits and text, MOSS for layouts and lettering, Anima for anime tags).", zh: "換生圖模型" },
+    Tool { name: "models", args: "{}", desc: "List the image models on this computer by family, which one you use now, the Anima speed-up LoRAs and which one is on.", zh: "看模型清單" },
+    Tool { name: "set_model", args: r#"{"model":"exact file name from models"}"#, desc: "Switch the image model your generate action uses (its family's default steps and CFG come with it; an Anima speed-up LoRA stays on when you switch between Anima models). Use it when the user asks for another model, or when a job needs another family (Qwen 2.1 for edits and text, MOSS for layouts and lettering, Anima for anime tags).", zh: "換生圖模型" },
+    Tool { name: "set_speed", args: r#"{"turbo":true}"#, desc: "Turn the Anima speed-up (turbo) LoRA on or off: true = the default speed-up LoRA (10 to 12 steps, CFG 1, much faster), an exact speed-up LoRA file name from models = that one, false = off (30 steps, CFG 4, slower, best quality). Use it when the user asks for faster drawing, fewer steps, 加速, turbo or 快一點 (or for best quality: false). Speed-up LoRAs exist only for Anima models that are not turbo models themselves; they are not normal LoRAs, never put them in \"loras\".", zh: "加速" },
     Tool { name: "gallery", args: r#"{"q":"words in the prompt","mode":"txt2img","fav":false,"limit":10}"#, desc: "Search the gallery, newest first: ids, mode, size and the start of each prompt. With no q you get the latest images.", zh: "查圖庫" },
     Tool { name: "image_info", args: r#"{"id":123}"#, desc: "Full details of one gallery image: prompt, negative, model, LoRAs, seed, size.", zh: "看圖的參數" },
     Tool { name: "look", args: r#"{"ids":[123,124]}"#, desc: "See up to 4 gallery images yourself in the next turn (to judge them, compare them, or pick the best).", zh: "看圖" },
@@ -197,6 +198,23 @@ fn text_arg(a: &Map<String, Value>, keys: &[&str]) -> String {
 }
 
 /// 檢查並正規化一次工具呼叫 → (args, 等級, 中文原因)；不合格回傳要退回給模型的英文說明
+/// set_speed 的 turbo：true／false，或加速 LoRA 的檔名（"on"、"off"、"1"、"0" 這類寫法也認）
+fn speed_arg(a: &Map<String, Value>) -> Result<Value, String> {
+    let v = ["turbo", "speed", "lora", "on", "name"].iter().find_map(|k| a.get(*k).filter(|v| !v.is_null()));
+    let bad = || "set_speed needs \"turbo\": true (default speed-up LoRA), false (off) or an exact speed-up LoRA file name from models.".to_string();
+    Ok(match v {
+        Some(Value::Bool(b)) => json!(b),
+        Some(Value::Number(n)) => json!(n.as_f64().is_some_and(|x| x != 0.0)),
+        Some(Value::String(t)) => match t.trim().to_lowercase().as_str() {
+            "false" | "off" | "no" | "none" | "0" | "關" | "關閉" | "不使用" => json!(false),
+            "true" | "on" | "yes" | "default" | "1" | "開" | "開啟" => json!(true),
+            "" => return Err(bad()),
+            _ => json!(t.trim()),
+        },
+        _ => return Err(bad()),
+    })
+}
+
 pub fn check_call(tool: &str, args: &Value) -> Result<(Value, Level, String), String> {
     let Some(t) = find(tool) else {
         return Err(format!(
@@ -237,6 +255,9 @@ pub fn check_call(tool: &str, args: &Value) -> Result<(Value, Level, String), St
                 return Err("set_model needs \"model\": an exact file name from the models tool.".into());
             }
             out.insert("model".into(), json!(m));
+        }
+        "set_speed" => {
+            out.insert("turbo".into(), speed_arg(a)?);
         }
         "gallery" => {
             for k in ["q", "mode", "model"] {
@@ -415,7 +436,7 @@ pub fn docs_section(guide: &str, section: &str) -> String {
 /// 「讓我看」模式：這個工具在主視窗哪一頁做（api 依路徑猜）
 pub fn page_of(tool: &str, args: &Value) -> Option<&'static str> {
     Some(match tool {
-        "edit" | "upscale" | "remove_bg" | "fix" | "outpaint" | "video" | "character_sheet" | "set_model" | "models" => "gen",
+        "edit" | "upscale" | "remove_bg" | "fix" | "outpaint" | "video" | "character_sheet" | "set_model" | "set_speed" | "models" => "gen",
         "gallery" | "image_info" | "look" | "trash" => "gallery",
         "comic" => "comic",
         "assets" => "assets",
@@ -513,6 +534,22 @@ mod tests {
         assert_eq!((a["name"].clone(), a["part"].clone()), (json!("moss"), json!(7)));
         assert!(check_call("guide", &json!({"name": "moss", "part": 0})).is_err());
         assert!(check_call("guide", &json!({"name": "moss"})).unwrap().0.get("part").is_none());
+    }
+
+    #[test]
+    fn set_speed_args() {
+        let turbo = |a: Value| check_call("set_speed", &a).map(|(a, lv, _)| (a["turbo"].clone(), lv));
+        assert_eq!(turbo(json!({"turbo": true})).unwrap(), (json!(true), Level::Normal));
+        assert_eq!(turbo(json!({"turbo": false})).unwrap().0, json!(false));
+        assert_eq!(turbo(json!({"turbo": "off"})).unwrap().0, json!(false));
+        assert_eq!(turbo(json!({"turbo": "ON"})).unwrap().0, json!(true));
+        assert_eq!(turbo(json!({"turbo": 0})).unwrap().0, json!(false));
+        assert_eq!(turbo(json!({"speed": " TurboAnima-V4.safetensors "})).unwrap().0, json!("TurboAnima-V4.safetensors"));
+        assert!(turbo(json!({})).unwrap_err().contains("\"turbo\""));
+        assert!(turbo(json!({"turbo": ""})).is_err());
+        assert!(turbo(json!({"turbo": null})).is_err());
+        assert_eq!(page_of("set_speed", &json!({})), Some("gen"));
+        assert!(tools_text().contains("- set_speed {\"turbo\":true}"));
     }
 
     #[test]

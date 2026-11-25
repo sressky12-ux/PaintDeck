@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="zh-Hant-TW" class="style-a">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>A 風格元件樣張 · 繪匣 PaintDeck</title>
+  <link rel="stylesheet" href="/static/css/fonts.css">
+  <link rel="stylesheet" href="/static/css/app.css">
+  <link rel="stylesheet" href="/static/css/play.css">
+  <link rel="stylesheet" href="/static/css/motion.css">
+  <link rel="stylesheet" href="/static/css/style-a.css">
+  <style>
+    .sg-body { height: auto; padding: var(--a-sp-4); overflow: auto; background: var(--a-case); }
+    .sg-sheet { max-width: 1600px; margin-inline: auto; }
+    .sg-bar { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: var(--a-sp-4); padding: var(--a-sp-5); border-bottom: 1px solid var(--a-lo); }
+    .sg-bar h1 { margin: var(--a-sp-2) 0 0; font-size: var(--a-fz-2xl); }
+    .sg-bar .stripes { width: 8rem; height: var(--a-sp-1); }
+    .sg-themes { display: flex; gap: var(--a-sp-2); }
+    .sg-sheet h2 { margin: var(--a-sp-6) 0 var(--a-sp-3); font-size: var(--a-fz-xl); }
+    .sg-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--a-sp-3); }
+    .sg-wide { grid-template-columns: minmax(0, 1fr); }
+    .sg-cell { min-width: 0; background: var(--a-panel); padding: var(--a-sp-4); border: 1px solid var(--a-lo); border-radius: var(--a-r-md); }
+    .sg-cell h3 { margin: 0 0 var(--a-sp-3); font-size: var(--a-fz-lg); }
+    .sg-states { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--a-sp-4) var(--a-sp-2); }
+    .sg-example { min-width: 0; padding: 0; margin: 0; border: 0; }
+    .sg-example legend { margin-bottom: var(--a-sp-2); padding: 0; color: var(--a-ink-2); font-size: var(--a-fz-xs); }
+    .sg-example > .prog, .sg-example .group > .prog { width: 100%; }
+    .sg-example .empty-state { padding: var(--a-sp-3); }
+    .sg-example .dialog::before { max-width: 100%; }
+    .sg-example .dialog { width: 100%; padding-inline: var(--a-sp-2); }
+    .sg-example .prog > .sg-progress-fill { width: 40%; }
+    .sg-related { display: flex; align-items: center; flex-wrap: wrap; gap: var(--a-sp-2); margin-top: var(--a-sp-4); }
+    .sg-paper { background: var(--a-field); color: var(--a-ink); border-color: var(--a-field-line); }
+    .sg-icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); margin-top: var(--a-sp-5); }
+    .sg-icon { margin: 0; display: grid; justify-items: center; gap: var(--a-sp-2); padding: var(--a-sp-3); border-top: 1px solid var(--a-lo); }
+    .sg-icon figcaption, .sg-map code { font-family: var(--f-data); font-size: var(--a-fz-sm); }
+    .sg-map { width: 100%; border-collapse: collapse; margin-top: var(--a-sp-4); }
+    .sg-map caption { font-size: var(--a-fz-lg); font-weight: 700; text-align: start; padding-block: var(--a-sp-2); }
+    .sg-map th, .sg-map td { border-bottom: 1px solid var(--a-lo); padding: var(--a-sp-1) var(--a-sp-2); text-align: start; }
+    @media (max-width: 850px) { .sg-grid { grid-template-columns: minmax(0, 1fr); } }
+    @media (max-width: 480px) { .sg-states { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+  </style>
+</head>
+<body class="sg-body">
+  <main class="sg-sheet">
+    <header class="sg-bar unit-head">
+      <div><div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div><h1>繪匣 PaintDeck · A 風格元件樣張</h1></div>
+      <div class="sg-themes" role="group" aria-label="樣張主題"><button type="button" class="akey" data-theme-choice="light">淺色</button><button type="button" class="akey" data-theme-choice="dark">深色</button><button type="button" class="akey" data-theme-choice="auto">跟系統</button></div>
+    </header>
+    <h2>按鍵與讀數</h2>
+    <div class="sg-grid">
+      <section class="sg-cell" data-sg="primary-key">
+        <h3>主動作鍵</h3>
+        <div class="sg-states"><template><button class="bigkey" type="button" data-sg-target>生成</button></template></div>
+        <div class="sg-related"><span>危險動作</span><button type="button" class="btn danger">刪除</button></div>
+      </section>
+      <section class="sg-cell" data-sg="akey">
+        <h3>次要鍵</h3>
+        <div class="sg-states"><template><button class="akey" type="button" data-sg-target>儲存</button></template></div>
+      </section>
+      <section class="sg-cell" data-sg="minikey">
+        <h3>小鍵</h3>
+        <div class="sg-states"><template><button class="minikey txt" type="button" data-sg-target>編輯</button></template></div>
+      </section>
+      <section class="sg-cell" data-sg="piano">
+        <h3>模式鍵</h3>
+        <div class="sg-states"><template><div class="piano row"><button type="button" data-sg-target>文生圖</button></div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="segmented">
+        <h3>分段切換</h3>
+        <div class="sg-states"><template><div class="rocker" role="group" aria-label="顯示尺寸"><i class="cap" aria-hidden="true"></i><button type="button" role="radio" aria-checked="false">小</button><button type="button" role="radio" aria-checked="true">中</button><button type="button" role="radio" aria-checked="false" data-sg-target>大</button></div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="readout">
+        <h3>機台讀數</h3>
+        <div class="sg-states"><template><div class="readout" data-sg-target><span>取樣</span><span class="a">08/20</span></div></template></div>
+        <div class="sg-related"><span class="vfd g">就緒</span><span class="vfd">08/20</span><span class="vfd r">錯誤</span></div>
+      </section>
+    </div>
+    <h2>輸入與選擇</h2>
+    <div class="sg-grid">
+      <section class="sg-cell" data-sg="text-input">
+        <h3>單行輸入</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">作品名稱</span><input type="text" value="午後月台" data-sg-target></label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="textarea">
+        <h3>多行輸入</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">備註</span><textarea rows="2" data-sg-target>保留窗邊的光影</textarea></label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="select">
+        <h3>下拉選單</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">方式</span><select data-sg-target><option>一般重繪</option><option>局部重繪</option></select></label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="checkbox">
+        <h3>勾選</h3>
+        <div class="sg-states"><template><label class="check inline"><input type="checkbox" data-sg-target>保留種子</label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="switch">
+        <h3>開關</h3>
+        <div class="sg-states"><template><label class="check inline"><input type="checkbox" role="switch" data-sg-target>按鍵音</label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="slider">
+        <h3>滑桿</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">強度</span><input type="range" min="0" max="100" value="40" data-sg-target></label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="chip">
+        <h3>標籤</h3>
+        <div class="sg-states"><template><div class="chips"><button type="button" class="chip" data-sg-target>自然光</button></div></template></div>
+      </section>
+    </div>
+    <h2>面板與回饋</h2>
+    <div class="sg-grid">
+      <section class="sg-cell" data-sg="panel-head">
+        <h3>面板標頭</h3>
+        <div class="sg-states"><template><div class="dock-head"><b class="dock-title">模型與輸入</b><button type="button" class="dock-fold" aria-label="收合面板" data-sg-target>▾</button></div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="card">
+        <h3>縮圖卡片</h3>
+        <div class="sg-states"><template><article class="card pick" tabindex="0" data-sg-target><div class="ph"><img class="ph-img" src="http://127.0.0.1:8188/view?filename=txt2img_02300_.png&amp;subfolder=AnimaWeb&amp;type=output" alt="測試站生成的範例作品"></div><div class="bd"><span class="badge">成品</span><b class="t">圖庫作品</b><span class="st">No. 02300</span></div></article></template></div>
+      </section>
+      <section class="sg-cell" data-sg="dialog">
+        <h3>對話框</h3>
+        <div class="sg-states"><template><div class="dialog"><b>儲存設定</b><button type="button" class="akey" data-sg-target>確認</button></div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="toast">
+        <h3>提示訊息</h3>
+        <div class="sg-states"><template><div class="toast ok" role="status" data-sg-target>設定已儲存</div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="progress">
+        <h3>進度</h3>
+        <div class="sg-states"><template><div class="group"><span class="sub">生成中 · 40%</span><div class="prog" role="progressbar" aria-label="生成進度" aria-valuenow="40" aria-valuemin="0" aria-valuemax="100" data-sg-target><div class="sg-progress-fill"></div></div></div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="empty">
+        <h3>空畫面</h3>
+        <div class="sg-states"><template><div class="empty-state" data-sg-target>尚無成品</div></template></div>
+      </section>
+      <section class="sg-cell" data-sg="waiting">
+        <h3>等待中</h3>
+        <div class="sg-states"><template><div class="row" role="status"><span class="spinner" aria-hidden="true" data-sg-target></span>載入中</div></template></div>
+      </section>
+    </div>
+    <h2>提示詞框比較</h2>
+    <div class="sg-grid">
+      <section class="sg-cell" data-sg="prompt-paper">
+        <h3>紙面提示詞框</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">提示詞</span><textarea class="sg-paper" rows="3" data-sg-target>月台、午後的自然光</textarea></label></template></div>
+      </section>
+      <section class="sg-cell" data-sg="prompt-screen">
+        <h3>螢幕提示詞框</h3>
+        <div class="sg-states"><template><label class="group"><span class="sub">提示詞</span><span class="scr"><textarea rows="3" data-sg-target>月台、午後的自然光</textarea></span></label></template></div>
+      </section>
+    </div>
+    <h2>圖示與符號</h2>
+    <div class="sg-grid sg-wide">
+      <section class="sg-cell" data-sg="icons">
+        <h3>線條圖示</h3>
+        <div class="sg-states"><template><button type="button" class="minikey" aria-label="收藏" data-sg-target data-sg-icon="star"></button></template></div>
+        <div class="sg-icons" id="icon-list"></div>
+        <table class="sg-map"><caption>符號與圖示對照</caption><thead><tr><th scope="col">介面符號</th><th scope="col">線條圖示</th><th scope="col">名稱</th></tr></thead><tbody id="glyph-map"></tbody></table>
+      </section>
+    </div>
+  </main>
+  <script type="module">
+    import { ICONS, ic } from '/static/js/deck.js';
+    import { GLYPH_ICON } from '/static/js/glyph_icons.js';
+
+    const root = document.documentElement;
+    const choices = document.querySelectorAll('[data-theme-choice]');
+    function showTheme() {
+      for (const button of choices) {
+        const chosen = button.dataset.themeChoice === (root.dataset.theme || 'auto');
+        button.classList.toggle('on', chosen);
+        button.setAttribute('aria-pressed', String(chosen));
+      }
+    }
+    for (const button of choices) button.addEventListener('click', () => {
+      if (button.dataset.themeChoice === 'auto') delete root.dataset.theme;
+      else root.dataset.theme = button.dataset.themeChoice;
+    });
+    new MutationObserver(showTheme).observe(root, { attributes: true, attributeFilter: ['data-theme'] });
+    showTheme();
+
+    const states = { normal: '一般', hover: '滑過', active: '按下', selected: '選中', disabled: '停用', focus: '焦點' };
+    for (const source of document.querySelectorAll('.sg-states template')) {
+      for (const [state, label] of Object.entries(states)) {
+        const sample = document.createElement('fieldset');
+        sample.className = 'sg-example';
+        const legend = document.createElement('legend');
+        legend.textContent = label;
+        sample.append(legend, source.content.cloneNode(true));
+        const target = sample.querySelector('[data-sg-target]');
+        if (target.dataset.sgIcon) target.innerHTML = ic(state === 'selected' ? 'starOn' : target.dataset.sgIcon);
+        if (state === 'selected') {
+          target.classList.add('on');
+          if (target.matches('.card.pick')) target.classList.add('picked');
+          if (target.matches('input[type=checkbox]')) target.checked = true;
+          if (target.matches('select')) target.selectedIndex = 1;
+          if (target.matches('input[type=range]')) target.value = 70;
+          if (target.matches('[role=radio]')) {
+            for (const radio of sample.querySelectorAll('[role=radio]')) radio.setAttribute('aria-checked', String(radio === target));
+            target.parentElement.style.setProperty('--pos', '2');
+          }
+        } else if (state === 'disabled') {
+          sample.disabled = true;
+          if ('disabled' in target) target.disabled = true;
+          else { target.setAttribute('aria-disabled', 'true'); target.inert = true; }
+        } else if (state !== 'normal') {
+          target.dataset.sgState = state;
+        }
+        source.parentElement.append(sample);
+      }
+    }
+
+    const catalog = document.querySelector('#icon-list');
+    for (const name of Object.keys(ICONS)) {
+      const figure = document.createElement('figure');
+      figure.className = 'sg-icon';
+      figure.innerHTML = ic(name);
+      const caption = document.createElement('figcaption');
+      caption.textContent = name;
+      figure.append(caption);
+      catalog.append(figure);
+    }
+    const mapping = document.querySelector('#glyph-map');
+    for (const [glyph, name] of Object.entries(GLYPH_ICON)) {
+      const row = mapping.insertRow();
+      row.insertCell().textContent = glyph;
+      row.insertCell().innerHTML = ic(name);
+      const code = document.createElement('code');
+      code.textContent = name;
+      row.insertCell().append(code);
+    }
+  </script>
+</body>
+</html>

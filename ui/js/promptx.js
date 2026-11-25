@@ -19,10 +19,11 @@ export function init(c) {
       }
     }, true);
   }
-  const hl = F("promptHl");
-  ctx.prompt.addEventListener("input", refresh);
-  ctx.prompt.addEventListener("scroll", () => { hl.scrollTop = ctx.prompt.scrollTop; });
-  new ResizeObserver(() => { hl.style.height = ctx.prompt.offsetHeight + "px"; }).observe(ctx.prompt);
+  for (const [ta, hl] of [[ctx.prompt, F("promptHl")], [ctx.negative, F("negHl")]]) {
+    ta.addEventListener("input", refresh);
+    ta.addEventListener("scroll", () => { hl.scrollTop = ta.scrollTop; });
+    new ResizeObserver(() => { hl.style.height = ta.offsetHeight + "px"; }).observe(ta);
+  }
   F("recentSel").onchange = () => {
     const v = F("recentSel").value;
     F("recentSel").value = "";
@@ -45,10 +46,8 @@ export function init(c) {
 // ---------------------------------------------------------------- 高亮與長度
 const esc = (s) => s.replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
 
-export function refresh() {
-  if (!ctx) return;
-  const v = ctx.prompt.value;
-  const qwen = ["qwen21", "moss"].includes(ctx.family());
+function highlight(ta, hl, qwen) {
+  const v = ta.value;
   // 一次掃過：(文字:權重)、{a|b}、<image1>、@畫師
   const re = /\(((?:\\.|[^()\\])*?):\s*(-?\d+(?:\.\d+)?)\)|\{[^{}]*\|[^{}]*\}|<image\d+>|<image\?>|(?<=^|[,\s])@[^,\n]+/g;
   let html = "", last = 0, weights = 0;
@@ -62,8 +61,17 @@ export function refresh() {
     html += `<mark class="${cls}">${esc(m[0])}</mark>`;
     last = m.index + m[0].length;
   }
-  F("promptHl").innerHTML = html + esc(v.slice(last)) + "\n";
-  F("promptHl").scrollTop = ctx.prompt.scrollTop;
+  hl.innerHTML = html + esc(v.slice(last)) + "\n";
+  hl.scrollTop = ta.scrollTop;
+  return weights;
+}
+
+export function refresh() {
+  if (!ctx) return;
+  const v = ctx.prompt.value;
+  const qwen = ["qwen21", "moss"].includes(ctx.family());
+  const weights = highlight(ctx.prompt, F("promptHl"), qwen);
+  highlight(ctx.negative, F("negHl"), qwen);
 
   // 長度：tag 數、英文字數；中文字另外算
   const tags = v.split(/[,\n]/).map((s) => s.trim()).filter(Boolean).length;

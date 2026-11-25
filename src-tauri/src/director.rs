@@ -325,15 +325,65 @@ pub fn layout_rule(seg: &Value) -> String {
 }
 
 // ================================================================ 讀回模型輸出
-/// 從文字裡第一個 { 讀一個 JSON 物件；後面多出來的字（9B 偶爾多打一個 }）不管
+/// 從文字裡讀一個 JSON 物件；後面多出來的字（9B 偶爾多打一個 }）不管。
+/// 先拿掉 <think>／<thinking> 思維鏈，再從左到右每個 { 都試，第一個讀得懂的物件就是：
+/// 前面有 {{char}}、狀態欄 {HP:100} 這類帶大括號的字也讀得到（2026-11-24 破限預設「回覆格式不對」）
 pub fn json_in(text: &str) -> Option<Map<String, Value>> {
-    let raw = &text[text.find('{')?..];
+    json_where(text, |_| true)
+}
+
+/// 同 json_in，但物件要有其中一個鍵。知道自己要哪些欄位的呼叫端用（助手）：外層 JSON 壞掉時不會撿到裡面的小物件，
+/// 讀不到就回 None，呼叫端的修補（agent.rs 的 repair_*）照樣接手
+pub fn json_with(text: &str, keys: &[&str]) -> Option<Map<String, Value>> {
+    json_where(text, |m| keys.iter().any(|k| m.contains_key(*k)))
+}
+
+fn json_where(text: &str, ok: impl Fn(&Map<String, Value>) -> bool) -> Option<Map<String, Value>> {
+    // 回覆本身就是完整物件時直接讀；字串裡的標籤是資料。
+    if let Some(m) = text.find('{').and_then(|i| serde_json::from_str::<Map<String, Value>>(&text[i..]).ok()).filter(&ok) {
+        return Some(m);
+    }
+    let t = strip_think(text);
     let first = |s: &str| match serde_json::Deserializer::from_str(s).into_iter::<Value>().next() {
         Some(Ok(Value::Object(m))) => Some(m),
         _ => None,
     };
-    // 模型常在字串裡直接換行（JSON 不允許）：字串裡的控制字元改成跳脫再讀一次
-    first(raw).or_else(|| first(&escape_controls(raw)))
+    t.match_indices('{').find_map(|(i, _)| {
+        let raw = &t[i..];
+        // 模型常在字串裡直接換行（JSON 不允許）：字串裡的控制字元改成跳脫再讀一次
+        first(raw).or_else(|| first(&escape_controls(raw))).filter(|m| ok(m))
+    })
+}
+
+/// 拿掉 <think>…</think>、<thinking>…</thinking>（破限預設常叫模型先寫思維鏈，裡面常有大括號）；
+/// 開頭的標籤沒寫出來（被預填吃掉、或模型自己漏了）只剩收尾標籤：砍到收尾標籤為止
+pub(crate) fn strip_think(text: &str) -> std::borrow::Cow<'_, str> {
+    if !text.contains('<') { return text.into(); }
+    // 完整的 JSON 物件當成一塊資料。進入思維鏈後只找結尾，裡面寫了一半的引號不用配對。
+    static TOKEN: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(||
+        regex::Regex::new(r"(?i)\{|</?think(?:ing)?\b[^>]*>").unwrap());
+    static CLOSE: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(||
+        regex::Regex::new(r"(?i)</think(?:ing)?\s*>").unwrap());
+    let mut out = String::new();
+    let mut kept = 0;
+    let mut pos = 0;
+    while let Some(m) = TOKEN.find_at(text, pos) {
+        pos = m.end();
+        if m.as_str() == "{" {
+            let mut obj = serde_json::Deserializer::from_str(&text[m.start()..]).into_iter::<Map<String, Value>>();
+            if matches!(obj.next(), Some(Ok(_))) { pos = m.start() + obj.byte_offset(); }
+        } else if m.as_str().starts_with("</") {
+            out.clear();
+            kept = pos;
+        } else if let Some(end) = CLOSE.find_at(text, pos) {
+            out.push_str(&text[kept..m.start()]);
+            pos = end.end();
+            kept = pos;
+        }
+    }
+    if kept == 0 { return text.into(); }
+    out.push_str(&text[kept..]);
+    out.into()
 }
 
 /// 只動 JSON 字串裡面的換行、tab 等控制字元
@@ -586,6 +636,39 @@ mod tests {
         assert!(json_in("{\"a\": \"沒關\n}").is_none());
         // 結尾多一個 }、後面還有閒聊
         assert_eq!(json_in("好的：{\"a\":{\"b\":1},\"c\":\"x\"}}\n以上").unwrap()["c"], json!("x"));
+    }
+
+    /// 2026-11-24 玩家：「導入破限預設，助手就回覆格式錯誤」：JSON 前面多了思維鏈、{{char}}、狀態欄
+    #[test]
+    fn json_in_skips_jailbreak_preambles() {
+        let j = "{\"action\":\"reply\",\"message\":\"好\"}";
+        let think = format!("<thinking>\n使用者要 {{角色}}，先想 {{構圖}} {{\"a\":1}}\n</thinking>\n{j}");
+        assert_eq!(json_in(&think).unwrap()["action"], json!("reply"), "思維鏈裡的大括號跳過");
+        assert_eq!(json_in(&format!("<think>{{\"x\":1}}</think>{j}")).unwrap()["action"], json!("reply"));
+        assert_eq!(json_in(&format!("先想一下 {{\"x\":1}}\n</think>\n{j}")).unwrap()["action"], json!("reply"), "開頭標籤被預填吃掉，只剩收尾");
+        assert_eq!(json_in(&format!("好的，{{{{char}}}} 明白了：\n{j}")).unwrap()["message"], json!("好"), "{{char}} 跳過");
+        assert_eq!(json_in(&format!("【狀態欄】{{HP:100}} {{MP:50}}\n{j}")).unwrap()["action"], json!("reply"), "狀態欄跳過");
+        // 外接 API 接回預填 { 之後
+        assert_eq!(json_in(&format!("{{{}", &j[1..])).unwrap()["action"], json!("reply"));
+        // 本機已經連預填一起回、又多接了一次 {：第二個 { 讀得到
+        assert_eq!(json_in(&format!("{{{j}")).unwrap()["action"], json!("reply"));
+        // 有鍵名要求：外層壞掉時不撿裡面的小物件
+        let broken = "{\"action\":\"generate\",\"prompt\":\"a\" \"oops\", \"loras\":[{\"name\":\"x\"}]}";
+        assert_eq!(json_in(broken).unwrap()["name"], json!("x"));
+        assert!(json_with(broken, &["action", "prompt"]).is_none());
+        assert_eq!(json_with(&format!("{{HP:100}} {{\"name\":\"x\"}} {j}"), &["action"]).unwrap()["message"], json!("好"));
+    }
+
+    #[test]
+    fn keep_thinking_markup_in_json_values() {
+        assert_eq!(crate::pe::clean_reply("Write </thinking> on the sign."), "Write </thinking> on the sign.");
+        for msg in ["Keep <thinking>x</thinking> here", "Keep </thinking> here", "Keep <think>x</think> here"] {
+            let raw = json!({"action": "reply", "message": msg}).to_string();
+            assert_eq!(json_in(&raw).unwrap()["message"], msg);
+            assert_eq!(json_with(&format!("Answer: {raw}"), &["action"]).unwrap()["message"], msg);
+            let wrapped = format!("<thinking>unfinished quote \"</thinking> {raw} done");
+            assert_eq!(json_in(&crate::pe::clean_reply(&wrapped)).unwrap()["message"], msg);
+        }
     }
 
     #[test]

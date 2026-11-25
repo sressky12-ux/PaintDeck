@@ -73,6 +73,7 @@ pub async fn projects(State(app): State<Shared>) -> ApiResult {
 }
 
 pub async fn project_get(State(app): State<Shared>, UrlPath(id): UrlPath<String>) -> ApiResult {
+    adopt(&app, &id).await?;
     let mut p = load(&app, &id)?;
     p["running"] = json!(app.comic.running(&id));
     ok(p)
@@ -127,6 +128,13 @@ pub async fn run_remove(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         if let Some(a) = p["runs"].as_array_mut() {
             a.retain(|r| r["page"].as_i64() != Some(page));
         }
+        // 記住是使用者自己拿掉的：讀作品時不要再從圖庫補回來（comic::adopt_runs）
+        let mut hidden = p["runs_hidden"].as_array().cloned().unwrap_or_default();
+        if !hidden.contains(&json!(page)) {
+            hidden.push(json!(page));
+        }
+        let skip = hidden.len().saturating_sub(500);
+        p["runs_hidden"] = json!(hidden[skip..]);
     })
     .await?;
     ok(json!({"ok": true}))
@@ -247,12 +255,37 @@ async fn cancel_jobs(app: &Shared, pids: &[String]) {
     app.pool.cancel(pids).await;
 }
 
-/// 結果清單：最新的放最前面，最多留 60 筆
+/// 結果清單：最新的放最前面，最多留 MAX_RUNS 筆。同一張可能已經被 adopt 從圖庫補進來了：拿掉舊的那筆再放
 fn push_run(p: &mut Value, run: Value) {
     let mut list = p["runs"].as_array().cloned().unwrap_or_default();
+    list.retain(|r| r["page"] != run["page"]);
     list.insert(0, run);
-    list.truncate(60);
+    list.truncate(c::MAX_RUNS);
     p["runs"] = json!(list);
+}
+
+/// 讀作品前，把圖庫裡有、結果清單漏記的補回去（見 comic::adopt_runs）
+async fn adopt(app: &Shared, id: &str) -> Result<(), ApiError> {
+    let found: Vec<c::Found> = app
+        .db
+        .comic_images(id)?
+        .iter()
+        .map(|r| c::Found {
+            id: r["id"].as_i64().unwrap_or(0),
+            kind: tx(&r["kind"]),
+            from: r["src"].as_i64(),
+            seed: r["seed"].as_i64(),
+            at: r["created"].as_f64(),
+        })
+        .collect();
+    if found.is_empty() || !c::adopt_runs(&mut load(app, id)?, &found) {
+        return Ok(());
+    }
+    update(app, id, |p| {
+        c::adopt_runs(p, &found);
+    })
+    .await
+    .map(|_| ())
 }
 
 /// 畫這一頁：{id, count?}。MOSS-Image 一次畫完整頁（格子、台詞、狀聲詞都在同一張圖裡）

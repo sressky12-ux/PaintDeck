@@ -19,7 +19,7 @@ const offGen = () => !$("#page-gen").classList.contains("on");
 
 export function capsSpec() {
   return { host: $("#capRow"), chips: {
-    source: { label: "ENGINE", visible: offGen, summary: () => fmtModel($("#model").selectedOptions[0]?.textContent.trim() || "—") },
+    source: { label: document.documentElement.classList.contains("style-a") ? "模型" : "ENGINE", visible: offGen, summary: () => fmtModel($("#model").selectedOptions[0]?.textContent.trim() || "—") },
     lora: { label: "LORA", summary: () => fmtCount($$("#loraStack .lora-item:not(.off)").length) },
     params: { label: "尺寸", visible: offGen, summary: () => {
       if (!$("#autoSizeRow").hidden && $("#autoSize").checked) return $("#sizeInfo").textContent;
@@ -37,15 +37,19 @@ export function refreshChips() {
   dock?.refreshCaps();
 }
 
-// 成品動作（#viewActions）放哪（2026-11-23 左右兩欄）：右區打開、「這張圖」那塊沒收起 → 放在那塊面板裡分組攤開；
-// 右區收起（「任務」鍵）、那塊收起、視窗太窄側欄變細條 → 搬到觀景窗下面排成一排。兩種都一直看得到，不用滑鼠停在圖上
-export function placeActs() {
-  if (!dock) return;   // 版面第一次排好時 init 還沒跑：init 最後會再叫一次
-  const acts = $("#viewActions");
-  const inPanel = dock.zoneOpen("right") && !dock.layout().folded.includes("imgacts");
-  const host = inPanel ? $('[data-dock="imgacts"]') : $("#page-gen .dock-main .monitor");
-  if (host && acts.parentElement !== host) host.append(acts);
-  acts.classList.toggle("under", !inPanel);
+// 模式列可換行、讀數列和底框高度也隨字級變動。扣掉觀景窗外框後再平分可用空間。
+function watchViewer() {
+  const page = $("#page-gen"), monitor = $(".monitor", page), viewer = $(".viewer", monitor);
+  const bottom = $('[data-zone="bottom"]', page);
+  const measure = () => {
+    const m = monitor.getBoundingClientRect().height, v = viewer.getBoundingClientRect().height;
+    if (!m || !v) return;
+    const limit = Math.floor((m + bottom.getBoundingClientRect().height) / 2 - (m - v));
+    page.style.setProperty("--compose-limit", Math.max(0, limit) + "px");
+  };
+  const observer = new ResizeObserver(measure);
+  for (const node of [monitor, viewer, bottom]) observer.observe(node);
+  measure();
 }
 
 export function init(api) {
@@ -87,16 +91,21 @@ export function init(api) {
     menu.hidden = !show;
     more.setAttribute("aria-expanded", String(show));
   }
-  more.onclick = () => setMenu(menu.hidden);   // 「⋯」現在是藏起來的空殼（按鈕都攤開在「這張圖」），留著不影響
+  more.onclick = () => {
+    setMenu(menu.hidden);
+    if (menu.hidden) more.focus();
+    else menu.querySelector("[role=menuitem]:not([hidden])")?.focus();
+  };
   menu.addEventListener("click", (e) => { if (e.target.closest("[data-act]")) setMenu(false); });
   document.addEventListener("pointerdown", (e) => {
-    if (!menu.hidden && !e.target.closest("#viewActions")) setMenu(false);
+    if (!menu.hidden && !menu.contains(e.target) && !more.contains(e.target)) setMenu(false);
   });
   document.addEventListener("keydown", (e) => {
     if (!menu.hidden && e.key === "Escape") { setMenu(false); more.focus(); }
   });
+  if (document.documentElement.classList.contains("style-a")) $("#stageQueue").textContent = "佇列 · 0";
   refresh();
-  placeActs();
+  watchViewer();
 }
 
 export function taskCards(jobs, max = 4) {
@@ -125,7 +134,7 @@ export function renderTasks(jobs) {
     return card;
   });
   const active = jobs.filter((j) => ["running", "queued"].includes(j.status)).length;
-  $("#stageQueue").textContent = `QUEUE · ${active}`;
+  $("#stageQueue").textContent = document.documentElement.classList.contains("style-a") ? `佇列 · ${active}` : `QUEUE · ${active}`;
   $("#stageTasksN").textContent = String(active);
   $("#stageTasksN").hidden = !active;
   $("#stageTasks").replaceChildren(...(cards.length ? cards : [el("p", { class: "muted sm" }, "目前沒有任務。")]));

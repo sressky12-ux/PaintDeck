@@ -471,7 +471,8 @@ static NOCT_LEAD: LazyLock<Regex> = LazyLock::new(|| {
 
 /// 通用模型的回覆：去掉 <think> 和 ``` 圍欄
 pub fn clean_reply(raw: &str) -> String {
-    let text = THINK.replace_all(raw, "");
+    // 結構化回覆的字串要保留原文；純文字沿用只移除成對 <think> 的規則。
+    let text = if raw.contains('{') { crate::director::strip_think(raw) } else { THINK.replace_all(raw, "") };
     FENCE.replace_all(strip(&text), "").trim().to_string()
 }
 
@@ -501,6 +502,7 @@ pub struct Remote {
     pub key: Option<String>,
     pub model: String,
     pub api: bool,
+    pub provider: String,
 }
 
 /// AI 改寫這一次走哪裡（API 頁的總機選的）：remote＝外接 API 或雲端（None＝本機），preset＝指令預設。
@@ -530,6 +532,33 @@ impl Via {
 
 tokio::task_local! {
     static VIA: std::sync::Arc<Via>;
+    static RETRY_SPENT: std::cell::Cell<bool>;
+}
+
+/// 每次格式解析和 API 共用一次重送。並行的翻譯／改寫各有自己的額度。
+pub(crate) async fn format_attempt<T>(attempt: i64, call: impl std::future::Future<Output = T>) -> (T, bool) {
+    RETRY_SPENT.scope(std::cell::Cell::new(attempt > 0), async { (call.await, RETRY_SPENT.with(std::cell::Cell::get)) }).await
+}
+
+fn claim_refusal_retry() -> bool {
+    RETRY_SPENT.try_with(|spent| !spent.replace(true)).unwrap_or(true)
+}
+
+fn take_rewrite_flag(body: &mut Value) -> bool {
+    body.as_object_mut().and_then(|m| m.remove(crate::brains::REWRITE_FLAG)) == Some(Value::Bool(true))
+}
+
+/// 逐次退掉不相容的欄位；使用者自填的 extra_body 要保留。
+fn api_400_fallback(body: &mut Value, added_safety: &mut bool) -> bool {
+    let Some(obj) = body.as_object_mut() else { return false };
+    if obj.remove("thinking").is_some() { return true; }
+    if !std::mem::take(added_safety) { return false; }
+    let Some(extra) = obj.get_mut("extra_body").and_then(Value::as_object_mut) else { return false };
+    let Some(google) = extra.get_mut("google").and_then(Value::as_object_mut) else { return false };
+    google.remove("safety_settings");
+    if google.is_empty() { extra.remove("google"); }
+    if extra.is_empty() { obj.remove("extra_body"); }
+    true
 }
 
 fn via() -> Option<std::sync::Arc<Via>> {
@@ -2339,6 +2368,14 @@ struct Emitter {
 }
 
 impl Emitter {
+    async fn wait_to_resend(&self) -> Result<(), Fail> {
+        tokio::select! {
+            _ = self.cancel.cancelled() => Err(Fail::Cancelled),
+            _ = self.tx.closed() => Err(Fail::Cancelled),
+            _ = tokio::time::sleep(Duration::from_millis(2500)) => self.check(),
+        }
+    }
+
     async fn emit(&self, ev: &str, data: Value) -> Result<(), Fail> {
         if matches!(ev, "status" | "error" | "cancelled" | "result") {
             crate::diagnostics::event("llm_sse", json!({"event":ev,"data":data}));
@@ -2768,7 +2805,7 @@ impl Service {
         };
         let mut b = body.clone();
         if v.preset.is_some() {
-            b["messages"] = crate::brains::apply(v.preset.as_ref(), &body["messages"]);
+            b["messages"] = crate::brains::apply(v.preset.as_ref(), &body["messages"], crate::brains::format_note("rewrite"));
         }
         let params = v.preset.as_ref().map(|p| p.params.clone()).unwrap_or_default();
         match &v.remote {
@@ -2777,7 +2814,8 @@ impl Service {
                 let mt = b["max_tokens"].as_i64().unwrap_or(4096);
                 let mut ab = api_body(&r.model, &b["messages"], t, mt, false);
                 crate::brains::apply_params(&mut ab, &params, true);
-                self.send_api(r, ab, em, zh).await
+                let (text, think, t) = self.send_api(r, ab, em, zh).await?;
+                Ok((crate::brains::with_prefill(v.preset.as_ref(), &text), think, t))
             }
             Some(r) => {
                 crate::brains::apply_params(&mut b, &params, false);
@@ -3076,7 +3114,7 @@ impl Service {
                 }
                 em.emit("status", json!({"phase": "generating", "msg": "改寫中…"}))
                     .await?;
-                (raw, reasoning, timings) = self
+                let (reply, spent) = format_attempt(attempt, self
                     .chat(
                         core,
                         &tune_for(
@@ -3095,8 +3133,8 @@ impl Service {
                         ),
                         em,
                         false,
-                    )
-                    .await?;
+                    )).await;
+                (raw, reasoning, timings) = reply?;
                 parsed = parse_output(&raw, task, prev);
                 if let Some(p) = &parsed {
                     let missing = missing_visible_text(&p.prompt, request);
@@ -3106,18 +3144,20 @@ impl Service {
                             a.push(json!({"role":"user","content":format!("Your rewritten prompt omitted these exact strings to display in the image: {}. Include every string verbatim, in quotes, at its requested position. Return the complete corrected JSON.", dumps(&json!(missing)))}));
                         }
                         parsed = None;
+                        if spent { break; }
                         continue;
                     }
                 }
                 // Anima 只給 tag、沒寫英文句子：換種子再寫一次，第二次還是沒有就用這份
                 if task == "anima"
                     && attempt == 0
+                    && !spent
                     && parsed.as_ref().is_some_and(|p| !anima_has_sentences(&p.prompt))
                 {
                     eprintln!("Anima 改寫沒有英文句子，換種子重寫");
                     continue;
                 }
-                if parsed.is_some() {
+                if parsed.is_some() || spent {
                     break;
                 }
                 eprintln!(
@@ -3586,9 +3626,9 @@ impl Service {
                         let mut out = None;
                         let mut timings = json!({});
                         for attempt in 0..2 {
-                            let (raw, _, t) = self
-                                .chat(core, &tune_for(&model_name, payload(&msgs, temperature, seed + attempt, false, Some(1500), true)), em, false)
-                                .await?;
+                            let (reply, spent) = format_attempt(attempt, self
+                                .chat(core, &tune_for(&model_name, payload(&msgs, temperature, seed + attempt, false, Some(1500), true)), em, false)).await;
+                            let (raw, _, t) = reply?;
                             timings = t;
                             out = json_obj(&raw).and_then(|o| {
                                 let de = o.get("details").map(str_of).unwrap_or_default();
@@ -3599,13 +3639,13 @@ impl Service {
                                         v => v.map(str_of).unwrap_or_default(),
                                     };
                                     // 沒有逗號＝tag 黏成一串分不開：第一次重寫，第二次就只用程式加的 tag
-                                    let tags = if tags.contains(',') { tags } else if attempt == 0 { return None } else { String::new() };
+                                    let tags = if tags.contains(',') { tags } else if !spent { return None } else { String::new() };
                                     return Some(p.assemble_anima(&tags, &de));
                                 }
                                 let op = o.get("opening").map(str_of).filter(|s| !s.trim().is_empty())?;
                                 Some(p.assemble(&op, &de))
                             });
-                            if out.is_some() {
+                            if out.is_some() || spent {
                                 break;
                             }
                             em.emit("reset", json!({})).await?;
@@ -3780,7 +3820,7 @@ impl Service {
         temperature: f64,
         model: Option<&str>,
     ) -> Result<String, String> {
-        self.general_chat_local(rid, system, user, images, max_tokens, temperature, model, None).await
+        self.general_chat_local(rid, system, user, images, max_tokens, temperature, model, None, None).await
     }
 
     /// 本機那條，可以套指令預設（API 頁）
@@ -3795,6 +3835,7 @@ impl Service {
         temperature: f64,
         model: Option<&str>,
         preset: Option<&crate::brains::Preset>,
+        format_note: Option<&str>,
     ) -> Result<String, String> {
         let core = self
             .core
@@ -3824,7 +3865,7 @@ impl Service {
                 parts.push(json!({"type": "text", "text": user}));
                 Value::Array(parts)
             };
-            let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]));
+            let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]), format_note);
             crate::diagnostics::snapshot("general_chat_request",&json!({"rid":rid,"messages":msgs,"max_tokens":max_tokens,"temperature":temperature,"kind":kind,"model":model_name}));
             let _g = self.acquire(&em).await?;
             self.ensure(&core, kind, self.ngl(), &em).await?;
@@ -3857,12 +3898,13 @@ impl Service {
         brain: &crate::brains::Brain,
         cloud: Option<&Remote>,
         preset: Option<&crate::brains::Preset>,
+        format_note: Option<&str>,
     ) -> Result<String, String> {
         use crate::brains::Brain;
         let (remote, api) = match brain {
             Brain::Local(m) => {
                 let m = Some(m.as_str()).filter(|m| !m.is_empty() && *m != "auto" && *m != "page");
-                return self.general_chat_local(rid, system, user, images, max_tokens, temperature, m, preset).await;
+                return self.general_chat_local(rid, system, user, images, max_tokens, temperature, m, preset, format_note).await;
             }
             Brain::Cloud => (cloud.ok_or("雲端斷線了：到「雲端」那裡看狀態")?, false),
             Brain::Api { remote, .. } => (remote, true),
@@ -3883,7 +3925,7 @@ impl Service {
             parts.push(json!({"type": "text", "text": user}));
             Value::Array(parts)
         };
-        let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]));
+        let msgs = crate::brains::apply(preset, &json!([{"role": "system", "content": system}, {"role": "user", "content": content}]), format_note);
         crate::diagnostics::snapshot("general_chat_request", &json!({"rid": rid, "messages": msgs, "max_tokens": max_tokens, "temperature": temperature, "api": api, "model": remote.model}));
         self.hub_chat(&core, rid, "director_llm", false, |em| async move {
             em.emit("status", json!({"phase": "generating", "msg": "撰寫中…"})).await?;
@@ -3892,7 +3934,7 @@ impl Service {
                 if let Some(p) = preset {
                     crate::brains::apply_params(&mut b, &p.params, true);
                 }
-                self.send_api(remote, b, &em, false).await
+                self.send_api(remote, b, &em, false).await.map(|(text, think, t)| (crate::brains::with_prefill(preset, &text), think, t))
             } else {
                 let seed = (now() * 1000.0) as i64;
                 let mut b = payload(&msgs, temperature, seed, false, Some(max_tokens), true);
@@ -3928,9 +3970,10 @@ impl Service {
         brain: &str,
         remote: Option<&Remote>,
         preset: Option<&crate::brains::Preset>,
+        format_note: Option<&str>,
     ) -> Result<(String, String), String> {
-        // 指令預設（API 頁）：第一則 system 當內建指令，前後照預設加段、最後加預填；取樣參數有填的蓋過去
-        let assembled = crate::brains::apply(preset, messages);
+        // 指令預設（API 頁）：第一則 system 當內建指令，前後照預設加段、格式提醒、最後加預填；取樣參數有填的蓋過去
+        let assembled = crate::brains::apply(preset, messages, format_note);
         let messages = &assembled;
         let tune = |b: &mut Value, api: bool| {
             if let Some(p) = preset {
@@ -3953,7 +3996,8 @@ impl Service {
                     em.emit("status", json!({"phase": "generating", "msg": busy})).await?;
                     let mut b = api_body(&r.model, messages, temperature, max_tokens, think.is_some());
                     tune(&mut b, true);
-                    self.send_api(r, b, &em, false).await
+                    // 外接 API 只回預填後面的部分：接回去，跟本機一樣
+                    self.send_api(r, b, &em, false).await.map(|(text, think, t)| (crate::brains::with_prefill(preset, &text), think, t))
                 }
                 Some(r) => {
                     em.emit("status", json!({"phase": "generating", "msg": busy})).await?;
@@ -3994,13 +4038,24 @@ impl Service {
 
     /// 外接 API 送一次（走使用者代理的 ext client）。有的模型不准關思考（GLM 5.3）或不認得 thinking 欄位：400 時拿掉再送一次
     async fn send_api(&self, r: &Remote, mut b: Value, em: &Emitter, zh: bool) -> Result<(String, String, Value), Fail> {
-        let first = self.chat_via(&self.ext, &r.base, r.key.as_deref(), &b, em, zh).await;
-        let out = match first {
-            Err(Fail::Error(e)) if e.contains("回應 400") => {
-                b.as_object_mut().map(|m| m.remove("thinking"));
-                self.chat_via(&self.ext, &r.base, r.key.as_deref(), &b, em, zh).await
+        // 400 分階段撤回不相容的欄位；空回／拒答的重送跟外層格式檢查共用額度。
+        let rewrite = take_rewrite_flag(&mut b);
+        let mut added_safety = rewrite && crate::brains::add_gemini_settings(&mut b, &r.base, &r.provider);
+        let mut can_resend = rewrite;
+        let out = loop {
+            em.check()?;
+            let reply = self.chat_via(&self.ext, &r.base, r.key.as_deref(), &b, em, zh).await;
+            match reply {
+                Err(Fail::Error(e)) if e.starts_with("llama-server 回應 400：") && api_400_fallback(&mut b, &mut added_safety) => continue,
+                Ok((ref text, _, _)) if can_resend && crate::brains::looks_refused(text) && claim_refusal_retry() => {
+                    can_resend = false;
+                    em.emit("status", json!({"phase": "generating", "msg": "回覆是空的或被拒絕，重送一次…"})).await?;
+                    em.emit("reset", json!({})).await?;
+                    em.wait_to_resend().await?;
+                }
+                Ok((text, think, t)) if rewrite => break Ok((crate::brains::unarmor(&text), think, t)),
+                other => break other,
             }
-            other => other,
         };
         out.map_err(|f| match f {
             Fail::Error(e) => Fail::Error(e.replace("llama-server", "外接 API")),
@@ -4497,7 +4552,7 @@ mod tests {
     fn via_cache_parts_empty_by_default() {
         assert!(Via::default().cache_parts().is_empty(), "本機不套預設：快取鍵跟以前一樣");
         assert!(Via::default().is_default());
-        let r = Remote { base: "https://api.deepseek.com/v1".into(), key: Some("k".into()), model: "m".into(), api: true };
+        let r = Remote { base: "https://api.deepseek.com/v1".into(), key: Some("k".into()), model: "m".into(), api: true, provider: "deepseek".into() };
         let v = Via { remote: Some(r), preset: Some(crate::brains::Preset::new_default("p")) };
         let parts = v.cache_parts();
         assert_eq!(parts[0], ("brain", json!("https://api.deepseek.com/v1|m")));
@@ -4529,6 +4584,61 @@ mod tests {
         // Gemini 的 OpenAI 相容接口：版本號在中間（/v1beta/openai），不能再補 /v1
         assert_eq!(chat_url("https://generativelanguage.googleapis.com/v1beta/openai"), "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
         assert_eq!(chat_url("https://dashscope.aliyuncs.com/compatible-mode/v1"), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+    }
+
+    #[test]
+    fn rewrite_fallback_preserves_provider_options() {
+        let host = "https://generativelanguage.googleapis.com/v1beta/openai";
+        let mut b = json!({"model":"alias", "thinking":{}, "extra_body":{"google":{"custom":1},"other":2}});
+        assert!(!crate::brains::add_gemini_settings(&mut b, "https://proxy.example/generativelanguage.googleapis.com", "custom"));
+        assert!(crate::brains::add_gemini_settings(&mut b.clone(), "https://proxy.example", "gemini"));
+        let mut added = crate::brains::add_gemini_settings(&mut b, host, "custom");
+        assert!(added);
+        assert!(api_400_fallback(&mut b, &mut added));
+        assert!(b.get("thinking").is_none() && b.pointer("/extra_body/google/safety_settings").is_some());
+        assert!(api_400_fallback(&mut b, &mut added));
+        assert_eq!(b["extra_body"], json!({"google":{"custom":1},"other":2}));
+        assert!(!api_400_fallback(&mut b, &mut added));
+        b["extra_body"]["google"]["safety_settings"] = json!([]);
+        let mut added = crate::brains::add_gemini_settings(&mut b, host, "custom");
+        assert!(!api_400_fallback(&mut b, &mut added));
+        assert_eq!(b["extra_body"]["google"]["safety_settings"], json!([]));
+        let mut bare = json!({"model":"alias"});
+        let mut added = crate::brains::add_gemini_settings(&mut bare, host, "custom");
+        assert!(api_400_fallback(&mut bare, &mut added));
+        assert!(bare.get("extra_body").is_none());
+    }
+
+    #[test]
+    fn rewrite_flag_requires_true() {
+        for (flag, want) in [(json!(false), false), (json!("true"), false), (Value::Null, false), (json!(true), true)] {
+            let mut b = json!({(crate::brains::REWRITE_FLAG):flag});
+            assert_eq!(take_rewrite_flag(&mut b), want);
+            assert_eq!(b, json!({}));
+        }
+    }
+
+    #[tokio::test]
+    async fn refusal_backoff_stops_on_cancel() {
+        let (tx, _rx) = mpsc::channel(1);
+        let em = Emitter { tx, cancel: CancellationToken::new() };
+        let wait = async { tokio::join!(em.wait_to_resend(), async { tokio::task::yield_now().await; em.cancel.cancel(); }).0 };
+        assert!(matches!(tokio::time::timeout(Duration::from_secs(1), wait).await, Ok(Err(Fail::Cancelled))));
+    }
+
+    #[tokio::test]
+    async fn format_and_refusal_share_one_retry() {
+        let mut sends = 0;
+        for attempt in 0..2 {
+            let (_, spent) = format_attempt(attempt, async {
+                sends += 1;
+                if claim_refusal_retry() { sends += 1; }
+            }).await;
+            if spent { break; }
+        }
+        assert_eq!(sends, 2);
+        let (can_resend, _) = format_attempt(1, async { claim_refusal_retry() }).await;
+        assert!(!can_resend);
     }
 
     #[test]

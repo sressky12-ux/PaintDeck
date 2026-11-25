@@ -144,3 +144,13 @@ test('dock.js 沒有拖拉的殘留：沒有 pointerdown 拖曳、右鍵選單�
   const src = fs.readFileSync(path.join(__dirname, '../ui/js/dock.js'), 'utf8');
   for (const s of ['startDrag', 'contextmenu', 'startResize', 'dock-rz', 'dock-pin', 'cap-pin', 'floatPanel', 'hidePanel']) assert.equal(src.includes(s), false, s);
 });
+
+test('舊生成頁存檔的 imgacts 可略過，任務欄的收合狀態保留', () => {
+  const { normalizeFixed, fixedLayout, FIXED_V } = load();
+  const spec = { panels: [{ id: 'tasks', zone: 'right' }], sizes: {} };
+  const saved = { v: FIXED_V, collapsed: { right: true }, folded: ['imgacts', 'tasks'] };
+  const layout = fixedLayout(spec, normalizeFixed(saved, spec));
+  assert.deepEqual(layout.folded, ['tasks']);
+  assert.deepEqual(layout.zones.right.ids, ['tasks']);
+  assert.equal(layout.zones.right.collapsed, true);
+});

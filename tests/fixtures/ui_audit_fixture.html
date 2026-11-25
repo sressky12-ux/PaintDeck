@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<title>介面檢查工具測試</title>
+<style>
+  button { position: relative; border: 0; padding: 4px 10px; font: 16px/16px Arial, sans-serif; }
+  button::before { content: ""; position: absolute; top: 5px; left: 12px; width: 12px; height: 3px; background: orange; }
+  #b { padding-top: 12px; }
+  #c, #d { width: 60px; overflow: hidden; white-space: nowrap; }
+  #d { text-overflow: ellipsis; }
+  #e { width: 80px; }
+  #f { position: absolute; left: calc(100vw + 20px); top: 0; }
+</style>
+<button id="a">Mode</button>
+<button id="b">Mode</button>
+<div id="c">這一行文字超過容器寬度</div>
+<div id="d">這一行文字使用刪節號</div>
+<select id="e"><option selected>LLLite 重繪（選項的後半段放不下）</option></select>
+<span id="f">溢出</span>
+</html>

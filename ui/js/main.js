@@ -171,7 +171,7 @@ function labelControls() {
 labelControls();
 
 // 中央舞台與其他頁各自儲存停靠位置。
-// 2026-11-23 左右兩欄（小克案）：模型與輸入、尺寸與模式設定從膠囊搬到左區（切模式時裡面跟著換），右區上面是「這張圖」的成品動作。
+// 2026-11-23 左右兩欄（小克案）：模型與輸入、尺寸與模式設定從膠囊搬到左區（切模式時裡面跟著換），右區放任務與幻燈片。
 // 左區兩塊也留膠囊（chip）：隨機頁只借提示詞卡、看不到左區，靠它們換模型、改尺寸（stage.capsSpec 的 visible）
 const stageDock = mountDock($("#page-gen"), {
   name: "stage", caps: stage.capsSpec(),
@@ -185,11 +185,9 @@ const stageDock = mountDock($("#page-gen"), {
     { id: "layout", title: "版面框", zone: "cap" },
     { id: "pe", title: "AI 改寫", zone: "cap" },
     { id: "compose", title: "提示詞卡", zone: "bottom", min: 200 },
-    { id: "imgacts", title: "這張圖", zone: "right" },
     { id: "tasks", title: "任務", zone: "right", min: 300 },
   ],
   sizes: { left: 300, right: 300, bottom: 300, top: 160 },   // 下區 300：標題列＋提示詞＋負面詞＋膠囊列剛好放得下，不用在卡裡捲
-  onRender: () => stage.placeActs(),
 });
 // 影片分頁（中央舞台第二期）：短片、長片跟生成頁同一副骨架；舊的 dock_h3、dock_h3long 存檔不讀也不刪
 const h3Dock = mountDock($("#h3Work"), {

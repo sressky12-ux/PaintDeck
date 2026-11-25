@@ -8,9 +8,13 @@ import * as loras from "./loras.js";
 import * as tagger from "./tagger.js";
 import * as refs from "./refs.js";
 import * as pe from "./pe.js";
+import * as viewsrc from "./viewsrc.js";
+import * as prompttabs from "./prompttabs.js";
+import { stripOn } from "./feature.js";
 import * as promptx from "./promptx.js";
 import * as promptsec from "./promptsec.js";
 import * as taglib from "./taglib.js";
+import * as speedup from "./turbo.js";
 import * as wardrobe from "./wardrobe.js";
 import * as library from "./library.js";
 import { pickFromGallery, openLightboxRecord } from "./gallery.js";
@@ -111,6 +115,8 @@ const pickerFam = () => (fam() !== "custom" ? fam() : wfFam() ? (l) => !l.family
 let assetDrawer = null;  // 提示詞上面的資產抽屜（assetdrawer.js）
 
 export function init() {
+  viewsrc.init(show, enableActions);
+  prompttabs.init(defaultNeg);
   document.querySelector("#page-gen .dock-main")?.prepend(el("div",{id:"genTrainingNotice",class:"tr-warn",role:"status",hidden:true}));
   initialTraining = refreshTraining();
   // 資產：Anima 的圖可以當底圖或構圖控制；Qwen 2.1 的圖放進多圖參考（會切到多圖參考模式）
@@ -152,7 +158,12 @@ export function init() {
     else if (v) appendPrompt(v);
   };
   F("promptLib").onclick = () => library.open();
-  F("promptClear").onclick = () => { F("prompt").value = ""; save(); F("prompt").focus(); };
+  F("promptClear").onclick = () => {
+    const field = F("prompt").closest(".prompt-scr").dataset.tab === "neg" ? F("negative") : F("prompt");
+    field.value = "";
+    save();
+    field.focus();
+  };
   attachAutocomplete(F("prompt"), F("acPrompt"));
   attachAutocomplete(F("negative"), F("acNeg"));
   promptx.init({ prompt: F("prompt"), negative: F("negative"), family: () => fam(), save: () => save() });
@@ -351,7 +362,7 @@ export function init() {
   F("viewImg").onclick = () => S.current && openLightboxRecord(S.current, S.results);
   F("viewActions").addEventListener("click", (e) => {
     const b = e.target.closest("[data-act]");
-    if (b && S.current && b.dataset.act !== "download") imageAction(b.dataset.act, S.current, b);
+    if (b && S.current && b.dataset.act !== "download") imageAction(b.dataset.act, S.current, b.dataset.act === "play" ? F("viewMore") : b);
   });
 
   // 隨機頁借走生成頁面板時，面板裡的改動冒泡到隨機頁；膠囊彈出窗（#capLayer，dock.js）暫借面板時冒泡到浮層：三個都要聽（borrow.js）
@@ -396,24 +407,21 @@ export function onState(st) {
   if (S.family === undefined) S.family = fam();
   fillSelect(F("sampler"), m.samplers || ["euler"], store.get("form", {}).sampler || "euler");
   fillSelect(F("scheduler"), m.schedulers || ["simple"], store.get("form", {}).scheduler || "simple");
-  const ts = F("turboLora"), want = ts.value || store.get("form", {}).turboLora || "";
-  ts.innerHTML = '<option value="">不使用（30 步、品質優先）</option>';
-  for (const t of m.turbo_loras || []) {
-    const label = /anima-turbo-lora/i.test(t.name) ? "官方 Turbo LoRA v0.2（10 步）" : `${t.title || t.name}${t.version ? " " + t.version : ""}（12 步）`;
-    ts.append(el("option", { value: t.name }, label));
-  }
-  ts.value = [...ts.options].some((o) => o.value === want) ? want : "";
+  const ts = F("turboLora");
+  speedup.fillTurbo(ts, m.turbo_loras, ts.value || store.get("form", {}).turboLora || "");
   for (const id of ["hiresUpscaler", "upModel"]) fillSelect(F(id), m.upscalers || [], store.get("form", {})[id] || "4x-AnimeSharp.safetensors");
   // 選單都有選項了：之後以畫面上的值為準
   for (const k of Object.keys(pendingSel)) delete pendingSel[k];
   library.fillPickers();
-  if (!F("negative").value) F("negative").value = fam() === "custom" ? "" : st.settings?.negative || "";  // 工作流：空白＝照工作流自己的負面提示詞
+  if (!F("negative").value) F("negative").value = defaultNeg();  // 工作流：空白＝照工作流自己的負面提示詞
   // 已加入的 LoRA 同步最新的上下限設定（例如滑桿的可用範圍）
   const meta = Object.fromEntries((m.loras || []).map((x) => [x.name, x]));
   for (const l of S.loras) if (meta[l.name]) Object.assign(l, { min: meta[l.name].min, max: meta[l.name].max, slider: meta[l.name].slider });
   renderLoras();
   wfFresh = true;
   try { modelHint(); } finally { wfFresh = false; }
+  promptx.refresh();
+  prompttabs.refresh();
 }
 
 // 模型選單依家族分組；認不出家族的模型（例如別的架構）不列出，免得選了跑不動
@@ -694,6 +702,7 @@ function familySwitch() {
     if (refs.get().length > refs.maxRefs()) toast(`目前有 ${refs.get().length} 張參考圖，新家族最多 ${refs.maxRefs()} 張，請先移除多出的圖。`, "err");
     refs.render();
   }
+  prompttabs.refresh();
   S.family = f;
   S.wfModel = f === "custom" ? F("model").value : null;
   library.fillPickers();
@@ -732,8 +741,7 @@ function modelDefaults() {
   else if (fam() === "sdxl") { F("steps").value = isFastSdxl() ? 8 : 28; F("cfg").value = isFastSdxl() ? 1.5 : 5; pick("sampler", "euler_ancestral"); pick("scheduler", isFastSdxl() ? "sgm_uniform" : "normal"); }
   else if (fam() === "custom") { /* 步數、CFG 照工作流，這裡的不用 */ }
   else if (isTurboModel()) { F("steps").value = 8; F("cfg").value = 1; }
-  else if (F("turboLora").value) { F("steps").value = /anima-turbo-lora/i.test(F("turboLora").value) ? 10 : 12; F("cfg").value = 1; }
-  else { F("steps").value = 30; F("cfg").value = 4; }
+  else { const t = speedup.turboSteps(F("turboLora").value); F("steps").value = t.steps; F("cfg").value = t.cfg; }   // 有沒有掛加速 LoRA（turbo.js，助手頁同一套）
   modelHint();
 }
 
@@ -902,6 +910,7 @@ function layAspect() {
 function familyUI() {
   const mm = fam() === "mmimage";
   F("negDetails").hidden = mm;
+  prompttabs.refresh();
   F("mmOptions").hidden = !mm;
   F("mmCanvas").hidden = !mm || (S.mode === "multiref" && F("autoSize").checked);
   if (S.mode === "multiref") F("autoSizeRow").lastChild.textContent = mm ? " 跟底圖一樣比例（約 4MP）" : " " + SIZE_AUTO_TEXT.multiref;
@@ -934,6 +943,7 @@ function familyUI() {
 function setMode(mode) {
   const modeChanged = S.mode !== mode;
   S.mode = mode;
+  viewsrc.onMode(mode);
   if (fam() === "mmimage" && modeChanged) mmDefaultPe();
   $$("#modeSeg button").forEach((b) => b.classList.toggle("on", b.dataset.mode === mode));
   const needInit = mode !== "txt2img" && mode !== "multiref";
@@ -1021,6 +1031,7 @@ export function setInit(r) {
   S.mask = null;
   if (S.mode === "txt2img") setMode("img2img");
   showInit();
+  viewsrc.onInput();
   save();
 }
 
@@ -1090,6 +1101,7 @@ async function sweep(l) {
   const vals = (span > 4 ? [-span / 2, -span / 4, 0, span / 4, span / 2] : lo < 0 ? [-1, 0, 1, 2] : [0, 0.5, 1, 1.5, 2])
     .filter((v) => v >= lo && v <= hi);
   const p = collectParams();
+  const sourceRevision = p.init_image ? viewsrc.inputRevision() : null;
   if (S.mode === "multiref" ? !p.refs.length : S.mode !== "txt2img" && !p.init_image) return toast("請先放入圖片", "err");
   p.seed = p.seed ?? Math.floor(Math.random() * 2 ** 40);
   F("seed").value = p.seed;
@@ -1097,7 +1109,7 @@ async function sweep(l) {
   try {
     for (const v of vals) {
       const r = await api("/api/generate", { json: { params: { ...p, loras: v ? [...others, { name: l.name, strength: v }] : others }, count: 1 } });
-      for (const j of r.jobs) S.pending.set(j.job, { seed: j.seed });
+      for (const j of r.jobs) S.pending.set(j.job, { seed: j.seed, sourceRevision });
     }
     S.lastSeed = p.seed;
     renderStrip();
@@ -1385,13 +1397,18 @@ function applyForm(f) {
   for (const id of FORM_IDS) {
     if (!(id in f)) continue;
     const e = F(id);
-    if (e.type === "checkbox") e.checked = !!f[id];
+    if (id === "turboLora") speedup.fillTurbo(e, app.state?.models?.turbo_loras, f[id]);
+    else if (e.type === "checkbox") e.checked = !!f[id];
     else if (e.tagName === "SELECT" && f[id] !== "" && f[id] != null && ![...e.options].some((o) => o.value === String(f[id]))) pendingSel[id] = f[id];
     else { e.value = f[id]; delete pendingSel[id]; }
   }
   S.loras = (f.loras || []).map((l) => ({ ...l }));
   if (f.ctrl !== undefined) S.ctrl = f.ctrl;
-  if (f.init !== undefined) S.init = f.init;
+  if (f.init !== undefined && S.init?.name !== f.init?.name) {
+    S.init = f.init;
+    S.mask = null;
+    viewsrc.onInput();
+  }
   if (f.refs !== undefined) refs.set(f.refs);
   if (f.sheetRef !== undefined) { S.sheetRef = f.sheetRef; showSheetRef(); }
   if (f.layout !== undefined) { lay.set(f.layout); layCount(); }
@@ -1405,7 +1422,7 @@ function applyForm(f) {
   setMode(f.mode || "txt2img");
 }
 
-const save = () => { store.set("form", collectForm()); promptx.refresh(); };
+const save = () => { store.set("form", collectForm()); promptx.refresh(); prompttabs.refresh(); };
 
 // 鎖定角色標籤列：換模型、動參考圖時滑過去看的全文跟著變
 function renderLocked() {
@@ -1429,8 +1446,7 @@ function restore() {
 // 舊圖、API 送的 turbo_lora: true（＝「用預設的加速 LoRA」）→ 這台電腦上實際有的那一顆：官方的優先，沒有就清單第一顆，都沒有就空白。
 // 2026-11-10 以前寫死 v0.2 的檔名，這台沒有那顆檔時選單默默落回「不使用」
 function defTurbo() {
-  const list = app.state?.models?.turbo_loras || [];
-  return (list.find((t) => /anima-turbo-lora/i.test(t.name)) || list[0])?.name || "";
+  return speedup.defTurbo(app.state?.models?.turbo_loras);
 }
 
 export function applyParams(p, withMode = true) {
@@ -1449,7 +1465,7 @@ export function applyParams(p, withMode = true) {
   if (p.model && !modelMissing) F("model").value = p.model;
   // 工作流組做的圖：「工作流參數」面板改過的值也帶回來
   if (p.wf_overrides && (p.model || "").startsWith("wf:")) wfpanel.setOverrides(p.model.slice(3), p.mode || "txt2img", p.wf_overrides);
-  F("turboLora").value = p.turbo_lora === true ? defTurbo() : (p.turbo_lora || "");
+  speedup.fillTurbo(F("turboLora"), app.state?.models?.turbo_loras, p.turbo_lora === true ? defTurbo() : p.turbo_lora);
   S.family = fam();
   S.loras = (p.loras || []).map((l) => ({ ...l, enabled: true }));
   if (p.hires) { F("hiresOn").checked = !!p.hires.enabled; set("hiresScale", p.hires.scale); set("hiresDenoise", p.hires.denoise); }
@@ -1613,6 +1629,7 @@ async function generate() {
   } finally { F("genBtn").disabled = false; }
   if (!ok) return;
   const p = collectParams();
+  const sourceRevision = p.init_image ? viewsrc.inputRevision() : null;
   if (fam() === "custom") {
     const w = wfSet();
     if (!w) return toast("找不到這組工作流（可能在設定頁被刪掉了）：請在模型選單重新選一個", "err");
@@ -1665,7 +1682,7 @@ async function generate() {
       const nodeWrap = F("genNodeWrap");
       if (nodeWrap && !nodeWrap.hidden && F("genNode").value) q.node = F("genNode").value;
       const r = await api("/api/generate", { json: { params: q, count } });
-      for (const j of r.jobs) S.pending.set(j.job, { seed: j.seed });
+      for (const j of r.jobs) S.pending.set(j.job, { seed: j.seed, sourceRevision });
       S.lastSeed = r.jobs[0]?.seed;
       sent++;
       renderStrip();
@@ -1704,6 +1721,7 @@ export function onProgress(m) {
 
 export function onPreview(blob) {
   if (!S.pending.has(S.running)) return;
+  if (!F("viewSrc").hidden && (S.pending.get(S.running).sourceRevision !== viewsrc.inputRevision() || !F("maskModal").hidden || !F("initDrop").hidden)) return;
   if (S.previewUrl) URL.revokeObjectURL(S.previewUrl);
   S.previewUrl = URL.createObjectURL(blob);
   const img = F("viewImg");
@@ -1716,7 +1734,7 @@ export function onImage(job, rec) {
   if (!S.pending.has(job)) return;  // 只收從生成頁送出的圖；助手、導演台、漫畫台的圖不要混進幻燈片
   S.results.unshift(rec);
   if (S.results.length > 200) S.results.pop();
-  show(rec);
+  viewsrc.onResult(rec, S.pending.get(job).sourceRevision);
   renderStrip();
 }
 
@@ -1750,6 +1768,27 @@ export function onFinish(m) {
   renderStrip();
 }
 
+function enableActions(enabled) {
+  for (const button of $$("#viewActions button")) button.disabled = !enabled;
+  const download = $("#viewActions [data-act=download]");
+  download.setAttribute("aria-disabled", String(!enabled));
+  if (enabled && S.current) download.href = `/img/${S.current.id}`;
+  if (!enabled) {
+    download.removeAttribute("href");
+    F("viewMoreMenu").hidden = true;
+    F("viewMore").setAttribute("aria-expanded", "false");
+  }
+}
+
+function paintFavorite(rec) {
+  const button = $("#viewActions [data-act=fav]");
+  const label = rec.fav ? "★ 已收藏" : "☆ 收藏";
+  button.querySelector(".va-name").textContent = label;
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.setAttribute("aria-pressed", String(!!rec.fav));
+}
+
 function show(rec) {
   S.current = rec;
   const img = F("viewImg"), vid = F("viewVid"), isVid = isVideo(rec);
@@ -1758,17 +1797,16 @@ function show(rec) {
   if (isVid) { img.removeAttribute("src"); vid.src = `/img/${rec.id}`; vid.play().catch(() => {}); }
   else { vid.pause(); vid.removeAttribute("src"); img.src = `/img/${rec.id}`; }
   img.classList.toggle("alpha", rec.mode === "rembg");  // 去背的透明圖墊棋盤格（play.css）
-  for (const a of IMAGE_ONLY_ACTS) $$(`#viewActions [data-act="${a}"]`).forEach((b) => (b.hidden = isVid));
+  for (const a of IMAGE_ONLY_ACTS) $$(`#viewActions [data-act="${a}"]`).forEach((b) => (b.hidden = isVid || (a === "strip" && !stripOn())));
   for (const a of VIDEO_ONLY_ACTS) $$(`#viewActions [data-act="${a}"]`).forEach((b) => (b.hidden = !isVid));
   F("viewEmpty").hidden = true;
-  F("viewActions").hidden = false;
   const ls = (rec.params?.loras || []).map((x) => `${(x.name || "").replace(/\.safetensors$/, "")} ${x.strength}`);
   F("viewMeta").textContent = `${modeName[rec.mode] || rec.mode}・${rec.width}×${rec.height}・種子 ${rec.seed ?? "-"}` + (ls.length ? `・LoRA：${ls.join("、")}` : "・未用 LoRA") + (rec.gen_seconds != null ? `・花了 ${fmtSecs(rec.gen_seconds)}` : "");
   deck.showImage(rec);
   const dl = $("#viewActions [data-act=download]");
   dl.href = `/img/${rec.id}`;
   dl.download = rec.filename;
-  $("#viewActions [data-act=fav]").textContent = rec.fav ? "★ 已收藏" : "☆ 收藏";
+  paintFavorite(rec);
   $$("#strip img").forEach((i) => i.classList.toggle("sel", +i.dataset.id === rec.id));
 }
 
@@ -1778,7 +1816,7 @@ export function renderStrip() {
   for (let i = 0; i < S.pending.size; i++) s.append(el("div", { class: "pending" }, "等待中"));
   for (const r of S.results) {
     const cls = [S.current?.id === r.id && "sel", !stripSeen.has(r.id) && "new"].filter(Boolean).join(" ");
-    s.append(el("img", { src: `/thumb/${r.id}`, "data-id": r.id, class: cls, onclick: () => show(r) }));
+    s.append(el("img", { src: `/thumb/${r.id}`, "data-id": r.id, class: cls, onclick: () => viewsrc.select(r) }));
     stripSeen.add(r.id);
   }
 }
@@ -1834,8 +1872,8 @@ export async function imageAction(act, rec, btn, quiet = false) {
     } else if (act === "fav") {
       rec.fav = rec.fav ? 0 : 1;
       await api(`/api/image/${rec.id}`, { json: { fav: !!rec.fav } });
-      if (btn) btn.textContent = rec.fav ? "★ 已收藏" : "☆ 收藏";
-      if (S.current?.id === rec.id) $("#viewActions [data-act=fav]").textContent = rec.fav ? "★ 已收藏" : "☆ 收藏";
+      if (btn && !btn.closest("#viewActions")) btn.textContent = rec.fav ? "★ 已收藏" : "☆ 收藏";
+      if (S.current?.id === rec.id) paintFavorite(rec);
     } else if (act === "delete") {
       if (!confirm("把這張圖移到回收區？（圖庫的「回收區」可以還原）")) return false;
       await api(`/api/image/${rec.id}`, { method: "DELETE" });
@@ -2030,11 +2068,18 @@ F("vidGo").onclick = async () => {
 // 圖被移到回收區：從預覽列拿掉
 export function forget(ids) {
   const s = new Set(ids);
+  viewsrc.forget(s);
   S.results = S.results.filter((r) => !s.has(r.id));
   if (S.current && s.has(S.current.id)) {
     S.current = null;
-    if (S.results[0]) show(S.results[0]);
-    else { F("viewImg").classList.remove("on"); F("viewActions").hidden = true; F("viewEmpty").hidden = false; }
+    viewsrc.select(S.results[0] || null);
+    if (!S.results.length) {
+      F("viewImg").classList.remove("on");
+      F("viewVid").pause();
+      F("viewVid").hidden = true;
+      F("viewEmpty").hidden = false;
+      F("viewMeta").textContent = "";
+    }
   }
   renderStrip();
 }

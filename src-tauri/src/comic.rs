@@ -1009,6 +1009,49 @@ impl Store {
     }
 }
 
+/// 結果清單最多留幾筆
+pub const MAX_RUNS: usize = 60;
+
+/// 圖庫裡屬於這個作品的一張圖（送出時參數帶 comic.id）：kind＝page（整頁）／fix（修好角色），from＝fix 修的是哪一頁
+pub struct Found {
+    pub id: i64,
+    pub kind: String,
+    pub from: Option<i64>,
+    pub seed: Option<i64>,
+    pub at: Option<f64>,
+}
+
+/// 圖庫裡有、作品結果清單漏記的補回去：背景工作中途斷掉（畫到一半關掉繪匣、某張失敗）時，
+/// 後面畫好的圖照樣進圖庫，卻沒人寫回作品（2026-11-25 玩家回報「畫了卻不顯示，只能去圖庫看」）。
+/// 使用者自己從清單拿掉的（runs_hidden）不補。回傳有沒有改到（沒改就不用存檔）
+pub fn adopt_runs(p: &mut Value, found: &[Found]) -> bool {
+    let hidden: Vec<i64> = p["runs_hidden"].as_array().into_iter().flatten().filter_map(Value::as_i64).collect();
+    let before = p["runs"].as_array().cloned().unwrap_or_default();
+    let mut runs = before.clone();
+    for f in found.iter().filter(|f| f.kind == "page") {
+        if !hidden.contains(&f.id) && !runs.iter().any(|r| r["page"].as_i64() == Some(f.id)) {
+            runs.push(json!({"at": f.at, "page": f.id, "seed": f.seed}));
+        }
+    }
+    for f in found.iter().filter(|f| f.kind == "fix") {
+        let Some(r) = runs.iter_mut().find(|r| f.from.is_some() && r["page"].as_i64() == f.from) else { continue };
+        if r["fix"].as_i64().is_none_or(|cur| cur < f.id) {
+            r["fix"] = json!(f.id);
+        }
+    }
+    if runs.len() == before.len() && runs == before {
+        return false;
+    }
+    // 圖庫編號越大越新：新的在前，最多留 MAX_RUNS 筆。清單滿了時，比清單裡最舊的還舊的會再被擠掉，清單沒變就不存檔
+    runs.sort_by_key(|r| std::cmp::Reverse(r["page"].as_i64().unwrap_or(0)));
+    runs.truncate(MAX_RUNS);
+    if runs == before {
+        return false;
+    }
+    p["runs"] = json!(runs);
+    true
+}
+
 /// 新作品的預設值（四格）
 pub fn blank(title: &str) -> Value {
     let panel = || json!({"shot": "a medium shot", "what": "", "who": [], "line": "", "bubble": "top", "sfx": ""});
@@ -1022,6 +1065,45 @@ pub fn blank(title: &str) -> Value {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn found(id: i64, kind: &str, from: Option<i64>) -> Found {
+        Found { id, kind: kind.into(), from, seed: Some(id * 10), at: Some(id as f64) }
+    }
+
+    /// 2026-11-25 玩家回報：漫畫畫好了卻不顯示，只能去圖庫看。背景工作中途斷掉（關掉繪匣、某張失敗），
+    /// 後面畫好的圖照樣進圖庫，卻沒記到作品。讀作品時照作品編號從圖庫補回來
+    #[test]
+    fn runs_missing_from_the_project_are_adopted_from_the_gallery() {
+        let mut p = json!({"runs": [{"at": 5.0, "page": 5, "seed": 50}]});
+        let f = [found(9, "page", None), found(7, "page", None), found(5, "page", None), found(11, "fix", Some(7))];
+        assert!(adopt_runs(&mut p, &f));
+        let pages: Vec<i64> = p["runs"].as_array().unwrap().iter().map(|r| r["page"].as_i64().unwrap()).collect();
+        assert_eq!(pages, [9, 7, 5], "新的在前、原本有的不重複");
+        assert_eq!(p["runs"][1]["fix"], json!(11), "修好的那張掛回它修的那一頁");
+        assert_eq!(p["runs"][0]["seed"], json!(90));
+        // 再讀一次沒有新東西：不用存檔
+        assert!(!adopt_runs(&mut p, &f));
+    }
+
+    #[test]
+    fn runs_the_user_removed_stay_removed() {
+        let mut p = json!({"runs": [], "runs_hidden": [7]});
+        assert!(adopt_runs(&mut p, &[found(9, "page", None), found(7, "page", None)]));
+        assert_eq!(p["runs"].as_array().unwrap().len(), 1);
+        assert_eq!(p["runs"][0]["page"], json!(9));
+    }
+
+    #[test]
+    fn adopted_runs_keep_the_list_limit() {
+        let mut p = json!({"runs": []});
+        let f: Vec<Found> = (1..=70).map(|i| found(i, "page", None)).collect();
+        adopt_runs(&mut p, &f);
+        let runs = p["runs"].as_array().unwrap();
+        assert_eq!(runs.len(), MAX_RUNS);
+        assert_eq!(runs[0]["page"], json!(70));
+        // 清單滿了以後，更舊的每次都會被擠掉：清單沒變，不用每次讀都存檔
+        assert!(!adopt_runs(&mut p, &f));
+    }
 
     fn sample() -> Value {
         json!({"layout": "L3", "trigger": "jgdxstyle", "light": "Purple candlelight", "mood": "hot",

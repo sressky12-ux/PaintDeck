@@ -369,6 +369,13 @@ export function openPicker(cb, fam, opts = {}) {
   setTimeout(() => $("#lpQ").focus(), 50);
 }
 
+// 搜「turbo／加速／speed」：Anima 的加速 LoRA 不在 LoRA 清單裡（後端 api_gen 分到 turbo_loras），告訴玩家去哪裡開
+// （2026-11-24 玩家：「LoRA 選擇器找不到加速 LoRA」）。fam 是別的家族（字串）就不提，那些家族沒有加速 LoRA
+export function turboHint(fam, q) {
+  if (typeof fam === "string" && fam !== "anima") return "";
+  return /turbo|加速|speed/i.test(q || "") ? "加速 LoRA 不在這裡：生成頁在「加速」選單，生圖助手在底下的「⚡ 加速」開關。" : "";
+}
+
 function paintPickFoot() {
   $("#lpCount").textContent = pickSel.size ? `勾了 ${pickSel.size} 個` : "點卡片勾選，可以一次勾好幾個";
   $("#lpAdd").textContent = pickAddLabel(pickSel.size);
@@ -381,6 +388,8 @@ function renderPicker() {
   g.innerHTML = "";
   syncViewBtn($("#lpView"), view.pick, g);
   const asList = view.pick === "list";
+  const hint = turboHint(pickFam, q);
+  if (hint) g.append(el("div", { class: "empty-span muted pad" }, hint));
   const fits = (x) => !pickFam || (typeof pickFam === "function" ? pickFam(x) : (x.family || "anima") === pickFam);
   const usable = pickAll ? list : list.filter(fits);
   if (!usable.length) g.append(el("div", { class: "empty-span muted pad" }, "還沒有這個模型能用的 LoRA。到「Civitai」分頁搜尋下載（記得選對基底模型）。"));

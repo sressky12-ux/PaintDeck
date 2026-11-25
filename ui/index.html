@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-Hant">
+<html lang="zh-Hant" class="style-a">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -8,6 +8,7 @@
 <link rel="stylesheet" href="/static/css/app.css">
 <link rel="stylesheet" href="/static/css/play.css">
 <link rel="stylesheet" href="/static/css/motion.css">
+<link rel="stylesheet" href="/static/css/style-a.css">
 <!-- three.js（軟糖小熊用，放在本機 vendor	hree，等圖時才載入） -->
 <script type="importmap">
 { "imports": { "three": "/static/vendor/three/three.module.min.js", "three/addons/": "/static/vendor/three/addons/" } }
@@ -21,43 +22,23 @@
     <div class="stripes" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
     <div class="top" data-tauri-drag-region>
       <div class="badge" data-tauri-drag-region><span data-app="24"></span><b>繪匣 PaintDeck</b><span class="model-no">AW-2000</span></div>
-      <div class="nav-slot">
-        <div class="pill"><div id="navPins"></div><button type="button" class="tkey" id="allBtn" aria-expanded="false" aria-controls="navAll">全部功能 ▾</button></div>
-        <div class="top-pop" id="navAll" hidden>
-    <nav class="nav-grid" id="tabs" aria-label="功能">
-      <button class="pkey on" data-page="gen" data-ic="cam" type="button"><span class="n">01</span><span class="led"></span>生成</button>
-      <button class="pkey" data-page="taglib" data-ic="tags" type="button" title="隨機：照規則隨機組整組提示詞（角色、服裝、場景可固定），旁邊就是生成頁的提示詞、模型、LoRA、尺寸、取樣、附加和生成鈕（跟生成頁同一組）"><span class="n">02</span><span class="led"></span>隨機</button>
-      <button class="pkey" data-page="gallery" data-ic="slides" type="button"><span class="n">03</span><span class="led"></span>圖庫</button>
-      <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫：角色、場景、道具…全站共用"><span class="n">04</span><span class="led"></span>資產庫</button>
-      <button class="pkey" data-page="posewear" data-ic="palette" type="button" title="衣姿：posewear 官網原樣（姿勢、服裝、人像、表情、髮型、歷代、場景、光影、道具、家具…），挑中的直接送進生成頁"><span class="n">05</span><span class="led"></span>衣姿</button>
-      <button class="pkey" data-page="loras" data-ic="cart" type="button"><span class="n">06</span><span class="led"></span>LoRA</button>
-      <button class="pkey" data-page="civitai" data-ic="dish" type="button"><span class="n">07</span><span class="led"></span>下載中心</button>
-      <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演台：長劇情分段 → 每段第一格＋影片 → 接成長片"><span class="n">08</span><span class="led"></span>導演</button>
-      <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫台：選版型、每格寫內容和台詞 → 一張圖畫出整頁分格漫畫，自動填字和狀聲詞"><span class="n">09</span><span class="led"></span>漫畫</button>
-      <button class="pkey" data-page="agent" data-ic="bubble" type="button" title="生圖助手：用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="n">10</span><span class="led"></span>助手</button>
-      <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練：把一包圖煉成 LoRA。本機顯卡、雲端顯卡、C 站、魔塔都能煉，每一步都先自動做好"><span class="n">11</span><span class="led"></span>訓練</button>
-      <button class="pkey" data-page="api" data-ic="chip" type="button" title="API：接 DeepSeek、GLM、GPT、Claude、Gemini 這些大模型當腦袋；誰用哪顆腦袋、指令預設（可匯入 SillyTavern 預設）、各種金鑰都在這裡"><span class="n">12</span><span class="led"></span>API</button>
-      <button class="pkey" data-page="booru" data-ic="pic" type="button" title="畫廊：直接搜 Danbooru、Gelbooru、Safebooru 的參考圖（圖源＝ComfyUI-Aaalice-Nodes），圖丟進圖生圖、多圖參考，或一鍵複用原圖的 tag"><span class="n">13</span><span class="led"></span>畫廊</button>
-      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">14</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
-      <button class="pkey" data-page="settings" data-ic="faders" type="button"><span class="n">15</span><span class="led"></span>設定</button>
-    </nav>
-          <button type="button" class="akey" id="navPinAction" hidden></button>
-        </div>
-      </div>
+      <b id="topPage">生成</b>
+      <button class="akey sm" id="findBtn" type="button" title="找功能（Ctrl+K）：打「反推」「遮罩」「LoRA」「種子」…直接跳過去" aria-haspopup="dialog" aria-controls="finder">⌕ 找功能 Ctrl+K</button>
       <div class="prog" id="topProg" role="progressbar" aria-label="目前這張的進度"><div></div></div>
-      <span class="grow" data-tauri-drag-region></span>
       <button class="assist-btn" id="assistBtn" type="button" title="生圖助手：開一個獨立視窗，用中文說想要什麼，它自己寫提示詞、畫、看圖、改到滿意"><span class="spark" aria-hidden="true">✦</span>助手</button>
       <span class="grow" data-tauri-drag-region></span>
       <div class="status" id="statusStrip" aria-label="系統狀態">
         <span class="st-comfy"><span class="dot" id="comfyDot" role="img" aria-label="ComfyUI 連線狀態"></span><span id="comfyTxt">COMFYUI</span></span>
         <button class="sys" id="sysBtn" type="button" title="系統狀態：顯存、記憶體、硬碟（點一下看詳細）" aria-haspopup="dialog">顯存 <span class="meter" id="sysVram" title="顯存"><i></i></span> <span class="a" id="sysText">—</span></button>
         <span class="st-pe" id="peText">AI 改寫 待機</span>
-        <button type="button" class="a" id="qtxt" aria-haspopup="dialog">佇列 0</button>
         <button type="button" id="statusMore" aria-controls="statusDetails" aria-expanded="false" aria-label="更多系統狀態">⋯</button>
-        <div class="top-pop" id="statusDetails" hidden><span class="st-ram">記憶體 <span class="a" id="ramText">—</span></span> <span class="st-disk"><span class="a" id="diskText">—</span></span> <span id="verText">V1.1</span>
+        <div class="top-pop" id="statusDetails" hidden>
+          <button type="button" class="a" id="qtxt" aria-haspopup="dialog">佇列 0</button>
+          <span class="st-ram">記憶體 <span class="a" id="ramText">—</span></span> <span class="st-disk"><span class="a" id="diskText">—</span></span> <span id="verText">V1.1</span>
           <button class="chip-status" id="peChip" type="button" hidden></button>
         </div>
       </div>
+      <button class="pkey" id="queueInfo" data-ic="tape" type="button" title="任務面板（Q）" aria-haspopup="dialog"><span class="n">14</span><span class="led"></span><span class="cnt" id="qcnt">0</span>任務</button>
       <button type="button" class="akey sm" id="updateNotice" hidden></button>
       <div class="ai-slot">
         <button class="chip-status ai" id="aiBtn" type="button" title="AI MCP：讓 Claude、Codex、Cursor 這類 AI 直接操作生圖站"><span class="led"></span><span class="t">AI MCP</span><span class="st" id="aiState">未接上</span></button>
@@ -73,6 +54,36 @@
   </header>
 
   <div class="deck">
+    <aside class="side-nav">
+      <nav id="tabs" aria-label="功能">
+        <div class="sn-group">
+          <div class="sn-lbl">創作</div>
+          <button class="pkey on" data-page="gen" data-ic="cam" type="button" title="生成（Alt＋1）" aria-label="生成"><span class="n">01</span><span class="led"></span><span class="sn-name">生成</span></button>
+          <button class="pkey" data-page="taglib" data-ic="tags" type="button" title="隨機提示詞（Alt＋2）" aria-label="隨機提示詞"><span class="n">02</span><span class="led"></span><span class="sn-name">隨機提示詞</span></button>
+          <button class="pkey" data-page="director" data-ic="clap" type="button" title="導演（Alt＋8）" aria-label="導演"><span class="n">08</span><span class="led"></span><span class="sn-name">導演</span></button>
+          <button class="pkey" data-page="comic" data-ic="comic" type="button" title="漫畫（Alt＋9）" aria-label="漫畫"><span class="n">09</span><span class="led"></span><span class="sn-name">漫畫</span></button>
+          <button class="pkey" data-page="agent" data-ic="bubble" type="button" title="助手" aria-label="助手"><span class="n">10</span><span class="led"></span><span class="sn-name">助手</span></button>
+        </div>
+        <div class="sn-group">
+          <div class="sn-lbl">圖像與素材</div>
+          <button class="pkey" data-page="gallery" data-ic="slides" type="button" title="圖庫（Alt＋3）" aria-label="圖庫"><span class="n">03</span><span class="led"></span><span class="sn-name">圖庫</span></button>
+          <button class="pkey" data-page="assets" data-ic="multi" type="button" title="資產庫（Alt＋4）" aria-label="資產庫"><span class="n">04</span><span class="led"></span><span class="sn-name">資產庫</span></button>
+          <button class="pkey" data-page="posewear" data-ic="palette" type="button" title="衣姿（Alt＋5）" aria-label="衣姿"><span class="n">05</span><span class="led"></span><span class="sn-name">衣姿</span></button>
+          <button class="pkey" data-page="booru" data-ic="pic" type="button" title="線上畫廊" aria-label="線上畫廊"><span class="n">13</span><span class="led"></span><span class="sn-name">線上畫廊</span></button>
+        </div>
+        <div class="sn-group">
+          <div class="sn-lbl">模型</div>
+          <button class="pkey" data-page="loras" data-ic="cart" type="button" title="LoRA (Alt+6)" aria-label="LoRA"><span class="n">06</span><span class="led"></span><span class="sn-name">LoRA</span></button>
+          <button class="pkey" data-page="civitai" data-ic="dish" type="button" title="下載中心（Alt＋7）" aria-label="下載中心"><span class="n">07</span><span class="led"></span><span class="sn-name">下載中心</span></button>
+          <button class="pkey" data-page="train" data-ic="punch" type="button" title="訓練" aria-label="訓練"><span class="n">11</span><span class="led"></span><span class="sn-name">訓練</span></button>
+        </div>
+        <div class="sn-group">
+          <div class="sn-lbl">系統</div>
+          <button class="pkey" data-page="api" data-ic="chip" type="button" title="API" aria-label="API"><span class="n">12</span><span class="led"></span><span class="sn-name">API</span></button>
+          <button class="pkey" data-page="settings" data-ic="faders" type="button" title="設定（Alt＋0）" aria-label="設定"><span class="n">15</span><span class="led"></span><span class="sn-name">設定</span></button>
+        </div>
+      </nav>
+    </aside>
 
     <div class="pages">
 <!-- ======================= 生成 ======================= -->
@@ -144,10 +155,7 @@
 
 
   <div class="dock-grp" data-dock="compose">
-    <div class="stage-refs"><div class="drop" id="initDrop">
-        <img id="initImg" alt="">
-        <div class="drop-hint">拖曳圖片到這裡、貼上（Ctrl+V），或<button class="link" id="initPick" type="button">選擇檔案</button></div>
-      </div>
+    <div class="stage-refs">
       <div class="ref-tray" id="refTray"></div>
     </div>
     <div class="dock-grp" data-dock="prompt">
@@ -170,20 +178,26 @@
       </div>
       <div id="genAssets" class="adr-slot"></div>
       <div id="lkRow" class="row wrap lk-row" hidden></div>
-      <div class="scr prompt-scr">
-        <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="3" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
-        <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="punctFixBtn" type="button" aria-pressed="true" title="英文 tag 後面用中文輸入法打的「，、：（）」自動換成半形「, : ( )」，不用切輸入法；中文句子裡的不動，Ctrl+Z 可以換回來">，→,</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
-        <div class="pzh" id="promptZh" hidden></div>
+      <div class="scr prompt-scr" data-tab="pos">
+        <div class="prompt-tabs" role="tablist" aria-label="提示詞">
+          <button type="button" class="akey sm" role="tab" id="promptTabPos" aria-selected="true" aria-controls="posPane">正面</button>
+          <button type="button" class="akey sm" role="tab" id="promptTabNeg" aria-selected="false" aria-controls="negDetails" tabindex="-1">負面<span class="tab-dot" hidden></span></button>
+        </div>
+        <div id="posPane" role="tabpanel" aria-labelledby="promptTabPos">
+          <div class="ac-wrap hl-wrap"><div class="hl" id="promptHl" aria-hidden="true" translate="no"></div><textarea id="prompt" rows="3" spellcheck="false" placeholder="masterpiece, best quality, safe, 1girl, ...（可輸入中文找 tag；{紅|藍} 每張隨機挑一個）"></textarea><div class="ac" id="acPrompt"></div></div><div class="psec" id="promptSecs" hidden></div>
+          <div class="foot"><span id="promptStats"></span><span class="foot-r"><button class="pzh-toggle" id="punctFixBtn" type="button" aria-pressed="true" title="英文 tag 後面用中文輸入法打的「，、：（）」自動換成半形「, : ( )」，不用切輸入法；中文句子裡的不動，Ctrl+Z 可以換回來">，→,</button><span class="hint-keys" title="游標放在某個 tag 上（或選取文字）再按">CTRL+↑↓ 權重</span></span></div>
+          <div class="pzh" id="promptZh" hidden></div>
+        </div>
+        <div id="negDetails" class="neg-pane" role="tabpanel" aria-labelledby="promptTabNeg">
+          <div class="ac-wrap hl-wrap"><div class="hl" id="negHl" aria-hidden="true" translate="no"></div><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
+          <div class="foot"><span class="foot-r"><button class="pzh-toggle" id="negZhBtn" type="button" aria-pressed="false" title="在負面提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button></span></div>
+          <div class="pzh" id="negZh" hidden></div>
+        </div>
       </div>
       <div class="taglib" id="tagLib" hidden></div>
       <div class="warn-line sm" id="promptWarn" hidden></div>
 
 
-      <details class="fold" id="negDetails"><summary>NEG　預設負面詞（點開改）</summary>
-        <div class="ac-wrap"><textarea id="negative" rows="3" spellcheck="false"></textarea><div class="ac" id="acNeg"></div></div>
-        <div class="foot"><span class="foot-r"><button class="pzh-toggle" id="negZhBtn" type="button" aria-pressed="false" title="在負面提示詞框下面列出每段 tag、句子的中文：tag 查對照表，句子可以交給 AI 翻">中英對照</button></span></div>
-        <div class="pzh" id="negZh" hidden></div>
-      </details>
       <label class="check inline batch-row" title="提示詞框每一行當成一句提示詞，各送一次（每句畫「張數」那麼多張）；開著時不跑「生成時自動改寫」"><input type="checkbox" id="batchLines"> 批次：每行一句提示詞，各畫一組</label>
     </section>
   </div>
@@ -455,12 +469,16 @@
       <button data-mode="multiref" data-ic="multi" type="button" title="多張參考圖組合：換裝、換場景、照姿勢、合照…（Qwen 2.1）">多圖參考</button>
       <button data-mode="upscale" data-ic="zoom" type="button">放大</button>
       <button data-mode="strip" data-ic="i2i" type="button" hidden></button>
-      <button data-mode="sheet" data-ic="multi" type="button" title="角色四視圖（設定稿）一次改：換衣服、改顏色、脫衣，每個視角同步改（Qwen 2.1，不用切模型）">四視圖</button>
-    </div><button class="akey sm stage-find-btn" id="findBtn" type="button" title="找功能（Ctrl+K）：打「反推」「遮罩」「LoRA」「種子」…直接跳過去" aria-haspopup="dialog" aria-controls="finder">⌕ 找功能</button><button class="akey sm stage-tasks-btn" id="stageTasksBtn" type="button" aria-pressed="true" title="收起／打開右欄（這張圖、任務）">任務 <span class="vfd sm" id="stageTasksN" hidden></span></button></div>
+      <button data-mode="sheet" data-ic="multi" type="button" title="角色四視圖（設定稿）一次改：換衣服、改顏色、脫衣，每個視角同步改（Qwen 2.1，不用切模型）">多視圖編輯</button>
+    </div><button class="akey sm stage-tasks-btn" id="stageTasksBtn" type="button" aria-pressed="true" title="收起／打開任務欄">任務 <span class="vfd sm" id="stageTasksN" hidden></span></button></div>
   <section class="panel monitor stage screws" aria-label="畫面">
-    <div class="readout" aria-live="polite"><span id="osdl">● READY</span><span class="sep"></span><span id="osdm">—</span><span class="grow"></span><span class="a" id="osdr"></span><span class="muted sm view-meta" id="viewMeta"></span></div>
+    <div class="readout" aria-live="polite"><span id="osdl">● READY</span><span class="sep"></span><div id="viewSrc" hidden><button type="button" class="akey sm" data-v="input" aria-pressed="false">輸入圖</button><button type="button" class="akey sm" data-v="result" aria-pressed="true"><span>結果</span><i class="tab-dot" hidden></i></button></div><span id="osdm">—</span><span class="grow"></span><span class="a" id="osdr"></span><span class="muted sm view-meta" id="viewMeta"></span></div>
     <div class="viewer" id="viewer">
       <div class="win" id="win">
+        <div class="drop" id="initDrop" hidden>
+          <img id="initImg" alt="">
+          <div class="drop-hint">拖曳圖片到這裡、貼上（Ctrl+V），或<button class="link" id="initPick" type="button">選擇檔案</button></div>
+        </div>
         <img id="viewImg" alt="目前選取的生成結果">
         <video id="viewVid" controls loop playsinline hidden></video>
         <div class="empty" id="viewEmpty">按「生成」開始。圖片會出現在這裡。</div>
@@ -487,45 +505,31 @@
       </div>
       <span class="vlbl">VIEWER</span><span class="pled" id="pled"></span>
     </div>
-  </section>
-
-
-  <!-- 右區「這張圖」（2026-11-23 左右兩欄）：成品動作全部攤開、一直看得到。右區收起或視窗太窄時，stage.js placeActs 把 #viewActions 搬到觀景窗下面排成一排 -->
-  <div class="dock-grp" data-dock="imgacts">
-    <p class="muted sm" id="imgActsEmpty">還沒選圖：畫好一張，或點右下幻燈片匣、圖庫裡的圖，這裡就會出現能對它做的事。</p>
-    <div class="view-actions" id="viewActions" hidden>
-      <div class="va-grp"><span class="va-lbl">接著做</span>
-        <button class="akey" data-act="reuse" data-ic="loop" type="button" title="把這張圖的提示詞、模型、LoRA、尺寸、取樣整套放回生成頁">重用參數</button>
-        <button class="akey" data-act="img2img" data-ic="i2i" type="button">圖生圖</button>
-        <button class="akey" data-act="inpaint" data-ic="inpaint" type="button">局部重繪</button>
-        <button class="akey" data-act="upscale" data-ic="zoom" type="button">放大</button>
-        <button class="akey" data-act="multiref" data-ic="multi" type="button">多圖參考</button>
-        <button class="akey" data-act="sheet" data-ic="multi" type="button" title="把這張圖送到「四視圖編輯」">四視圖</button>
-        <button class="akey" data-act="charsheet" data-ic="multi" type="button" title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
-        <button class="akey" data-act="play" data-ic="star" type="button" title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">玩法…</button>
-        <button class="akey" data-act="strip" data-ic="i2i" type="button" hidden></button>
-        <button class="akey" data-act="frames" data-ic="slides" type="button" title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
+    <div class="view-actions" id="viewActions">
+      <button class="akey" data-act="reuse" data-ic="loop" type="button" disabled title="重用參數" aria-label="重用參數"><span class="va-name">重用參數</span></button>
+      <button class="akey" data-act="img2img" data-ic="i2i" type="button" disabled title="圖生圖" aria-label="圖生圖"><span class="va-name">圖生圖</span></button>
+      <button class="akey" data-act="inpaint" data-ic="inpaint" type="button" disabled title="修圖" aria-label="修圖"><span class="va-name">修圖</span></button>
+      <button class="akey" data-act="upscale" data-ic="zoom" type="button" disabled title="放大" aria-label="放大"><span class="va-name">放大</span></button>
+      <button class="akey" data-act="fav" data-ic="star" type="button" disabled title="☆ 收藏" aria-label="☆ 收藏"><span class="va-name">☆ 收藏</span></button>
+      <button class="akey" data-act="sheet" data-ic="multi" type="button" disabled title="多視圖編輯" aria-label="多視圖編輯"><span class="va-name">多視圖編輯</span></button>
+      <button class="akey" id="viewMore" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="viewMoreMenu" disabled>更多 ▾</button>
+      <div id="viewMoreMenu" role="menu" aria-labelledby="viewMore" hidden>
+        <button class="akey" role="menuitem" data-act="multiref" data-ic="multi" type="button" disabled>多圖參考</button>
+        <button class="akey" role="menuitem" data-act="charsheet" data-ic="multi" type="button" disabled title="用這張圖當定稿，做角色設定圖（轉身圖＋臉部特寫），存成資產庫角色">做設定圖</button>
+        <button class="akey" role="menuitem" data-act="play" data-ic="star" type="button" disabled title="擴圖、變體、修臉、修手、差分、一鍵去背" aria-haspopup="menu">影像工具</button>
+        <button class="akey" role="menuitem" data-act="strip" data-ic="i2i" type="button" disabled hidden></button>
+        <button class="akey" role="menuitem" data-act="tagger" data-ic="rewind" type="button" disabled title="從這張圖反推提示詞">反推</button>
+        <a class="akey" role="menuitem" data-act="download" data-ic="floppy" aria-disabled="true" download>下載</a>
+        <button class="akey" role="menuitem" data-act="lib" data-ic="tape" type="button" disabled title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
+        <button class="akey" role="menuitem" data-act="asset" data-ic="multi" type="button" disabled title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
+        <button class="akey" role="menuitem" data-act="studio" data-ic="tape" type="button" disabled title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
+        <button class="akey" role="menuitem" data-act="lorapreview" data-ic="star" type="button" disabled title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
+        <button class="akey go" role="menuitem" data-act="video" type="button" disabled title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
+        <button class="akey" role="menuitem" data-act="frames" data-ic="slides" type="button" disabled title="把這支影片拆成一張張，修掉壞掉的幀再接回去（導演 → 拆幀台）" hidden>拆幀修片</button>
+        <button class="akey" role="menuitem" data-act="delete" data-ic="eject" type="button" disabled>移到回收區</button>
       </div>
-      <div class="va-grp"><span class="va-lbl">看懂它</span>
-        <button class="akey" data-act="tagger" data-ic="rewind" type="button" title="從這張圖反推提示詞">反推</button>
-      </div>
-      <div class="va-grp"><span class="va-lbl">帶走</span>
-        <button class="akey" data-act="fav" type="button">☆ 收藏</button>
-        <a class="akey" data-act="download" data-ic="floppy" download>下載</a>
-        <button class="akey" data-act="lib" data-ic="tape" type="button" title="把這張圖的設定整套存進提示詞庫，這張圖當縮圖">存到提示詞庫</button>
-        <button class="akey" data-act="asset" data-ic="multi" type="button" title="把這張圖存進資產庫（新資產或加到現有資產）">存成資產</button>
-        <button class="akey" data-act="studio" data-ic="tape" type="button" title="放進剪輯台的素材區（導演 → 剪輯台）">送到剪輯台</button>
-        <button class="akey" data-act="lorapreview" data-ic="star" type="button" title="把這張圖設成它用到的 LoRA 的預覽圖">設為 LoRA 預覽圖</button>
-      </div>
-      <div class="va-grp va-end">
-        <button class="akey go" data-act="video" type="button" title="用這張圖當第一格做成有聲影片（MiniMax H3）">動起來</button>
-        <button class="akey warn" data-act="delete" data-ic="eject" type="button">回收區</button>
-      </div>
-      <!-- 以前的「⋯」更多選單：按鈕都攤開了，留著空殼（id 不刪） -->
-      <button class="akey" id="viewMore" type="button" aria-expanded="false" aria-controls="viewMoreMenu" aria-label="更多成品動作" hidden>⋯</button>
-      <div id="viewMoreMenu" hidden></div>
     </div>
-  </div>
+  </section>
 
   <aside class="mag stage-tasks" data-dock="tasks" aria-label="任務">
     <div class="row gap wrap"><span class="vfd sm" id="stageQueue">QUEUE · 0</span>
@@ -566,7 +570,7 @@
     <button class="akey sm" id="galSelMode" type="button" title="多選（也可以 Ctrl＋點圖、Shift＋點圖選一段）">多選</button>
   </div>
   <div class="toolbar sub-toolbar" id="galFilters" hidden>
-    <select id="galMode" aria-label="模式"><option value="">所有模式</option><option value="txt2img">文生圖</option><option value="img2img">圖生圖</option><option value="inpaint">局部重繪</option><option value="multiref">多圖參考</option><option value="upscale">放大</option><option value="strip">一鍵脫衣</option><option value="sheet">四視圖編輯</option><option value="outpaint">擴圖</option><option value="detail">修細節</option><option value="diff">差分</option><option value="rembg">去背</option><option value="xy">對照表</option><option value="video">影片</option><option value="imported">其他（ComfyUI）</option></select>
+    <select id="galMode" aria-label="模式"><option value="">所有模式</option><option value="txt2img">文生圖</option><option value="img2img">圖生圖</option><option value="inpaint">局部重繪</option><option value="multiref">多圖參考</option><option value="upscale">放大</option><option value="strip">一鍵脫衣</option><option value="sheet">四視圖編輯</option><option value="outpaint">擴圖</option><option value="detail">修細節</option><option value="diff">差分</option><option value="rembg">去背</option><option value="xy">對照表</option><option value="video">影片</option><option value="comic">漫畫台</option><option value="imported">其他（ComfyUI）</option></select>
     <select id="galFamily" aria-label="模型家族"><option value="">所有家族</option><option value="anima">Anima（動漫）</option><option value="qwen21">Qwen 2.1（編輯）</option><option value="moss">MOSS-Image（文生圖繪圖）</option><option value="custom">匯入的工作流</option></select>
     <select id="galModel" aria-label="模型"><option value="">所有模型</option></select>
     <select id="galLora" aria-label="LoRA"><option value="">所有 LoRA</option></select>
@@ -1393,6 +1397,10 @@
             <select id="agCount" tabindex="-1"><option>1</option><option selected>2</option><option>3</option><option>4</option></select>
             <select id="agThink" tabindex="-1" title="OFF＝不思考，最快；LOW＝先想一下（思考上限 1024 token）；HIGH＝多想（上限 3072 token），要數東西、分左右手、排版時開"><option value="off" selected>OFF</option><option value="low">LOW</option><option value="high">HIGH</option></select>
           </div>
+          <div class="ag-ctl ag-preset"><span class="lbl">預設</span>
+            <div class="row gap"><select id="agPreset" class="sm" aria-label="助手套哪組指令預設" title="指令預設（破限、角色設定、溫度、請求改寫…）：跟 API 頁對照表「生圖助手」那一格是同一個設定，這裡改了那邊也跟著變"></select><button class="akey sm" id="agPresetEdit" type="button" title="到 API 頁打開這組預設來改">編輯…</button></div>
+            <span class="muted sm" id="agPresetNote" hidden></span>
+          </div>
           <div class="ag-flags">
             <label class="check"><input type="checkbox" id="agAuto" checked><span>自動重畫<small>自己看圖、挑毛病、再畫下一輪；關掉＝畫一輪就停，等你說</small></span></label>
             <label class="check"><input type="checkbox" id="agLoras" checked><span>讓它自己挑 LoRA<small>照每個 LoRA 的用途說明決定掛不掛、掛多強</small></span></label>
@@ -1406,6 +1414,7 @@
           <div class="ag-base" id="agBaseEdit" hidden>
             <div class="ag-base-model"><span class="sub">模型</span><select id="agBModel" title="換模型時步數、CFG、取樣器、反向詞會換成那個模型的預設；換到別的家族，固定掛的 LoRA 會拿掉"></select></div>
             <div class="ag-base-row">
+              <div class="ag-base-turbo" id="agBTurboRow" hidden><span class="sub">加速</span><select id="agBTurbo" title="Anima 的加速 LoRA（跟生成頁的「加速」一樣）：開了 10～12 步、CFG 1，快很多；不使用是 30 步、CFG 4，品質優先"></select></div>
               <div><span class="sub">步數</span><input type="number" id="agBSteps" min="1" max="80"></div>
               <div><span class="sub">CFG</span><input type="number" id="agBCfg" min="1" max="15" step="0.1"></div>
               <div><span class="sub">取樣器</span><select id="agBSampler"></select></div>
@@ -1493,16 +1502,24 @@
     <section class="box">
       <label>指令預設</label>
       <div class="muted sm">學 SillyTavern 的對話預設：在功能自己的指令前後加段落（破限、角色設定…）、調溫度這些參數、加<b>預填</b>（先替模型寫好回覆的開頭，讓它接著寫，閉源模型比較肯配合）。灰底的兩段是功能本身的指令和請求，一定會送、可以搬位置。可以直接匯入 SillyTavern 的預設 JSON。</div>
-      <div class="row gap wrap"><select id="lpSel" class="sm" aria-label="選一組預設"></select><button class="akey sm" id="lpNew" type="button">新增</button><button class="akey sm" id="lpImport" type="button">匯入 SillyTavern 預設…</button><input type="file" id="lpFile" accept=".json,application/json" hidden></div>
+      <div class="row gap wrap"><select id="lpSel" class="sm" aria-label="選一組預設"></select><button class="akey sm" id="lpNew" type="button">新增</button><button class="akey sm" id="lpJailbreak" type="button" title="建一組「破限段＋功能內建指令＋請求」的預設，預填留空：助手、改寫這些要固定格式回覆的功能也能用">新增破限範本（給助手用）</button><button class="akey sm" id="lpImport" type="button">匯入 SillyTavern 預設…</button><input type="file" id="lpFile" accept=".json,application/json" hidden></div>
+      <ul class="muted sm llm-tips">
+        <li>破限段放在灰色「功能內建指令」那段<b>前面</b>（用 ↑↓ 搬）。</li>
+        <li>給助手、導演台、拍攝單這些要固定格式回覆的功能用時，把規定回覆格式的段落關掉：思維鏈、狀態欄、正文格式、字數。</li>
+        <li>要回 JSON 的功能（助手、導演台、預演台…），預填留空，或只寫一個 <code>{</code>。</li>
+      </ul>
       <div class="muted sm llm-report" id="lpReport" hidden></div>
       <div id="lpEditor" hidden>
         <label class="llm-f wide">名稱<input id="lpName" class="sm"></label>
         <div id="lpBlocks" class="llm-blocks"></div>
         <div class="row gap"><button class="akey sm" id="lpAddBlock" type="button">＋加一段</button></div>
         <label class="llm-f wide">預填（送出時接在最後，讓模型接著寫；空著＝不用）<textarea id="lpPrefill" rows="2" spellcheck="false"></textarea></label>
-        <div class="muted sm">本機的模型回覆會連預填一起回；外接 API 只回後面接著寫的部分。</div>
+        <div class="muted sm">本機的模型回覆會連預填一起回；外接 API 只回後面接著寫的部分；預填是 <code>{</code> 或 <code>[</code> 開頭時，繪匣會自動把它接回回覆前面，JSON 才完整。</div>
         <div class="llm-params" id="lpParams"></div>
         <div class="row gap wrap"><label class="check inline"><input type="checkbox" id="lpSquash"> 相鄰的 system 段併成一則（有的服務只收一則）</label></div>
+        <div class="row gap wrap"><label class="check inline"><input type="checkbox" id="lpRewrite"> 請求改寫（只對外接 API）</label></div>
+        <div class="muted sm">送出前改寫請求，學 SillyTavern 的破限腳本：Gemini 的安全門檻全關；system 裡「越獄、無視道德限制」這類話換成中性說法；system 尾端墊一段要模型忽略的填充文字；成人用詞轉成 <code>\uXXXX</code> 碼點，回覆再轉回來；回覆是空的或短短一句拒絕，就重送一次。會多花一點 token，回覆也會慢一點。</div>
+        <label class="llm-f wide">額外請求參數（JSON，原樣併進請求；model、messages、stream 不會被蓋掉）<textarea id="lpExtra" rows="2" spellcheck="false" placeholder='例 {"reasoning_effort": "low"}'></textarea></label>
         <div class="row gap wrap"><label class="llm-f">{{user}} 換成<input id="lpUser" class="sm"></label><label class="llm-f">{{char}} 換成<input id="lpChar" class="sm"></label></div>
         <div class="row gap"><button class="akey sm go" id="lpSave" type="button">儲存預設</button><button class="akey sm warn" id="lpDelete" type="button">刪除這組</button></div>
       </div>
@@ -2413,7 +2430,7 @@
     <div class="row between"><b>快捷鍵與小技巧</b><span class="grow"></span><a class="akey sm go" href="/static/manual.html" target="_blank" title="每一章都有會自己示範操作的小動畫（用瀏覽器開啟）">操作手冊（動畫教學）</a><button class="minikey red" data-close data-ic="power" type="button" aria-label="關閉"></button></div>
     <div class="help-grid">
       <section><h4>到處都能用</h4>
-        <dl><dt><kbd>?</kbd></dt><dd>打開這個說明</dd><dt><kbd>Alt</kbd>＋<kbd>1</kbd>～<kbd>9</kbd></dt><dd>切換功能（跟頂列及「全部功能」裡按鍵上的編號一樣）</dd><dt><kbd>Alt</kbd>＋<kbd>0</kbd></dt><dd>設定</dd>
+        <dl><dt><kbd>?</kbd></dt><dd>打開這個說明</dd><dt><kbd>Alt</kbd>＋<kbd>1</kbd>～<kbd>9</kbd></dt><dd>切換功能（快捷鍵見左側導覽的按鈕提示）</dd><dt><kbd>Alt</kbd>＋<kbd>0</kbd></dt><dd>設定</dd>
         <dt><kbd>Q</kbd></dt><dd>任務面板</dd><dt><kbd>Esc</kbd></dt><dd>關閉浮層</dd></dl></section>
       <section><h4>生成</h4>
         <dl><dt><kbd>Ctrl</kbd>＋<kbd>Enter</kbd></dt><dd>生成</dd><dt><kbd>Ctrl</kbd>＋<kbd>K</kbd></dt><dd>找功能（打「反推」「遮罩」「種子」…，Enter 直接跳過去）</dd><dt><kbd>Ctrl</kbd>＋<kbd>V</kbd></dt><dd>貼上圖片＝圖生圖（多圖參考模式下＝加一張參考圖）</dd>

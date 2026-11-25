@@ -45,6 +45,38 @@ export const ICONS = {
   max: '<rect x="5" y="5" width="14" height="14" rx="1"/><path d="M5 9h14"/>',
   power: '<path d="M12 3v9M7.8 7.4a7 7 0 1 0 8.4 0"/>',
   expand: '<rect x="8" y="8" width="8" height="8" rx="1"/><path d="M3 8V3h5M16 3h5v5M21 16v5h-5M8 21H3v-5"/>',
+  check: '<path d="M3 12L9 18L21 5"/>',
+  close: '<path d="M5 5L19 19M19 5L5 19"/>',
+  dot: '<circle class="f" cx="12" cy="12" r="6"/>',
+  ring: '<circle cx="12" cy="12" r="6"/>',
+  gear: '<path d="M10 3H14L15 6L17 7L20 6L22 10L20 12V14L21 16L18 19L15 18L14 21H10L9 18L6 19L3 16L4 14V12L2 10L4 6L7 7L9 6Z"/><circle cx="12" cy="12" r="3"/>',
+  arrowL: '<path d="M21 12H4L11 5M4 12L11 19"/>',
+  arrowR: '<path d="M3 12H20L13 5M20 12L13 19"/>',
+  arrowU: '<path d="M12 21V4L5 11M12 4L19 11"/>',
+  arrowD: '<path d="M12 3V20L5 13M12 20L19 13"/>',
+  external: '<path d="M13 4H20V11M20 4L10 14M9 6H4V20H18V15"/>',
+  redo: '<path d="M4 19V16Q4 8 12 8H20M15 3L20 8L15 13"/>',
+  undo: '<path d="M20 19V16Q20 8 12 8H4M9 3L4 8L9 13"/>',
+  diamond: '<polygon class="f" points="12,3 21,12 12,21 3,12"/>',
+  sparkle: '<path class="a" d="M12 2Q13 10 22 12Q13 14 12 22Q11 14 2 12Q11 10 12 2Z"/>',
+  warn: '<path d="M12 3L22 20H2Z"/><path d="M12 9V14"/><circle class="af" cx="12" cy="17" r="1"/>',
+  caretD: '<polygon class="f" points="5,9 19,9 12,16"/>',
+  caretU: '<polygon class="f" points="5,15 12,8 19,15"/>',
+  caretR: '<polygon class="f" points="9,5 16,12 9,19"/>',
+  caretL: '<polygon class="f" points="15,5 8,12 15,19"/>',
+  play: '<polygon class="f" points="6,3 21,12 6,21"/>',
+  stop: '<rect class="f" x="5" y="5" width="14" height="14" rx="1"/>',
+  bolt: '<path class="a" d="M14 2L4 14H11L10 22L21 9H14Z"/>',
+  lock: '<path d="M7 10V8Q7 3 12 3Q17 3 17 8V10"/><rect x="4" y="10" width="16" height="11" rx="2"/><path d="M12 14V17"/>',
+  pencil: '<path d="M3 21L4 15L16 3L21 8L9 20Z"/><path d="M13 6L18 11M4 15L9 20"/>',
+  list: '<path d="M8 6H21M8 12H21M8 18H21"/><path d="M3 6H5M3 12H5M3 18H5"/>',
+  grid: '<rect x="3" y="3" width="18" height="18" rx="1"/><path d="M9 3V21M15 3V21M3 9H21M3 15H21"/>',
+  swap: '<path d="M3 8H20L15 3M21 16H4L9 21"/>',
+  tip: '<path d="M9 17C9 14 5 13 5 9C5 5 8 3 12 3C16 3 19 5 19 9C19 13 15 14 15 17Z"/><path d="M9 20H15M11 22H13"/>',
+  heart: '<path d="M12 20L4 12C0 6 7 1 12 7C17 1 24 6 20 12Z"/>',
+  note: '<path d="M9 17V6L20 3V15M9 9L20 6"/><circle class="f" cx="6.5" cy="17.5" r="2.5"/><circle class="f" cx="17.5" cy="15.5" r="2.5"/>',
+  thumb: '<rect x="3" y="10" width="4" height="10" rx="1"/><path d="M7 11L11 8L13 3Q16 3 15 8L14 10H20Q22 10 21 13L19 19Q19 21 16 21H11L7 19"/>',
+  folder: '<path d="M3 7V4H10L13 7H21V20H3Z"/><path d="M3 10H21"/>',
 };
 export const ic = (n) => `<svg class="ic" viewBox="0 0 24 24" aria-hidden="true">${ICONS[n] || ""}</svg>`;
 export function setIc(el, n) {
@@ -340,7 +372,7 @@ export function idle() {
   F("cassette").classList.remove("play");
   F("genBtn").classList.remove("busy");
   const l = F("osdl");
-  if (l.textContent !== "● ERROR") { l.textContent = "● READY"; l.className = ""; }
+  if (l.textContent !== "● ERROR") { l.textContent = document.documentElement.classList.contains("style-a") ? "● 待機" : "● READY"; l.className = ""; }
   F("pct").textContent = "--%";
   reel(0);
 }
@@ -433,6 +465,7 @@ export function pinView(win, Observer = globalThis.ResizeObserver) {
 }
 
 export function init() {
+  if (document.documentElement.classList.contains("style-a")) F("osdl").textContent = "● 待機";
   pinView(F("win"));
   $$("[data-ic]").forEach((el) => setIc(el, el.dataset.ic));
   $$("[data-app]").forEach((el) => (el.outerHTML = appIcon(+el.dataset.app)));

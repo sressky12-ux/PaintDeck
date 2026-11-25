@@ -262,9 +262,10 @@ pub async fn translate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     for attempt in 0..2 {
         let page = Some(crate::director::tx(&b["brain"])).filter(|x| !x.is_empty()).unwrap_or_else(|| "page".into());
         let system = app.pe.agent_text("translate");
-        let r = super::api_llm::chat(&app, "translate", &page, &rid, &system, &user, &[], max_tokens, if attempt == 0 { 0.2 } else { 0.5 }).await.map_err(super::bad)?;
+        let (reply, spent) = crate::pe::format_attempt(attempt, super::api_llm::chat(&app, "translate", &page, &rid, &system, &user, &[], max_tokens, if attempt == 0 { 0.2 } else { 0.5 })).await;
+        let r = reply.map_err(super::bad)?;
         zh = numbered_lines(&r, texts.len());
-        if zh.iter().any(Option::is_some) {
+        if zh.iter().any(Option::is_some) || spent {
             break;
         }
         eprintln!("中英對照：模型輸出對不上編號（第 {} 次）：{}", attempt + 1, r.chars().take(200).collect::<String>());
