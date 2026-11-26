@@ -10,7 +10,7 @@ let editing = null;  // 正在編的那組預設（整份物件）
 const F = (id) => $("#" + id);
 
 // 每個功能的內建指令在設定頁「自訂系統提示詞」的哪一份（空字串＝內建指令是程式依內容產生的，不能改）
-export const BUILTIN_ID = { agent: "agent", rewrite: "t2i", translate: "translate", shotsheet: "agent_h3_sheet", h3writer: "agent_h3_base", director: "director_describe", previz: "" };
+export const BUILTIN_ID = { agent: "agent", rewrite: "t2i", translate: "translate", shotsheet: "agent_h3_sheet", h3writer: "agent_h3_base", director: "director_describe", caption: "", comic: "", colorbook: "", charsheet: "", previz: "" };
 
 // ---------------------------------------------------------------- 純函式（tests\llm.test.cjs）
 

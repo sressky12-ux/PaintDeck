@@ -579,7 +579,8 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
     let fam = fam_of(&p).map_err(|e| e.1)?;
     let name = train::lora_name(&p).to_string();
     let first = conn.status().await?;
-    let resumed = first["state"] == "running";
+    // SSH 斷線期間可能已經煉完；從仍在的同一個小幫手取回結果。
+    let resumed = first["state"] == "running" || (p["run"]["target"] == "ssh" && matches!(first["state"].as_str(), Some("done" | "error" | "stopped")));
     let kohaku = p["run"]["engine"] == "kohakumoss";
     let resume_checkpoint = kohaku && p["run"]["resume"] == true;
     if !resumed {
@@ -714,7 +715,7 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
 }
 
 /// 訓練收尾：寫回專案檔、通知網頁
-async fn finish(app: &Shared, id: &str, r: Result<&'static str, String>) {
+async fn finish(app: &Shared, id: &str, target: &str, r: Result<&'static str, String>) {
     let (state, error) = match r {
         Ok(s) => (s, String::new()),
         Err(e) => ("error", e),
@@ -734,7 +735,13 @@ async fn finish(app: &Shared, id: &str, r: Result<&'static str, String>) {
             }
         }
     }
+    let msg = match (target, error.is_empty()) {
+        ("ssh", true) => SSH_REMINDER.to_string(),
+        ("ssh", false) => format!("{error}。{SSH_REMINDER}"),
+        _ => error.clone(),
+    };
     set_run(app, id, |run| {
+        if target == "ssh" { run.insert("msg".into(), json!(msg)); }
         if state == "error" && run.get("engine").is_some_and(|v| v == "kohakumoss") {
             run.insert("error_kind".into(), json!(classify_error(&error)));
         }
@@ -744,7 +751,7 @@ async fn finish(app: &Shared, id: &str, r: Result<&'static str, String>) {
     })
     .await;
     job_end(id);
-    emit(app, id, "train", state, json!({"msg": error}));
+    emit(app, id, "train", state, json!({"msg": msg}));
 }
 
 // ================================================================ 本機
@@ -853,12 +860,121 @@ fn runpod_body(gpu_ids: &[String], token: &str, agent_py: &[u8]) -> Value {
         "name": RUNPOD_POD, "imageName": super::api_cloud::IMAGE, "gpuTypeIds": gpu_ids, "gpuCount": 1, "cloudType": "SECURE",
         "containerDiskInGb": 80, "volumeInGb": 0, "ports": [format!("{RUNPOD_PORT}/http")],
         "env": {"TRAIN_TOKEN": token, "TRAIN_AGENT_B64": base64::engine::general_purpose::STANDARD.encode(agent_py)},
-        "dockerStartCmd": ["bash", "-c", train::boot_script(RUNPOD_PORT)],
+        "dockerStartCmd": ["bash", "-c", train::boot_script(RUNPOD_PORT, "/workspace", None)],
     })
 }
 
 async fn runpod_delete(app: &Shared, pod: &str) -> Result<(), String> {
     app.agent.cloud.rp(reqwest::Method::DELETE, &format!("/pods/{pod}"), None).await.map(|_| ())
+}
+
+const SSH_PORT: u16 = 38200;
+const SSH_REMINDER: &str = "機器還開著：開關機和計費在那家網站，用完記得去關機";
+static SSH_TRAIN: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+/// 同時核對工作階段和程序的啟動時間，舊 pid 被別人用走時不會誤關。
+const SSH_PID_CHECK: &str = r#"owned_pid() {
+    read -r pid born < boot.pid 2>/dev/null && [[ $pid =~ ^[1-9][0-9]*$ ]] &&
+    [[ $(awk '{print $6, $22}' "/proc/$pid/stat" 2>/dev/null) == "$pid $born" ]]
+}"#;
+
+async fn ssh_run(app: &Shared, id: &str, model: &str, fam: &Fam, cancel: &CancellationToken) -> Result<&'static str, String> {
+    let _guard = SSH_TRAIN.try_lock().map_err(|_| "這台雲端主機已經有專案在訓練")?;
+    let cloud = &app.agent.cloud;
+    let mut pod = cloud.ssh_pod();
+    let (info, vram) = cloud.ssh_probe(&mut pod).await?;
+    emit(app, id, "train", "running", json!({"msg":info}));
+    if let Some(gb) = vram.filter(|gb| gb + 0.5 < fam.min_vram_gb) {
+        return Err(format!("雲端主機的顯存 {gb:.0}GB 不夠煉 {}（至少要 {:.0}GB）", fam.label, fam.min_vram_gb));
+    }
+    if cancel.is_cancelled() { return Ok("stopped"); }
+    pod.dir.push_str("/train");
+    let dir = &pod.dir;
+    let lease = train::new_id();
+    let boot = train::boot_script(SSH_PORT, dir, Some(&lease));
+    let agent = std::fs::read_to_string(app.paths.res.join("train/agent.py")).map_err(|e| format!("讀不到訓練小幫手：{e}"))?.replace("\r\n", "\n");
+    let token = format!("{}{}", train::new_id(), train::new_id());
+    let local = std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|s| s.local_addr()).map_err(|e| e.to_string())?.port();
+    // 鎖住檢查、寫檔、啟動這一段。另一個專案不能接走本次訓練資料。
+    let no_pid = "沒有讀到訓練小幫手的程序編號";
+    let busy = "這台主機已有別的訓練在跑";
+    let port_busy = "訓練用的連接埠已被占用";
+    let launch = format!(r#"set -eu
+umask 077
+mkdir -p '{dir}'
+cd '{dir}'
+exec 9>setup.lock
+flock -w 10 9
+{SSH_PID_CHECK}
+if [ -f boot.pid ] && owned_pid; then
+    [[ $(cat project) == '{id}' && -s token ]] || {{ echo '{busy}' >&2; exit 1; }}
+else
+    if (echo > /dev/tcp/127.0.0.1/{SSH_PORT}) 2>/dev/null; then echo '{port_busy}' >&2; exit 1; fi
+    echo '{lease}' > lease
+    rm -f boot.exit boot.pid
+    printf '%s' '{token}' > token
+    chmod 600 token
+    echo '{id}' > project
+    cat > agent.py <<'PAINTDECK_AGENT'
+{agent}
+PAINTDECK_AGENT
+    cat > boot.sh <<'PAINTDECK_BOOT'
+{boot}
+PAINTDECK_BOOT
+    (setsid nohup bash -c 'set -- $(cat /proc/$$/stat); echo "$$ ${{22}}" > boot.pid; bash boot.sh > boot.log 2>&1; echo $? > boot.exit' 9>&- < /dev/null > /dev/null 2>&1 &)
+    for i in {{1..50}}; do [ -s boot.pid ] && break; sleep 0.1; done
+    [ -s boot.pid ] || {{ echo '{no_pid}' >&2; exit 1; }}
+fi
+echo '{lease}' > lease
+cat token
+"#);
+    let run = async {
+        let secret = cloud.train_script(&pod, &launch).await?;
+        let conn = Conn::new(&format!("http://127.0.0.1:{local}"), secret.trim(), false)?;
+        let mut tunnel = cloud.train_tunnel(&pod, local, SSH_PORT)?;
+        let training = async {
+            let deadline = tokio::time::Instant::now() + Duration::from_secs(45 * 60);
+            loop {
+                if conn.status().await.is_ok() { break; }
+                let log = cloud.train_script(&pod, &format!(
+                    "cd '{dir}' || exit 1\nif [ -f boot.exit ]; then echo EXIT; tail -n 20 boot.log; elif [ -f boot.log ]; then tail -n 1 boot.log; fi"
+                )).await.unwrap_or_else(|e| format!("等 SSH 重新連線：{e}"));
+                if let Some(tail) = log.strip_prefix("EXIT\n") {
+                    return Err(format!("訓練小幫手沒開起來：\n{tail}"));
+                }
+                if !log.trim().is_empty() { emit(app, id, "train", "running", json!({"msg":log.trim()})); }
+                if tokio::time::Instant::now() >= deadline { return Err("訓練機 45 分鐘還沒準備好".into()); }
+                tokio::time::sleep(Duration::from_secs(10)).await;
+            }
+            drive(app, id, &conn, cancel, model, vram.unwrap_or(24.0)).await
+        };
+        tokio::pin!(training);
+        // 包含下載成品的時間，保持同一個本機埠，斷線時原地重開通道。
+        loop {
+            tokio::select! {
+                result = &mut training => break result,
+                () = cancel.cancelled() => {
+                    let _ = conn.post("/stop", &json!({})).await;
+                    break Ok("stopped");
+                }
+                _ = tunnel.wait() => {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    tunnel = cloud.train_tunnel(&pod, local, SSH_PORT)?;
+                }
+            }
+        }
+    }.await;
+    let cleanup = format!(r#"cd '{dir}' || exit 0
+exec 9>setup.lock
+flock -w 10 9 || exit 1
+{SSH_PID_CHECK}
+if [[ $(cat lease 2>/dev/null) == '{lease}' ]] && owned_pid; then
+    kill -TERM -- "-$pid" || exit 1
+fi"#);
+    if let Err(e) = cloud.train_script(&pod, &cleanup).await {
+        return Err(format!("{}訓練小幫手可能還在跑：{e}", run.err().map_or(String::new(), |s| format!("{s}。"))));
+    }
+    run
 }
 
 async fn runpod_run(app: &Shared, id: &str, gpu: &str, cancel: &CancellationToken) -> Result<&'static str, String> {
@@ -1158,11 +1274,14 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
     let p = load(&app, &id)?;
     let fam = fam_of(&p)?;
     let target = b["target"].as_str().unwrap_or("").to_string();
-    if !["local", "remote", "runpod", "civitai", "modelscope"].contains(&target.as_str()) {
-        return Err(bad("target 要是 local、remote、runpod、civitai、modelscope 其中一個"));
+    if !["local", "remote", "ssh", "runpod", "civitai", "modelscope"].contains(&target.as_str()) {
+        return Err(bad("target 要是 local、remote、ssh、runpod、civitai、modelscope 其中一個"));
     }
     if PAID.contains(&target.as_str()) && b["confirm"].as_bool() != Some(true) {
         return Err(bad("這個地方要花錢（或用掉額度），要先確認：看過報價後帶 confirm: true"));
+    }
+    if target == "ssh" && app.agent.cloud.ssh_pod().ip.is_empty() {
+        return Err(bad("先到助手頁「雲端設定」選「任何雲端主機」填好主機，按「保存並測試連線」"));
     }
     ready(&app, &p)?;
     // 參數還沒存過就用自動算的
@@ -1219,6 +1338,7 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
                 }
             }
         }
+        "ssh" => {}
         "remote" => {
             if !tx(&b["url"]).starts_with("http") || tx(&b["token"]).len() < 8 {
                 return Err(bad("自己的訓練機要填網址（http 開頭）和口令（至少 8 個字）"));
@@ -1300,10 +1420,11 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
                 Ok(conn) => drive(&app, &id, &conn, &cancel, &model, b["vram_gb"].as_f64().unwrap_or(24.0)).await,
                 Err(e) => Err(e),
             },
+            "ssh" => ssh_run(&app, &id, &model, fam, &cancel).await,
             "runpod" => runpod_run(&app, &id, &tx(&b["gpu"]), &cancel).await,
             _ => civ_run(&app, &id, b["max_cost"].as_f64().unwrap_or(0.0), &cancel).await,
         };
-        finish(&app, &id, r).await;
+        finish(&app, &id, &target, r).await;
     });
     ok(json!({"ok": true}))
 }

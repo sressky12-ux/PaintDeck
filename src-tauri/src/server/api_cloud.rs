@@ -581,19 +581,19 @@ impl Endpoints {
 }
 
 #[derive(Clone, Default)]
-struct Pod {
+pub(crate) struct Pod {
     /// runpod（我們租的，關機＝刪機）／ssh（使用者自己的主機，關機＝停服務）
     kind: String,
     id: String,
     price: f64,
     created: f64,
-    ip: String,
+    pub(crate) ip: String,
     port: u16,
     /// 實際的卡（顯示用）
     gpu: String,
     user: String,
     /// 雲端上的工作資料夾（絕對路徑；ssh 第一次連上才決定）
-    dir: String,
+    pub(crate) dir: String,
     /// 使用者自己指定的私鑰（空＝生圖站自己的 id_ed25519）
     key: String,
     llm_port: u16,
@@ -1123,17 +1123,48 @@ impl Cloud {
         ]
     }
 
-    /// 在雲端跑一個指令（stdin 可以餵資料，例如上傳檔案）；回傳標準輸出
-    async fn ssh(&self, pod: &Pod, cmd: &str, stdin: Option<&Path>, timeout: Duration) -> Result<String, String> {
+    fn ssh_command(&self, pod: &Pod, cmd: &str, input: bool) -> tokio::process::Command {
         let mut c = tokio::process::Command::new(ssh_bin("ssh"));
         c.args(self.ssh_args(pod))
             .arg(format!("{}@{}", pod.user, pod.ip))
             .arg(cmd)
-            .stdin(if stdin.is_some() { Stdio::piped() } else { Stdio::null() })
+            .stdin(if input { Stdio::piped() } else { Stdio::null() })
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
         no_window(&mut c);
+        c
+    }
+
+    /// 腳本走標準輸入，裡面的口令不會出現在 ssh 或遠端 bash 的指令列。
+    pub(crate) async fn train_script(&self, pod: &Pod, script: &str) -> Result<String, String> {
+        let mut child = self.ssh_command(pod, "bash -s", true).spawn().map_err(|e| format!("開 SSH 失敗：{e}"))?;
+        tokio::time::timeout(Duration::from_secs(60), async {
+            let mut input = child.stdin.take().ok_or("SSH 沒有標準輸入")?;
+            input.write_all(script.as_bytes()).await.map_err(|e| e.to_string())?;
+            drop(input);
+            let out = child.wait_with_output().await.map_err(|e| e.to_string())?;
+            if !out.status.success() {
+                return Err(format!("雲端指令失敗：{}", String::from_utf8_lossy(&out.stderr).trim()));
+            }
+            Ok(String::from_utf8_lossy(&out.stdout).into_owned())
+        }).await.map_err(|_| "連雲端逾時".to_string())?
+    }
+
+    /// 訓練自己持有這條通道，收掉時不影響助手或 H3。
+    pub(crate) fn train_tunnel(&self, pod: &Pod, local: u16, remote: u16) -> Result<tokio::process::Child, String> {
+        let mut c = tokio::process::Command::new(ssh_bin("ssh"));
+        c.args(self.ssh_args(pod))
+            .args(["-N", "-o", "ExitOnForwardFailure=yes", "-L", &format!("127.0.0.1:{local}:127.0.0.1:{remote}")])
+            .arg(format!("{}@{}", pod.user, pod.ip))
+            .stdin(Stdio::null()).stdout(Stdio::null()).stderr(Stdio::null()).kill_on_drop(true);
+        no_window(&mut c);
+        c.spawn().map_err(|e| format!("開訓練通道失敗：{e}"))
+    }
+
+    /// 在雲端跑一個指令（stdin 可以餵資料，例如上傳檔案）；回傳標準輸出
+    async fn ssh(&self, pod: &Pod, cmd: &str, stdin: Option<&Path>, timeout: Duration) -> Result<String, String> {
+        let mut c = self.ssh_command(pod, cmd, stdin.is_some());
         let mut child = c.spawn().map_err(|e| format!("執行 ssh 失敗：{e}"))?;
         if let Some(src) = stdin {
             let mut inp = child.stdin.take().ok_or("ssh stdin")?;
@@ -1265,7 +1296,7 @@ impl Cloud {
     }
 
     /// 設定裡的自己主機 → Pod（還沒決定資料夾）
-    fn ssh_pod(&self) -> Pod {
+    pub(crate) fn ssh_pod(&self) -> Pod {
         let m = self.cfg();
         let host = self.c("ssh_host");
         let port = m.get("ssh_port").and_then(Value::as_u64).filter(|p| (1..=65535).contains(p)).unwrap_or(22) as u16;
@@ -1289,7 +1320,7 @@ impl Cloud {
     }
 
     /// 自己的主機：決定工作資料夾（設定沒填就用 /workspace/anima_agent，不能寫就用家目錄）、讀顯卡名稱
-    async fn ssh_probe(&self, pod: &mut Pod) -> Result<String, String> {
+    pub(crate) async fn ssh_probe(&self, pod: &mut Pod) -> Result<(String, Option<f64>), String> {
         let want = pod.dir.clone();
         let cmd = format!(
             "D='{want}'; case \"$D\" in '') if [ -d /workspace ] && [ -w /workspace ]; then D=/workspace/anima_agent; else D=$HOME/anima_agent; fi;; '~/'*) D=$HOME/${{D#'~/'}};; esac; \
@@ -1306,12 +1337,13 @@ impl Cloud {
         let gpu = lines.next().unwrap_or("").to_string();
         let free: f64 = lines.next().and_then(|l| l.parse().ok()).unwrap_or(0.0);
         pod.gpu = gpu.split(',').next().unwrap_or("").trim().trim_start_matches("NVIDIA ").to_string();
-        Ok(format!(
+        let vram = gpu.rsplit_once(',').and_then(|(_, m)| m.split_whitespace().next()?.parse::<f64>().ok()).map(|m| m / 1024.0);
+        Ok((format!(
             "{}；硬碟剩 {:.0} GB；資料夾 {}",
             if gpu.is_empty() { "找不到 NVIDIA 顯卡（nvidia-smi 不能用）".to_string() } else { gpu.replace(", ", "、") },
             free / 1024.0,
             pod.dir
-        ))
+        ), vram))
     }
 
     /// 網址模式：照勾的功能包檢查（助手：MOSS 三個檔＋腦袋；H3：有 H3 節點）
@@ -1800,7 +1832,7 @@ pub async fn test(State(app): State<Shared>) -> ApiResult {
                 .ssh(&pod, "echo ok", None, Duration::from_secs(30))
                 .await
                 .map_err(|e| bad(format!("SSH 連不上：{e}。檢查主機位址、埠、帳號，以及生圖站的公鑰有沒有加進那台主機")))?;
-            let info = cloud.ssh_probe(&mut pod).await.map_err(bad)?;
+            let (info, _) = cloud.ssh_probe(&mut pod).await.map_err(bad)?;
             format!("連上了：{info}")
         }
         _ => {

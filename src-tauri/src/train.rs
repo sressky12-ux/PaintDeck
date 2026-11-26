@@ -1010,22 +1010,30 @@ pub fn estimate(fam: &Fam, steps: u64, usd_per_hour: f64) -> (f64, f64) {
     (hours, hours * usd_per_hour)
 }
 
-/// 雲端訓練機的開機指令（bash）。口令和小幫手程式從環境變數 TRAIN_TOKEN、TRAIN_AGENT_B64 進來，不寫在指令裡。
-pub fn boot_script(port: u16) -> String {
-    [
+/// 雲端訓練機的開機指令（bash）。RunPod 從環境變數讀小幫手和口令；SSH 從工作資料夾讀。root 是固定的 /workspace 或 ssh_probe 驗過的路徑。
+pub fn boot_script(port: u16, root: &str, ssh_run: Option<&str>) -> String {
+    let mut lines = vec![
         "set -e".to_string(),
-        "mkdir -p /workspace && cd /workspace".to_string(),
+        "if [ -f /etc/network_turbo ]; then source /etc/network_turbo; fi".to_string(),
+        format!("mkdir -p {root} && cd {root}"),
         "if [ ! -f ai-toolkit/run.py ]; then".to_string(),
-        format!("  curl -fsSL -o aitk.zip https://codeload.github.com/ostris/ai-toolkit/zip/{TOOLKIT_COMMIT}"),
+        format!("  curl -fsSL --connect-timeout 30 --retry 2 -o aitk.zip https://codeload.github.com/ostris/ai-toolkit/zip/{TOOLKIT_COMMIT}"),
         "  python3 -c \"import zipfile; zipfile.ZipFile('aitk.zip').extractall('.')\"".to_string(),
         format!("  rm -rf ai-toolkit && mv ai-toolkit-{TOOLKIT_COMMIT} ai-toolkit && rm -f aitk.zip"),
         "fi".to_string(),
-        "cd /workspace/ai-toolkit && python3 -m manager install".to_string(),
-        "echo \"$TRAIN_AGENT_B64\" | base64 -d > /workspace/agent.py".to_string(),
-        "PY=/workspace/ai-toolkit/.venv/bin/python; [ -x \"$PY\" ] || PY=/workspace/ai-toolkit/venv/bin/python".to_string(),
-        format!("exec \"$PY\" /workspace/agent.py --host 0.0.0.0 --port {port} --token \"$TRAIN_TOKEN\" --work /workspace/train_work --toolkit /workspace/ai-toolkit --python \"$PY\""),
-    ]
-    .join("\n")
+        format!("cd {root}/ai-toolkit && python3 -m manager install"),
+    ];
+    let (listen, work) = if let Some(run) = ssh_run {
+        lines.push(format!("export TRAIN_TOKEN=\"$(cat {root}/token)\""));
+        ("--host 127.0.0.1", format!("{root}/work/{run}"))
+    } else {
+        lines.push(format!("echo \"$TRAIN_AGENT_B64\" | base64 -d > {root}/agent.py"));
+        ("--host 0.0.0.0", format!("{root}/train_work"))
+    };
+    let token_arg = if ssh_run.is_some() { "" } else { " --token \"$TRAIN_TOKEN\"" };
+    lines.push(format!("PY={root}/ai-toolkit/.venv/bin/python; [ -x \"$PY\" ] || PY={root}/ai-toolkit/venv/bin/python"));
+    lines.push(format!("exec \"$PY\" {root}/agent.py {listen} --port {port}{token_arg} --work {work} --toolkit {root}/ai-toolkit --python \"$PY\""));
+    lines.join("\n")
 }
 
 // ================================================================ C 站
@@ -1624,6 +1632,11 @@ mod tests {
         let mut p = mk("local", "running", Value::Null);
         fix_stale(&mut p, false);
         assert_eq!(p["run"]["state"], "interrupted");
+        for t in ["remote", "ssh"] {
+            let mut p = mk(t, "running", Value::Null);
+            fix_stale(&mut p, false);
+            assert_eq!(p["run"]["state"], "interrupted");
+        }
         // 真的還在跑就不動
         let mut p = mk("local", "running", Value::Null);
         fix_stale(&mut p, true);
@@ -1648,8 +1661,17 @@ mod tests {
     }
 
     #[test]
+    fn ssh_boot_uses_its_folder_and_private_token() {
+        let s = boot_script(38200, "/home/player/train", Some("test_run"));
+        assert!(s.contains("/home/player/train/token") && s.contains("--host 127.0.0.1 --port 38200"));
+        assert!(s.contains("--work /home/player/train/work/test_run"));
+        assert!(!s.contains("/workspace") && !s.contains("--token") && !s.contains("TRAIN_AGENT_B64"));
+    }
+
+    #[test]
     fn boot_script_has_pinned_commit_and_port() {
-        let s = boot_script(8000);
+        let s = boot_script(8000, "/workspace", None);
+        assert!(s.contains("/workspace/agent.py") && s.contains("source /etc/network_turbo") && s.contains("--connect-timeout 30 --retry 2"));
         assert!(s.contains(TOOLKIT_COMMIT) && s.contains("--port 8000") && s.contains("$TRAIN_TOKEN") && s.contains("$TRAIN_AGENT_B64") && s.contains("-m manager install"), "{s}");
         assert!(!s.contains('\r'));
     }

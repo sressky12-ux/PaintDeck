@@ -167,6 +167,7 @@ pub async fn ai(State(app): State<Shared>, headers: HeaderMap) -> ApiResult {
         "guide": ai_guide(&app, &host),
         "mcp": mcp,
         "mcp_json": serde_json::to_string_pretty(&mcp).unwrap_or_default(),
+        "dsh_yaml": app.studio.mcp_dsh_yaml(&station),
         "codex_toml": app.studio.mcp_toml(&station),
         "mcp_name": studio::MCP_NAME,
         "station": station,

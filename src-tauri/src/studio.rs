@@ -558,6 +558,26 @@ impl Studio {
         }}})
     }
 
+    /// 「給 AI 操作」裡可以直接貼到 DeepSeek Harness 的設定。
+    pub fn mcp_dsh_yaml(&self, station: &str) -> String {
+        let c = self.mcp_config(station);
+        let server = &c["mcpServers"][MCP_NAME];
+        let quote = |v: &Value| format!("'{}'", v.as_str().unwrap_or_default().replace('\'', "''"));
+        let mut yaml = format!(
+            "# 繪匣 PaintDeck 的 MCP（貼到 DeepSeek Harness 的 profiles\\desktop\\cordis.patch.yml 最後面）\n- insert:\n    - id: mcp-{MCP_NAME}\n      name: '@deepseek-ai/dsh-mcp-client'\n      config:\n        serverName: {MCP_NAME}\n        transport: stdio\n        command: {}\n        args:\n",
+            quote(&server["command"])
+        );
+        for arg in server["args"].as_array().into_iter().flatten() {
+            yaml.push_str(&format!("          - {}\n", quote(arg)));
+        }
+        yaml.push_str("        env:\n");
+        for (key, value) in server["env"].as_object().into_iter().flatten() {
+            yaml.push_str(&format!("          {key}: {}\n", quote(value)));
+        }
+        yaml.push_str("        failOnStartupError: false\n");
+        yaml
+    }
+
     /// 同一份設定的 Codex CLI 版（~/.codex/config.toml）。路徑用 TOML 的單引號字串，反斜線不用跳脫
     pub fn mcp_toml(&self, station: &str) -> String {
         let c = self.mcp_config(station);
@@ -1169,6 +1189,15 @@ pub fn join_chain(t: &Tools, parts: &[(PathBuf, f64)], dst: &Path) -> Result<(),
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn dsh_yaml_preserves_paths_and_station() {
+        let root = std::path::Path::new("player's folder");
+        let yaml = super::Studio::new(root, root).mcp_dsh_yaml("http://127.0.0.1:8190");
+        for part in ["serverName: anima", "command: '", "args:\n          - 'player''s folder", "mcp-server.js'", "ANIMA_URL: 'http://127.0.0.1:8190'"] {
+            assert!(yaml.contains(part), "{yaml}");
+        }
+    }
+
     use super::*;
 
     /// H3 長片接片：每段一個輸入，聲音頭尾 15ms 淡入淡出（去爆音、長度不變），畫面直接接

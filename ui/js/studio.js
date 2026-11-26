@@ -274,6 +274,7 @@ export async function openAi() {
   F("stAiHello").value = AI_HELLO;
   const copy = (id, text, what) => (F(id).onclick = async () => { await copyText(text); F("stAiNote").textContent = `已複製${what}`; });
   copy("stAiCopyMcp", r.mcp_json, " MCP 設定");
+  copy("stAiCopyDsh", r.dsh_yaml, " dsh 版設定");
   copy("stAiCopyToml", r.codex_toml, " Codex 版設定");
   copy("stAiCopyGuide", r.guide, "說明，貼給 AI 就行");
   copy("stAiCopyHello", AI_HELLO, "開場白，貼進 AI 的第一個訊息就行");

@@ -356,9 +356,7 @@ pub async fn layout_ai(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let (sys, user) = c::layout_messages(p, &ask);
     let rid = format!("comic-layout-{}", tx(&p["id"]));
     for attempt in 0..2 {
-        let r = app
-            .pe
-            .general_chat_as(&rid, &sys, &user, &[], 1500, if attempt == 0 { 0.4 } else { 0.7 }, Some(brain))
+        let r = super::api_llm::chat(&app, "comic", brain, &rid, &sys, &user, &[], 1500, if attempt == 0 { 0.4 } else { 0.7 })
             .await
             .map_err(bad)?;
         if let Some(v) = c::parse_layout(&r) {
@@ -396,14 +394,12 @@ async fn write_script(app: &Shared, id: &str, story: &str, all: bool, brain: &st
     if n == 0 {
         return Err("版型不對，先重新選一個版型".into());
     }
-    emit(app, id, "script", format!("AI 排分鏡中…（{brain} 第一次要載入模型，可能要一兩分鐘）"), None);
+    emit(app, id, "script", "AI 排分鏡中…", None);
     let (sys, user) = c::script_messages(&p, story);
     let rid = format!("comic-{id}");
     let mut last = String::new();
     for attempt in 0..2 {
-        let r = app
-            .pe
-            .general_chat_as(&rid, &sys, &user, &[], 2000, if attempt == 0 { 0.7 } else { 0.9 }, Some(brain))
+        let r = super::api_llm::chat(app, "comic", brain, &rid, &sys, &user, &[], 2000, if attempt == 0 { 0.7 } else { 0.9 })
             .await?;
         let Some(panels) = c::parse_script(&r, n) else {
             eprintln!(

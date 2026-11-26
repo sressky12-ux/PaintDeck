@@ -565,6 +565,15 @@ fn via() -> Option<std::sync::Arc<Via>> {
     VIA.try_with(|v| v.clone()).ok()
 }
 
+/// 外接模型的快取用 Via 裡的連線和模型名稱區分，本機才需要查模型檔。
+fn rewrite_model_name(core: &Core, kind: &str) -> Result<String, PeError> {
+    if via().is_some_and(|v| v.remote.is_some()) {
+        Ok(String::new())
+    } else {
+        Ok(file_name(&core.model_files(kind, None)?.0))
+    }
+}
+
 /// 網址 → chat completions 的完整路徑。GLM 的版本號不是 /v1（.../api/paas/v4），有寫版本號就照它的，沒寫才補 /v1
 pub fn chat_url(base: &str) -> String {
     let base = base.trim().trim_end_matches('/');
@@ -3093,10 +3102,8 @@ impl Service {
         let (mut raw, mut reasoning, mut timings, mut parsed) =
             (String::new(), String::new(), json!({}), None);
         // 通用模型（Anima、Qwen 反推走這條）是 MoE 時要加 presence_penalty，跟聊天一樣
-        let model_name = if kind == "adult" || kind == "adult_vision" {
-            core.model_files(kind, None)
-                .map(|f| file_name(&f.0))
-                .unwrap_or_default()
+        let model_name = if matches!(kind, "adult" | "adult_vision") {
+            rewrite_model_name(core, kind).unwrap_or_default()
         } else {
             String::new()
         };
@@ -3275,7 +3282,7 @@ impl Service {
         // 用哪顆模型：一律通用模型 9B／35B（2026-10-27 預設改通用、2026-10-30 官方 PE 整個拿掉，見 rewrite_kind）
         core.set_general(self.opt("pe_general").as_str().unwrap_or("auto"));
         let kind = rewrite_kind(&task, captioning, !images.is_empty()).to_string();
-        let model_name = file_name(&core.model_files(&kind, None)?.0);
+        let model_name = rewrite_model_name(core, &kind)?;
         let mut parts = vec![
             ("task", json!(task)),
             ("idea", json!(idea)),
@@ -3509,7 +3516,7 @@ impl Service {
         // 目前的生圖模型是 Anima：寫成 Danbooru tag＋英文句子（姿勢 tag 由程式加）
         let anima = body.get("target").map(str_of).as_deref() == Some("anima");
         core.set_general(self.opt("pe_general").as_str().unwrap_or("auto"));
-        let model_name = file_name(&core.model_files("adult", None)?.0);
+        let model_name = rewrite_model_name(core, "adult")?;
         // 系統提示詞：設定頁可以自訂（data\pe_prompts\adult_*.txt），沒有就用 poses.rs 的預設
         let sys_pose = if anima {
             core.override_text("adult_pose_anima")
@@ -3555,6 +3562,9 @@ impl Service {
         ];
         if anima {
             parts.push(("target", json!("anima")));
+        }
+        if let Some(v) = via() {
+            parts.extend(v.cache_parts());
         }
         let key = core.cache_key(&parts, None);
         let t0 = Instant::now();
@@ -4584,6 +4594,18 @@ mod tests {
         // Gemini 的 OpenAI 相容接口：版本號在中間（/v1beta/openai），不能再補 /v1
         assert_eq!(chat_url("https://generativelanguage.googleapis.com/v1beta/openai"), "https://generativelanguage.googleapis.com/v1beta/openai/chat/completions");
         assert_eq!(chat_url("https://dashscope.aliyuncs.com/compatible-mode/v1"), "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
+    }
+
+    #[tokio::test]
+    async fn remote_caption_needs_no_local_models() {
+        let dir = Path::new("missing-model-directory");
+        let core = Core::with_dirs(dir, dir, dir);
+        assert!(rewrite_model_name(&core, "adult_vision").is_err());
+        let remote = Remote { base: "https://example.invalid".into(), model: "vision".into(), key: None, api: true, provider: String::new() };
+        VIA.scope(Arc::new(Via { remote: Some(remote), preset: None }), async {
+            assert_eq!(rewrite_model_name(&core, "adult_vision").unwrap(), "");
+            assert_eq!(via().unwrap().cache_parts()[0].1, "https://example.invalid|vision");
+        }).await;
     }
 
     #[test]

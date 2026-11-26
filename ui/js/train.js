@@ -2,6 +2,7 @@
 // 後端：/api/train/*（server\api_train.rs、train_run.rs）；設計：design\訓練台_設計.md
 import { el, api, toast } from "./util.js";
 import { app } from "./state.js";
+import { openCloudSettings } from "./agent.js";
 import * as gen from "./gen.js";
 import * as kohaku from "./trainkohaku.js";
 import { pickFromGallery } from "./gallery.js";
@@ -11,7 +12,7 @@ const KINDS = [["style", "畫風", "學一種畫法：線條、上色、質感"]
 const LEVELS = [["light", "輕", "學得淡一點，比較不會蓋掉底模"], ["std", "標準", "多數情況用這個"], ["full", "充分", "學得重一點，圖少或特徵難抓時用"]];
 const TARGETS = [
   ["local", "本機顯卡", "用這台電腦煉，不用錢、圖不出門"],
-  ["cloud", "雲端顯卡", "租一台 RunPod 的機器，或連你自己的訓練機"],
+  ["cloud", "雲端顯卡", "租 RunPod、用任何雲端主機（SSH），或連你自己的訓練機"],
   ["civitai", "C 站", "交給 Civitai 煉，用 Buzz 付"],
   ["modelscope", "魔塔", "實驗性：包好資料集，到魔塔網頁送出"],
 ];
@@ -122,6 +123,7 @@ function setView(v) {
 }
 
 export async function show() {
+  if (S.cloud === "ssh") S.sshCfg = (await call("/api/agent/cloud"))?.cfg;
   await loadList();
   if (!S.v) {
     const last = localStorage.getItem("trainProject");
@@ -454,7 +456,11 @@ function step5() {
       el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || (!enough && !force) || !(S.trainer && S.trainer.installed),
         onclick: () => startTrain("local", { model: model ? model.value : "", force: force || undefined }, force ? `${warning}\n\n確定要開始本機訓練嗎？` : "") }, "開始訓練")));
   } else if (S.target === "cloud") {
-    const sub = keys([["runpod", "租 RunPod"], ["remote", "我自己的訓練機"]], S.cloud, (c) => { S.cloud = c; render(); });
+    const sub = keys([["runpod", "租 RunPod"], ["ssh", "任何雲端主機（SSH）"], ["remote", "我自己的訓練機"]], S.cloud, async (c) => {
+      S.cloud = c;
+      if (c === "ssh") S.sshCfg = (await call("/api/agent/cloud"))?.cfg;
+      render();
+    });
     if (S.cloud === "runpod") {
       if (!S.gpus) call(`/api/train/${p.id}/quote`, { target: "runpod" }).then((r) => { S.gpus = r ? r.gpus : []; render(); });
       const sel = el("select", {}, ...(S.gpus || []).map((g) => el("option", { value: g.key }, `${g.name}（${g.vram}GB）每小時 $${g.usd_per_hour}・這次約 ${g.hours} 小時 ≈ $${g.usd}${g.stock ? "" : "（現在沒貨）"}`)));
@@ -463,11 +469,27 @@ function step5() {
         S.gpus ? (S.gpus.length ? el("label", { class: "tr-f" }, "顯卡", sel) : el("div", { class: "tr-warn" }, "拿不到顯卡清單：先到助手頁的「雲端設定」填 RunPod 金鑰")) : note("查價中…"),
         note("價錢是估的：開機裝環境那十幾分鐘也算錢，實際看排隊和顯卡。"),
         el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || !(S.gpus && S.gpus.length), onclick: () => { const g = S.gpus.find((x) => x.key === sel.value); startTrain("runpod", { gpu: sel.value }, `要租 ${g.name}，每小時 $${g.usd_per_hour}，這次估計約 $${g.usd}（${g.hours} 小時，${steps} 步）。\n\n按確定就會開機、開始計費；煉完會自動關機。`); } }, "看好了，租機開始")));
+    } else if (S.cloud === "ssh") {
+      const cfg = S.sshCfg || {};
+      detail = box("雲端顯卡", sub,
+        note("用助手頁「雲端設定 → 任何雲端主機」那台機器。繪匣會 SSH 進去自動裝 ai-toolkit、開訓練小幫手，走 SSH 通道連線，不用對外開 port。第一次裝約 10～20 分鐘。開關機和計費在那家的網站，煉完記得去關機。"),
+        cfg.ssh_host ? note(`主機：${cfg.ssh_host}:${cfg.ssh_port || 22}　帳號：${cfg.ssh_user || "root"}`)
+          : el("div", { class: "tr-warn" }, "還沒填 SSH 主機。先填好主機，再按「保存並測試連線」。"),
+        el("div", { class: "toolbar" },
+          el("button", { class: "akey", type: "button", onclick: () => { app.showPage("agent"); openCloudSettings(); } }, "打開雲端設定"),
+          el("button", { class: "akey go", type: "button", disabled: running || !cfg.ssh_host, onclick: () => startTrain("ssh", {}) }, "開始訓練")));
     } else {
       const url = el("input", { type: "text", placeholder: "http://192.168.1.50:8000", spellcheck: "false", value: localStorage.getItem("trainRemoteUrl") || "" });
       const tok = el("input", { type: "password", placeholder: "口令（開小幫手時自己設的那一串）" });
       detail = box("雲端顯卡", sub,
-        note("在你自己的訓練機上裝好 ai-toolkit，再跑繪匣附的訓練小幫手（resources\\train\\agent.py --host 0.0.0.0 --token 你的口令 --work … --toolkit …），把網址和口令填這裡。"),
+        note("1. 在 Linux 訓練機上開終端機，下載這個版本的 ai-toolkit，再裝訓練環境。"),
+        S.trainer?.commit ? el("pre", { class: "tr-log" }, `mkdir -p ~/paintdeck-train && cd ~/paintdeck-train\ngit clone https://github.com/ostris/ai-toolkit.git && cd ai-toolkit && git switch --detach ${S.trainer.commit} && python3 -m manager install`) : note("讀不到訓練器版本，請重新開啟訓練頁。"),
+        note("2. 把繪匣安裝資料夾裡的 resources\\train\\agent.py 複製到那台機器的 ~/paintdeck-train/。"),
+        note("3. 把「你的口令」換成至少 8 個字的口令，再開小幫手。"),
+        el("pre", { class: "tr-log" }, 'cd ~/paintdeck-train\nPY="$PWD/ai-toolkit/.venv/bin/python"; [ -x "$PY" ] || PY="$PWD/ai-toolkit/venv/bin/python"\n"$PY" agent.py --host 0.0.0.0 --port 6006 --token "你的口令" --work "$PWD/train_work" --toolkit "$PWD/ai-toolkit" --python "$PY"'),
+        note("4. 有對外開放的 port，就填那個網址。沒有的話（像 AutoDL），在這台電腦另開一個終端機，換上自己的埠、帳號和主機，跑下面這行並保持視窗開著。網址填 http://127.0.0.1:6006。"),
+        el("pre", { class: "tr-log" }, "ssh -N -L 6006:127.0.0.1:6006 -p <埠> <帳號>@<主機>"),
+        note("嫌麻煩就用上面的「任何雲端主機（SSH）」，繪匣會自己裝。"),
         el("label", { class: "tr-f" }, "網址", url), el("label", { class: "tr-f" }, "口令", tok),
         el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running, onclick: () => { localStorage.setItem("trainRemoteUrl", url.value.trim()); startTrain("remote", { url: url.value.trim(), token: tok.value }); } }, "開始訓練")));
     }
@@ -511,7 +533,7 @@ function step6() {
   const samples = run.samples || [];
   const every = p.params && p.params.steps && p.params.epochs ? Math.max(1, Math.floor(p.params.steps / p.params.epochs)) : 0;
   const strength = el("select", {}, ...[0.6, 0.7, 0.8, 0.9, 1.0].map((s) => el("option", { value: s, selected: s === 0.8 }, `強度 ${s}`)));
-  const where = { local: "本機", remote: "自己的訓練機", runpod: "RunPod", civitai: "C 站" }[run.target] || "";
+  const where = { local: "本機", remote: "自己的訓練機", ssh: "雲端主機（SSH）", runpod: "RunPod", civitai: "C 站" }[run.target] || "";
   const isKohaku = p.engine === "kohakumoss" && run.engine === "kohakumoss" && run.target === "local";
   const restart = () => startTrain(run.target,{wait_queue:S.waitQueue !== false},"要保留舊版本並重新開始一輪訓練嗎？");
   const head = box(`${where}・${stateName(prog.state)}${isKohaku ? `・第 ${run.run_no} 輪` : ""}`,
@@ -526,6 +548,7 @@ function step6() {
         onclick:() => startTrain(run.target,{resume:true,wait_queue:S.waitQueue !== false},"要從最近一個完整存檔接著煉嗎？找不到存檔會開始新的一輪。")}, "接著煉") : null,
       !running && run.remote && run.remote.pod ? el("button", { class: "akey sm warn", type: "button", onclick: async () => { const r = await call(`/api/train/${p.id}/stop`, {}); if (r) { toast(r.msg || "好了"); open(p.id, 6); } } }, "關掉訓練機") : null,
       !running && ["detached", "interrupted", "error", "stopped"].includes(prog.state) ? el("button", { class: "akey sm", type: "button", onclick: () => { S.step = 5; render(); } }, prog.state === "detached" ? "回去接上" : "回去重來") : null),
+    run.target === "ssh" && ["done", "stopped"].includes(prog.state) ? note(run.msg || prog.msg) : null,
     !isKohaku && prog.state === "error" && (prog.msg || run.error) ? el("div", { class: "tr-warn" }, prog.msg || run.error) : null,
     prog.state === "interrupted" ? el("div", { class: "tr-warn" }, "繪匣中途被關掉，這次訓練沒有跑完。已經存好的版本還在。") : null,
     prog.state === "detached" ? el("div", { class: "tr-warn" }, "訓練還在外面跑（或訓練機還開著、還在計費）。回上一步按開始就會接回去。") : null,

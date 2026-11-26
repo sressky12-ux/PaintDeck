@@ -66,9 +66,7 @@ pub async fn spec(State(app): State<Shared>, Body(b): Body) -> ApiResult {
         or_dash(&tx(&b["tags"])),
         images.len()
     );
-    let r = app
-        .pe
-        .general_chat_as("charsheet-spec", charsheet::SYSTEM_SPEC, &user, &images, 1500, 0.2, Some(brain))
+    let r = super::api_llm::chat_seeing(&app, "charsheet", brain, "charsheet-spec", charsheet::SYSTEM_SPEC, &user, &images, 1500, 0.2)
         .await
         .map_err(bad)?;
     let fields = charsheet::spec_fields(&r).ok_or_else(|| bad("AI 回的設定表讀不出來，再按一次試試，或換 35B"))?;

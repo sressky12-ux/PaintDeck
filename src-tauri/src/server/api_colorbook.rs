@@ -192,7 +192,7 @@ async fn write_sheet(app: &Shared, id: &str, book: &Value, brain: &str) -> Resul
     for p in &colors {
         names.push(ensure_input(app, id, p)?);
     }
-    let r = app.pe.general_chat_as(&format!("colorbook-sheet-{id}"), cb::SYS_SHEET, &cb::sheet_request(names.len()), &names, 1500, 0.3, Some(brain)).await?;
+    let r = super::api_llm::chat_seeing(app, "colorbook", brain, &format!("colorbook-sheet-{id}"), cb::SYS_SHEET, &cb::sheet_request(names.len()), &names, 1500, 0.3).await?;
     let s = clean_sheet(&r);
     if s.is_empty() {
         return Err("AI 沒寫出配色表：再按一次，或自己寫".into());
@@ -207,7 +207,7 @@ pub async fn sheet(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
         return Err(bad("正在上色：等跑完或先停止再改配色表"));
     }
     let text = if crate::py::truthy(b.get("auto")) {
-        emit(&app, &id, "msg", "AI 看彩頁寫配色表…（第一次要載入模型，約半分鐘）", None);
+        emit(&app, &id, "msg", "AI 看彩頁寫配色表…", None);
         write_sheet(&app, &id, &book, brain_of(&b)).await.map_err(bad)?
     } else {
         tx(&b["text"]).chars().take(8000).collect()
@@ -293,7 +293,7 @@ async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, 
     // ① 配色表：沒有又有彩頁 → 先寫
     let has_color = book["pages"].as_array().is_some_and(|ps| ps.iter().any(|p| p["kind"] == "color"));
     if ai && tx(&book["sheet"]).trim().is_empty() && has_color {
-        emit(app, id, "msg", "AI 看彩頁寫配色表…（第一次要載入模型，約半分鐘）", None);
+        emit(app, id, "msg", "AI 看彩頁寫配色表…", None);
         match write_sheet(app, id, &book, brain).await {
             Ok(s) => book = update(&data, id, |b| b["sheet"] = json!(s))?,
             Err(e) => emit(app, id, "msg", format!("配色表沒寫成（{e}），先用自然配色"), None),
@@ -313,7 +313,7 @@ async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, 
         let (prompt, by) = if llm {
             emit(app, id, "msg", format!("AI 看第 {} 頁寫上色指令（{}／{}）…", p["n"], k + 1, todo.len()), None);
             let name = ensure_input(app, id, &p)?;
-            match app.pe.general_chat_as(&format!("colorbook-page-{id}"), cb::SYS_PAGE, &cb::page_request(&sheet), &[name], 900, 0.3, Some(brain)).await {
+            match super::api_llm::chat_seeing(app, "colorbook", brain, &format!("colorbook-page-{id}"), cb::SYS_PAGE, &cb::page_request(&sheet), &[name], 900, 0.3).await {
                 Ok(r) if !r.trim().is_empty() => (cb::fix_page_prompt(&r), "ai"),
                 Ok(_) => (cb::plain_prompt(&sheet), "plain"),
                 Err(e) => {

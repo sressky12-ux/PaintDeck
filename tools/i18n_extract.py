@@ -241,7 +241,7 @@ class JS:
 
 
 # ---------------------------------------------------------------- Rust
-RS_MSG = re.compile(r"(bad|err|Err|not_found|internal|emit|say|phase|problem|set_status|ComfyError|GraphError|ok_or|ok_or_else|map_err|note|toast|ApiError|reject|explain|friendly|format)\s*[(!]|\"(msg|error|text|note|message|label|title|hint|reason)\"\s*:")
+RS_MSG = re.compile(r"(bad|err|Err|sse_error|not_found|internal|emit|say|phase|problem|set_status|ComfyError|GraphError|ok_or|ok_or_else|map_err|note|toast|ApiError|reject|explain|friendly|format)\s*[(!]|\"(msg|error|text|note|message|label|title|hint|reason)\"\s*:")
 # ("key", "中文說明") 這種對照表（例：maint.rs 恢復原廠的項目）
 RS_PAIR = re.compile(r"\(\s*\"[^\"\n]{1,200}\"\s*(?:,\s*\"[^\"\n]{0,200}\"\s*)*,\s*$")  # 也收 ("tall right panel", "右邊直長那格")、("L3", "三格：…")；三欄以上的也收（setup.rs 的 PACKS：代號, 名字, 說明, …）
 # 結構欄位 note: "…"（例：api_cloud.rs 的顯示卡清單）
@@ -339,6 +339,7 @@ def extract_all():
 
 
 EXTRA = ["佇列", "待命", "改寫", "執行中", "待機", "無法使用", "連線中", "已連線", "顯存", "記憶體",
+         "機器還開著：開關機和計費在那家網站，用完記得去關機", "這台主機已有別的訓練在跑", "訓練用的連接埠已被占用", "沒有讀到訓練小幫手的程序編號",
          "臉", "手", "臉或手"]  # 後三個：api_play.rs「這張圖找不到{臉／手}…」的變數
 
 

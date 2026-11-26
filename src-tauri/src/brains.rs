@@ -359,6 +359,7 @@ pub fn format_note(feature: &str) -> Option<&'static str> {
         "translate" => FORMAT_NUMBERED,
         "shotsheet" => FORMAT_TWO_BLOCKS,
         "h3writer" => FORMAT_TEXT_PROMPT,
+        "comic" | "charsheet" => FORMAT_JSON,
         "director" => FORMAT_JSON,
         _ => return None,
     })
@@ -836,13 +837,17 @@ fn looks_like_format_rule(name: &str, content: &str) -> bool {
 // ---------------------------------------------------------------- 對照表：哪個功能用哪顆腦袋、套哪組預設
 
 /// (功能 id, 中文名)
-pub const FEATURES: [(&str, &str); 6] = [
+pub const FEATURES: [(&str, &str); 10] = [
     ("agent", "生圖助手"),
     ("rewrite", "AI 改寫"),
     ("translate", "中英對照"),
     ("shotsheet", "拍攝單"),
     ("h3writer", "H3 寫手"),
     ("director", "導演台"),
+    ("caption", "看圖寫描述（訓練台）"),
+    ("comic", "漫畫台"),
+    ("colorbook", "整本上色"),
+    ("charsheet", "角色設定圖"),
 ];
 
 const PRESETS_FILE: &str = "prompt_presets.json";
@@ -1260,8 +1265,12 @@ mod tests {
     }
 
     #[test]
-    fn every_feature_has_a_format_note() {
+    fn structured_features_have_a_format_note() {
         for (f, _) in FEATURES {
+            if matches!(f, "caption" | "colorbook") {
+                assert!(format_note(f).is_none());
+                continue;
+            }
             assert!(format_note(f).is_some_and(|n| n.starts_with("Formatting reminder:")), "{f}");
         }
         assert!(format_note("nope").is_none());

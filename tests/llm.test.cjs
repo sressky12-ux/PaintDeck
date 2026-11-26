@@ -53,6 +53,7 @@ test('匯入報告：一行一件，沒東西就說全部照原樣', () => {
 test('每個功能都對到一份可以改的內建指令（預演台除外）', () => {
   const { BUILTIN_ID } = load();
   for (const f of ['agent', 'rewrite', 'translate', 'shotsheet', 'h3writer', 'director']) assert.ok(BUILTIN_ID[f], f);
+  for (const f of ['caption', 'comic', 'colorbook', 'charsheet']) assert.equal(BUILTIN_ID[f], '');
   assert.equal(BUILTIN_ID.previz, '');
 });
 

@@ -740,7 +740,7 @@ async fn sentence(app: &Shared, id: &str, path: &Path, file: &str, kind: &str, v
     let rid = format!("train-cap-{id}");
     let system = train::caption_system(kind, video);
     let r = tokio::select! {
-        r = app.pe.general_chat(&rid, &system, crate::pe::CAPTION_ASK, std::slice::from_ref(&name), 400, 0.3) => r,
+        r = super::api_llm::chat_seeing(app, "caption", "page", &rid, &system, crate::pe::CAPTION_ASK, std::slice::from_ref(&name), 400, 0.3) => r,
         () = cancel.cancelled() => {
             app.pe.cancel(&rid);
             Err("已停止".into())

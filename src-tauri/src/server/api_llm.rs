@@ -145,7 +145,21 @@ pub async fn routes_save(State(app): State<Shared>, Body(b): Body) -> ApiResult 
 /// page＝頁面送來的選擇（9b／35b／cloud／api／api:<id>；沒有就 "page"＝設定頁的通用模型）
 #[allow(clippy::too_many_arguments)]
 pub async fn chat(app: &Shared, feature: &str, page: &str, rid: &str, system: &str, user: &str, images: &[String], max_tokens: i64, temperature: f64) -> Result<String, String> {
+    chat_inner(app, feature, page, rid, system, user, images, max_tokens, temperature, false).await
+}
+
+#[allow(clippy::too_many_arguments)]
+pub async fn chat_seeing(app: &Shared, feature: &str, page: &str, rid: &str, system: &str, user: &str, images: &[String], max_tokens: i64, temperature: f64) -> Result<String, String> {
+    chat_inner(app, feature, page, rid, system, user, images, max_tokens, temperature, true).await
+}
+
+#[allow(clippy::too_many_arguments)]
+async fn chat_inner(app: &Shared, feature: &str, page: &str, rid: &str, system: &str, user: &str, images: &[String], max_tokens: i64, temperature: f64, need_eyes: bool) -> Result<String, String> {
     let (sel, preset, hint) = app.brains.resolve(feature, page)?;
+    if need_eyes && !images.is_empty() && matches!(sel, brains::Brain::Api { vision: Some(false), .. }) {
+        let name = brains::FEATURES.iter().find(|(id, _)| *id == feature).map_or(feature, |(_, name)| *name);
+        return Err(format!("API 頁對照表「{name}」選的連線看不到圖：換一組看得到圖的模型，或改回本機"));
+    }
     if let Some(h) = hint {
         eprintln!("[{feature}] {h}");
     }

@@ -12,6 +12,12 @@ pub async fn rewrite(State(app): State<Shared>, Body(body): Body) -> Response {
     let via = match app.brains.resolve("rewrite", &page) {
         Ok((sel, preset, _)) => {
             let remote = match sel {
+                crate::brains::Brain::Api { vision: Some(false), .. }
+                    if matches!(body["task"].as_str(), Some("caption" | "caption_qwen"))
+                        || body["images"].as_array().is_some_and(|a| a.iter().any(|v| crate::py::truthy(Some(v)))) =>
+                {
+                    return sse_error("API 頁這組連線標了看不到圖：寫說明要選看得到圖的模型（或改回本機）");
+                }
                 crate::brains::Brain::Api { remote, .. } => Some(remote),
                 crate::brains::Brain::Cloud => match app.agent.cloud.endpoints() {
                     Some(e) => Some(e.remote()),

@@ -508,6 +508,12 @@ def main():
             srv.shutdown()
 
         threading.Thread(target=watch, daemon=True).start()
+    if os.name == "posix":
+        # SSH 收掉小幫手時也走 finally，把另外開的訓練程序一起停掉。
+        def terminate(_sig, _frame):
+            raise SystemExit(0)
+
+        signal.signal(signal.SIGTERM, terminate)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

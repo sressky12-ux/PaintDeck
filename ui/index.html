@@ -2237,7 +2237,7 @@
     <label for="stAiMcp">1. 把生圖站接到 AI 程式（MCP 設定）</label>
     <div class="muted sm">Claude Desktop：設定 → 開發者 → 編輯設定，把下面 <code>anima</code> 那一段放進 <code>mcpServers</code>（以前貼過 <code>fablecut</code> 的，換成這一段），存檔後重開 Claude。Claude Code：存成專案資料夾裡的 <code>.mcp.json</code>，或跑 <code>claude mcp add</code>。Codex CLI：按「複製 Codex 版」貼進 <code>~/.codex/config.toml</code>。Cursor：貼進 <code>%USERPROFILE%\.cursor\mcp.json</code>。</div>
     <textarea id="stAiMcp" rows="9" readonly spellcheck="false"></textarea>
-    <div class="row gap wrap"><button class="akey sm" id="stAiCopyMcp" type="button">複製 MCP 設定</button><button class="akey sm" id="stAiCopyToml" type="button" title="Codex CLI 的 ~/.codex/config.toml">複製 Codex 版（TOML）</button></div>
+    <div class="row gap wrap"><button class="akey sm" id="stAiCopyMcp" type="button">複製 MCP 設定</button><button class="akey sm" id="stAiCopyToml" type="button" title="Codex CLI 的 ~/.codex/config.toml">複製 Codex 版（TOML）</button><button class="akey sm" id="stAiCopyDsh" type="button" title="DeepSeek Harness 的 profiles\desktop\cordis.patch.yml">複製 dsh 版（YAML）</button></div>
     <label for="stAiGuide">2. 開工前把這段說明貼給 AI</label>
     <div class="muted sm">接了 MCP 的 AI 會自己讀說明，這步可以跳過。沒辦法接 MCP 的 AI，把這段貼給它：裡面有主要功能的網址和用法；沒一條一條列到的用 <code>anima_api</code> 直接打，權限一樣（會花錢、刪東西、改設定的還是要先問你）。</div>
     <textarea id="stAiGuide" rows="10" readonly spellcheck="false"></textarea>
