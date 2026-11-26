@@ -1,6 +1,6 @@
 // 訓練頁（煉 LoRA）：六步精靈。每一步後端都先自動做好，這裡給人看一眼、想改就改。
 // 後端：/api/train/*（server\api_train.rs、train_run.rs）；設計：design\訓練台_設計.md
-import { el, api, toast } from "./util.js";
+import { el, api, toast, copyText } from "./util.js";
 import { app } from "./state.js";
 import { openCloudSettings } from "./agent.js";
 import * as gen from "./gen.js";
@@ -12,12 +12,17 @@ const KINDS = [["style", "畫風", "學一種畫法：線條、上色、質感"]
 const LEVELS = [["light", "輕", "學得淡一點，比較不會蓋掉底模"], ["std", "標準", "多數情況用這個"], ["full", "充分", "學得重一點，圖少或特徵難抓時用"]];
 const TARGETS = [
   ["local", "本機顯卡", "用這台電腦煉，不用錢、圖不出門"],
-  ["cloud", "雲端顯卡", "租 RunPod、用任何雲端主機（SSH），或連你自己的訓練機"],
+  ["cloud", "雲端顯卡", "用你在 AutoDL、恆源雲這類網站租好的機器，或讓繪匣幫你租 RunPod"],
   ["civitai", "C 站", "交給 Civitai 煉，用 Buzz 付"],
   ["modelscope", "魔塔", "實驗性：包好資料集，到魔塔網頁送出"],
 ];
+const CLOUD_WAYS = [
+  ["ssh", "我已經租好一台", "AutoDL、恆源雲、矩池雲、Vast.ai…有 SSH 登入指令就行，繪匣自己裝訓練器"],
+  ["runpod", "幫我租一台（RunPod）", "全自動租機、煉完關機；要 RunPod 帳號，用美元儲值"],
+  ["remote", "進階：自己架小幫手", "自己在訓練機上裝 ai-toolkit、開小幫手，填網址和口令"],
+];
 
-const S = { list: [], fams: [], trainer: null, vram: 0, v: null, step: 1, target: "local", cloud: "runpod", prog: null, gpus: null, quote: null, cmp: null, traits: null, auto: null, draft: { name: "", kind: "style", family: "anima", trigger: "" }, loaded: false };
+const S = { list: [], fams: [], trainer: null, vram: 0, v: null, step: 1, target: "local", cloud: "ssh", prog: null, gpus: null, quote: null, cmp: null, traits: null, auto: null, draft: { name: "", kind: "style", family: "anima", trigger: "" }, loaded: false };
 
 // ================================================================ 不靠畫面的判斷（tests/train_ui.test.cjs）
 
@@ -50,6 +55,35 @@ export function startBody(target, opts, confirmed) {
   for (const [k, val] of Object.entries(opts || {})) if (val !== undefined && val !== null && val !== "") b[k] = val;
   if (needsConfirm(target)) b.confirm = true;
   return b;
+}
+
+// 貼過來的 SSH 登入指令 → {host, port, user}；也收「主機:埠」和貼錯成 http://主機:埠/ 的；認不出＝null
+export function sshTarget(text) {
+  const t = String(text || "").trim().replace(/^[a-z]+:\/\//i, "").replace(/\/+$/, "").split(/\s+/).filter(Boolean);
+  let host = "", port = 0, user = "";
+  for (let i = 0; i < t.length; i++) {
+    const w = t[i];
+    if (w === "-p" && t[i + 1]) { port = +t[++i]; continue; }
+    if (/^-p\d+$/.test(w)) { port = +w.slice(2); continue; }
+    if (w === "-l" && t[i + 1]) { user = t[++i]; continue; }
+    if (/^-[LRDiIoJFEcmOQSWbBw]$/.test(w)) { i++; continue; }  // 帶參數的選項：連參數一起跳過
+    if (w.startsWith("-") || w === "ssh") continue;
+    const m = w.match(/^(?:([\w.-]+)@)?([\w.-]+)(?::(\d{1,5}))?$/);
+    if (m && !host) { if (m[1]) user = m[1]; host = m[2]; if (m[3]) port = +m[3]; }
+  }
+  if (!host || !/[a-z0-9]/i.test(host)) return null;
+  return { host, port: port >= 1 && port <= 65535 ? port : 22, user: user || "root" };
+}
+
+// 在那台機器的終端機貼一次，它就認得繪匣的公鑰（不用把密碼給繪匣）
+export function authLine(pub) {
+  const k = String(pub || "").trim();
+  return k ? `mkdir -p ~/.ssh && chmod 700 ~/.ssh && echo '${k}' >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys` : "";
+}
+
+// 「自己架小幫手」的網址欄填的其實是租來那台的 SSH 位址（AutoDL、恆源雲…）→ true
+export function looksLikeSsh(url) {
+  return /(gpushare\.com|seetacloud\.com|autodl\.|matpool\.|featurize\.|vast\.ai)/i.test(String(url || ""));
 }
 
 // 把一則進度事件併進現在的進度（沒帶的欄位留著）
@@ -423,6 +457,75 @@ async function startTrain(target, opts, confirmText) {
   loadList().then(renderList);
 }
 
+// 「我已經租好一台」：貼登入指令 → 讓那台認得繪匣 → 測試 → 開始。主機存在助手的雲端設定（同一台）
+async function sshLoad() {
+  S.ssh = { ...(S.ssh || {}), loading: true };
+  const [st, k] = await Promise.all([call("/api/agent/cloud"), call("/api/agent/cloud/ssh_check", {})]);
+  S.sshCfg = (st && st.cfg) || {};
+  S.ssh = { ...S.ssh, loading: false, loaded: true, pub: (k && k.pubkey) || "" };
+  render();
+}
+
+function sshSteps(running) {
+  if (!S.ssh || !S.ssh.loaded) {
+    if (!S.ssh || !S.ssh.loading) sshLoad();
+    return [note("讀取中…")];
+  }
+  const cfg = S.sshCfg || {};
+  const st = S.ssh;
+  const port = cfg.ssh_port || 22;
+  const saved = cfg.ssh_host ? `帳號 ${cfg.ssh_user || "root"}、主機 ${cfg.ssh_host}、埠 ${port}` : "";
+  const cmd = el("input", { type: "text", spellcheck: "false", style: "flex:1;min-width:0", placeholder: "例如 ssh -p 46623 root@i-2.gpushare.com" });
+  const seen = note(saved ? `目前用：${saved}` : "還沒貼");
+  cmd.addEventListener("input", () => {
+    const t = sshTarget(cmd.value);
+    seen.textContent = t ? `認出來了：帳號 ${t.user}、主機 ${t.host}、埠 ${t.port}` : cmd.value.trim() ? "認不出來：要像 ssh -p 埠 帳號@主機 這樣的一行" : saved ? `目前用：${saved}` : "還沒貼";
+  });
+  // 有貼新的就先存；沒貼就用已存的
+  const saveCmd = async () => {
+    if (!cmd.value.trim()) return !!cfg.ssh_host;
+    const t = sshTarget(cmd.value);
+    if (!t) { toast("認不出登入指令：要像 ssh -p 46623 root@主機 這樣的一行", "err"); return false; }
+    if (t.host === cfg.ssh_host && t.port === port && t.user === (cfg.ssh_user || "root")) return true;
+    const r = await call("/api/agent/cloud/config", { ssh_host: t.host, ssh_port: t.port, ssh_user: t.user });
+    if (!r) return false;
+    S.sshCfg = r.cfg || {};
+    Object.assign(st, { msg: "", ok: null });
+    return true;
+  };
+  const save = el("button", { class: "akey sm", type: "button", onclick: async () => { if (cmd.value.trim() && await saveCmd()) { toast("存好了", "ok"); render(); } } }, "儲存");
+  const line = authLine(st.pub);
+  const msg = el("div", { class: st.ok === false ? "tr-warn" : "tr-why" }, st.msg || "");
+  msg.hidden = !st.msg;
+  const test = el("button", { class: "akey sm", type: "button", onclick: async () => {
+    if (!(await saveCmd())) { if (!cmd.value.trim()) toast("先貼上第 1 步的登入指令", "err"); return; }
+    test.disabled = true; msg.hidden = false; msg.className = "tr-why"; msg.textContent = "連線中（最多半分鐘）…";
+    try { const r = await api("/api/agent/cloud/ssh_check", { json: { connect: true } }); Object.assign(st, { msg: r.msg, ok: true }); }
+    catch (e) { Object.assign(st, { msg: e.message, ok: false }); }
+    render();
+  } }, "測試連線");
+  const copy = (label, text, tip) => el("button", { class: "akey sm", type: "button", onclick: async () => { await copyText(text); toast(tip, "ok"); } }, label);
+  return [
+    el("b", {}, "1. 貼上那台機器的 SSH 登入指令"),
+    note("租機網站的實例清單裡會有一行「登入指令」或「SSH」，整行複製過來。密碼不用給繪匣。"),
+    el("div", { class: "toolbar" }, cmd, save), seen,
+    el("b", {}, "2. 讓那台機器認得繪匣（同一台只要做一次）"),
+    cfg.ssh_key ? note(`雲端設定裡指定了自己的私鑰檔（${cfg.ssh_key}），這步可以跳過。`) : null,
+    line ? note("打開那台機器的網頁終端機（例如 JupyterLab → Terminal），貼上下面這行、按 Enter。網站有「SSH 公鑰」設定的話，把公鑰貼在那裡也可以。")
+      : el("div", { class: "tr-warn" }, "產生不出繪匣的 SSH 金鑰：到 Windows 設定 → 系統 → 選用功能，裝好「OpenSSH 用戶端」，再重開這頁。"),
+    line ? el("pre", { class: "tr-log" }, line) : null,
+    line ? el("div", { class: "toolbar" }, copy("複製這行", line, "複製好了，貼到那台機器的終端機按 Enter"), copy("只複製公鑰", st.pub, "公鑰複製好了")) : null,
+    el("b", {}, "3. 測試連線"),
+    el("div", { class: "toolbar" }, test), msg,
+    el("b", {}, "4. 開始訓練"),
+    note("繪匣會自己裝訓練器（第一次約 10～20 分鐘），煉完把每一版抓回來。機器的開關機和計費在那家網站，煉完記得去關機。"),
+    el("div", { class: "toolbar" },
+      el("button", { class: "akey go", type: "button", disabled: running || !cfg.ssh_host, onclick: () => startTrain("ssh", {}) }, "開始訓練"),
+      el("span", { class: "grow" }),
+      el("button", { class: "link sm", type: "button", onclick: () => { app.showPage("agent"); openCloudSettings(); } }, "進階設定（主機上的資料夾、自己的私鑰）")),
+  ];
+}
+
 function step5() {
   const p = cur();
   const f = fam(p.family);
@@ -456,42 +559,44 @@ function step5() {
       el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || (!enough && !force) || !(S.trainer && S.trainer.installed),
         onclick: () => startTrain("local", { model: model ? model.value : "", force: force || undefined }, force ? `${warning}\n\n確定要開始本機訓練嗎？` : "") }, "開始訓練")));
   } else if (S.target === "cloud") {
-    const sub = keys([["runpod", "租 RunPod"], ["ssh", "任何雲端主機（SSH）"], ["remote", "我自己的訓練機"]], S.cloud, async (c) => {
-      S.cloud = c;
-      if (c === "ssh") S.sshCfg = (await call("/api/agent/cloud"))?.cfg;
-      render();
-    });
+    const sub = el("div", { class: "tr-targets" }, ...CLOUD_WAYS.map(([id, name, tip]) => el("button", { type: "button", class: `tr-target${S.cloud === id ? " on" : ""}`, onclick: () => { S.cloud = id; render(); } }, el("b", {}, name), el("span", { class: "muted sm" }, tip))));
     if (S.cloud === "runpod") {
       if (!S.gpus) call(`/api/train/${p.id}/quote`, { target: "runpod" }).then((r) => { S.gpus = r ? r.gpus : []; render(); });
       const sel = el("select", {}, ...(S.gpus || []).map((g) => el("option", { value: g.key }, `${g.name}（${g.vram}GB）每小時 $${g.usd_per_hour}・這次約 ${g.hours} 小時 ≈ $${g.usd}${g.stock ? "" : "（現在沒貨）"}`)));
-      detail = box("雲端顯卡", sub,
+      detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub,
         note("繪匣會租一台 RunPod 的機器、自己裝好訓練器、煉完把每一版抓回來，然後把機器關掉。金鑰用助手頁「雲端設定」那一把。"),
         S.gpus ? (S.gpus.length ? el("label", { class: "tr-f" }, "顯卡", sel) : el("div", { class: "tr-warn" }, "拿不到顯卡清單：先到助手頁的「雲端設定」填 RunPod 金鑰")) : note("查價中…"),
         note("價錢是估的：開機裝環境那十幾分鐘也算錢，實際看排隊和顯卡。"),
         el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || !(S.gpus && S.gpus.length), onclick: () => { const g = S.gpus.find((x) => x.key === sel.value); startTrain("runpod", { gpu: sel.value }, `要租 ${g.name}，每小時 $${g.usd_per_hour}，這次估計約 $${g.usd}（${g.hours} 小時，${steps} 步）。\n\n按確定就會開機、開始計費；煉完會自動關機。`); } }, "看好了，租機開始")));
     } else if (S.cloud === "ssh") {
-      const cfg = S.sshCfg || {};
-      detail = box("雲端顯卡", sub,
-        note("用助手頁「雲端設定 → 任何雲端主機」那台機器。繪匣會 SSH 進去自動裝 ai-toolkit、開訓練小幫手，走 SSH 通道連線，不用對外開 port。第一次裝約 10～20 分鐘。開關機和計費在那家的網站，煉完記得去關機。"),
-        cfg.ssh_host ? note(`主機：${cfg.ssh_host}:${cfg.ssh_port || 22}　帳號：${cfg.ssh_user || "root"}`)
-          : el("div", { class: "tr-warn" }, "還沒填 SSH 主機。先填好主機，再按「保存並測試連線」。"),
-        el("div", { class: "toolbar" },
-          el("button", { class: "akey", type: "button", onclick: () => { app.showPage("agent"); openCloudSettings(); } }, "打開雲端設定"),
-          el("button", { class: "akey go", type: "button", disabled: running || !cfg.ssh_host, onclick: () => startTrain("ssh", {}) }, "開始訓練")));
+      detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub, ...sshSteps(running));
     } else {
       const url = el("input", { type: "text", placeholder: "http://192.168.1.50:8000", spellcheck: "false", value: localStorage.getItem("trainRemoteUrl") || "" });
       const tok = el("input", { type: "password", placeholder: "口令（開小幫手時自己設的那一串）" });
-      detail = box("雲端顯卡", sub,
+      const wrong = el("div", { class: "tr-warn" }, "這看起來是租來那台機器的 SSH 位址，不是小幫手的網址。改用「我已經租好一台」，繪匣會自己裝。 ",
+        el("button", { class: "akey sm", type: "button", onclick: async () => {
+          const t = sshTarget(url.value);
+          if (t) { const r = await call("/api/agent/cloud/config", { ssh_host: t.host, ssh_port: t.port, ssh_user: t.user }); if (r) S.sshCfg = r.cfg; }
+          S.cloud = "ssh"; render();
+        } }, "幫我改過去"));
+      const check = () => { wrong.hidden = !looksLikeSsh(url.value); };
+      url.addEventListener("input", check);
+      check();
+      detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub,
+        note("這條要自己在訓練機上裝東西、開小幫手；只是租了一台機器的話，用「我已經租好一台」就好。"),
         note("1. 在 Linux 訓練機上開終端機，下載這個版本的 ai-toolkit，再裝訓練環境。"),
         S.trainer?.commit ? el("pre", { class: "tr-log" }, `mkdir -p ~/paintdeck-train && cd ~/paintdeck-train\ngit clone https://github.com/ostris/ai-toolkit.git && cd ai-toolkit && git switch --detach ${S.trainer.commit} && python3 -m manager install`) : note("讀不到訓練器版本，請重新開啟訓練頁。"),
         note("2. 把繪匣安裝資料夾裡的 resources\\train\\agent.py 複製到那台機器的 ~/paintdeck-train/。"),
         note("3. 把「你的口令」換成至少 8 個字的口令，再開小幫手。"),
         el("pre", { class: "tr-log" }, 'cd ~/paintdeck-train\nPY="$PWD/ai-toolkit/.venv/bin/python"; [ -x "$PY" ] || PY="$PWD/ai-toolkit/venv/bin/python"\n"$PY" agent.py --host 0.0.0.0 --port 6006 --token "你的口令" --work "$PWD/train_work" --toolkit "$PWD/ai-toolkit" --python "$PY"'),
-        note("4. 有對外開放的 port，就填那個網址。沒有的話（像 AutoDL），在這台電腦另開一個終端機，換上自己的埠、帳號和主機，跑下面這行並保持視窗開著。網址填 http://127.0.0.1:6006。"),
+        note("4. 有對外開放的 port，就填那個網址。沒有的話，在這台電腦另開一個終端機，換上自己的埠、帳號和主機，跑下面這行並保持視窗開著。網址填 http://127.0.0.1:6006。"),
         el("pre", { class: "tr-log" }, "ssh -N -L 6006:127.0.0.1:6006 -p <埠> <帳號>@<主機>"),
-        note("嫌麻煩就用上面的「任何雲端主機（SSH）」，繪匣會自己裝。"),
-        el("label", { class: "tr-f" }, "網址", url), el("label", { class: "tr-f" }, "口令", tok),
-        el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running, onclick: () => { localStorage.setItem("trainRemoteUrl", url.value.trim()); startTrain("remote", { url: url.value.trim(), token: tok.value }); } }, "開始訓練")));
+        el("label", { class: "tr-f" }, "小幫手網址", url), wrong, el("label", { class: "tr-f" }, "口令", tok),
+        el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running, onclick: () => {
+          if (tok.value.length < 8) return toast("口令要填開小幫手時設的那一串（至少 8 個字）", "err");
+          localStorage.setItem("trainRemoteUrl", url.value.trim());
+          startTrain("remote", { url: url.value.trim(), token: tok.value });
+        } }, "開始訓練")));
     }
   } else if (S.target === "civitai") {
     const q = S.quote && S.quote.buzz !== undefined ? S.quote : null;

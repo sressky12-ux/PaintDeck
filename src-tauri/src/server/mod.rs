@@ -65,6 +65,8 @@ use serde_json::{json, Value};
 use std::net::SocketAddr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
+use tokio::io::AsyncReadExt;
+use tokio_util::io::ReaderStream;
 use tower_http::services::ServeDir;
 
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -178,11 +180,16 @@ pub fn basename(name: &str) -> String {
         .unwrap_or_default()
 }
 
-/// 讀檔回應（圖片、預覽）；找不到回 404
+/// 串流回應（圖片、影片、預覽）；找不到回 404
 pub async fn file_response(path: PathBuf, cache: Option<&'static str>) -> ApiResult {
-    let data = tokio::fs::read(&path)
+    let file = tokio::fs::File::open(&path)
         .await
         .map_err(|_| not_found("找不到"))?;
+    let metadata = file.metadata().await.map_err(|_| not_found("找不到"))?;
+    if !metadata.is_file() {
+        return Err(not_found("找不到"));
+    }
+    let len = metadata.len();
     let mime = match path
         .extension()
         .and_then(|e| e.to_str())
@@ -197,7 +204,16 @@ pub async fn file_response(path: PathBuf, cache: Option<&'static str>) -> ApiRes
         Some("webm") => "video/webm",
         _ => "application/octet-stream",
     };
-    let mut r = (StatusCode::OK, [(header::CONTENT_TYPE, mime)], data).into_response();
+    let stream = ReaderStream::with_capacity(file.take(len), 64 * 1024);
+    let mut r = (
+        StatusCode::OK,
+        [
+            (header::CONTENT_TYPE, HeaderValue::from_static(mime)),
+            (header::CONTENT_LENGTH, HeaderValue::from(len)),
+        ],
+        axum::body::Body::from_stream(stream),
+    )
+        .into_response();
     if let Some(c) = cache {
         r.headers_mut()
             .insert(header::CACHE_CONTROL, HeaderValue::from_static(c));
@@ -612,6 +628,7 @@ pub fn router(app: Shared) -> Router {
         .route("/api/agent/cloud/gpus", get(api_cloud::gpus))
         .route("/api/agent/cloud/config", post(api_cloud::config))
         .route("/api/agent/cloud/test", post(api_cloud::test))
+        .route("/api/agent/cloud/ssh_check", post(api_cloud::ssh_check))
         .route("/api/agent/cloud/start", post(api_cloud::start))
         .route("/api/agent/cloud/stop", post(api_cloud::stop))
         .route("/api/agent/cloud/idle", post(api_cloud::idle))

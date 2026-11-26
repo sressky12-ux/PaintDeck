@@ -25,8 +25,8 @@ function grabFrom(source, head) {
 const ctx = {};
 vm.createContext(ctx);
 vm.runInContext(
-  ['export function liveFiles(', 'export function blockReason(', 'export function needsConfirm(', 'export function startBody(', 'export function applyEvent(', 'export function percent(', 'export function stateName(']
-    .map(grab).join('\n') + '\nthis.T = { liveFiles, blockReason, needsConfirm, startBody, applyEvent, percent, stateName };',
+  ['export function liveFiles(', 'export function blockReason(', 'export function needsConfirm(', 'export function startBody(', 'export function applyEvent(', 'export function percent(', 'export function stateName(', 'export function sshTarget(', 'export function authLine(', 'export function looksLikeSsh(']
+    .map(grab).join('\n') + '\nthis.T = { liveFiles, blockReason, needsConfirm, startBody, applyEvent, percent, stateName, sshTarget, authLine, looksLikeSsh };',
   ctx,
 );
 const T = ctx.T;
@@ -234,4 +234,23 @@ test('缺少 heal 時優先用現有 Base，保留可下載的 heal 選項', () 
   assert.equal(choose(data),'MOSS-Base');
   data.bases[0].missing = false;
   assert.equal(choose(data),'heal');
+});
+
+test('雲端 SSH：貼登入指令、主機:埠、貼錯成網址都認得出來', () => {
+  const same = (a, b) => assert.deepEqual(JSON.parse(JSON.stringify(a)), b);
+  same(T.sshTarget('ssh -p 46623 root@i-2.gpushare.com'), { host: 'i-2.gpushare.com', port: 46623, user: 'root' });
+  same(T.sshTarget('  ssh root@connect.westb.seetacloud.com -p 12345 '), { host: 'connect.westb.seetacloud.com', port: 12345, user: 'root' });
+  same(T.sshTarget('http://i-2.gpushare.com:46623/'), { host: 'i-2.gpushare.com', port: 46623, user: 'root' });
+  same(T.sshTarget('ubuntu@1.2.3.4'), { host: '1.2.3.4', port: 22, user: 'ubuntu' });
+  same(T.sshTarget('ssh -i ~/.ssh/k -p22 -l me host.example'), { host: 'host.example', port: 22, user: 'me' });
+  assert.equal(T.sshTarget(''), null);
+  assert.equal(T.sshTarget('ssh -p 22'), null);
+});
+
+test('雲端 SSH：授權那行只在有公鑰時產生，網址欄填 SSH 位址會被認出來', () => {
+  assert.equal(T.authLine(''), '');
+  assert.ok(T.authLine('ssh-ed25519 AAAA anima-agent\n').includes("echo 'ssh-ed25519 AAAA anima-agent' >> ~/.ssh/authorized_keys"));
+  assert.ok(T.looksLikeSsh('http://i-2.gpushare.com:46623/'));
+  assert.ok(T.looksLikeSsh('connect.westb.seetacloud.com'));
+  assert.ok(!T.looksLikeSsh('http://192.168.1.50:8000'));
 });

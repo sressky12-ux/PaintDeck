@@ -2390,7 +2390,8 @@ body:has(#peStatus.run) #capRow [data-cap=pe]::before { background: var(--ph-amb
 .bq-pill { max-width: 22rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .deck { grid-template-columns: 150px minmax(0, 1fr); }
-.side-nav { min-height: 0; overflow-y: auto; padding: .5rem; }
+.side-nav { min-height: 0; overflow-y: auto; padding: .5rem; display: flex; flex-direction: column; }
+.sn-ver { margin-top: auto; padding: .8rem .2rem .1rem; color: var(--label-dim); font-size: .75rem; user-select: text; }
 .side-nav #tabs, .sn-group { display: grid; gap: .35rem; }
 .side-nav #tabs { gap: .8rem; }
 .sn-lbl { color: var(--label-dim); font-weight: 700; }
@@ -2405,4 +2406,5 @@ html.solo .side-nav { display: none; }
   .side-nav { padding-inline: .3rem; }
   .side-nav .pkey { justify-content: center; }
   .side-nav :is(.sn-name, .sn-lbl) { display: none; }
+  .sn-ver { padding-inline: 0; font-size: .6rem; text-align: center; overflow-wrap: anywhere; }
 }

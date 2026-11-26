@@ -882,6 +882,8 @@ async fn ssh_run(app: &Shared, id: &str, model: &str, fam: &Fam, cancel: &Cancel
     let _guard = SSH_TRAIN.try_lock().map_err(|_| "這台雲端主機已經有專案在訓練")?;
     let cloud = &app.agent.cloud;
     let mut pod = cloud.ssh_pod();
+    // 沒指定自己的私鑰時要用生圖站那把；還沒有就先做出來（已經有就只是讀一下）
+    cloud.ensure_key().await?;
     let (info, vram) = cloud.ssh_probe(&mut pod).await?;
     emit(app, id, "train", "running", json!({"msg":info}));
     if let Some(gb) = vram.filter(|gb| gb + 0.5 < fam.min_vram_gb) {

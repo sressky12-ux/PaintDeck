@@ -8,7 +8,7 @@ use regex::Regex;
 use serde_json::{json, Value};
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
-use std::sync::LazyLock;
+use std::sync::{Arc, LazyLock};
 
 static CJK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[㐀-鿿]").unwrap());
 
@@ -118,11 +118,11 @@ const ZH_FIX: &[(&str, &str)] = &[
 
 #[derive(Default)]
 pub struct TagIndex {
-    rows: Vec<(String, i64, i64, Vec<String>)>,
+    rows: Vec<(Arc<str>, i64, i64, Vec<String>)>,
     zh: HashMap<String, String>,
     zh_rows: Vec<(String, String)>,
     zh_fold: Vec<String>, // zh_rows 每一列的中文折成簡體（fold_zh），一列對一列，簡體輸入用
-    count: HashMap<String, i64>,
+    count: HashMap<Arc<str>, i64>,
 }
 
 impl TagIndex {
@@ -144,12 +144,12 @@ impl TagIndex {
                     continue;
                 }
                 ix.rows
-                    .push((f(0).to_string(), int0(f(1)), int0(f(2)), aliases));
+                    .push((Arc::from(f(0)), int0(f(1)), int0(f(2)), aliases));
             }
         }
         ix.add_zh_file(&dir.join("zh_map.json"));
         ix.add_search_pairs(ZH_FIX.iter().map(|&(en, zh)| (zh, en)));
-        ix.count = ix.rows.iter().map(|(t, _, c, _)| (t.clone(), *c)).collect();
+        ix.count = ix.rows.iter().map(|(t, _, c, _)| (Arc::clone(t), *c)).collect();
         ix
     }
 
@@ -264,7 +264,7 @@ impl TagIndex {
     /// 這個 tag 在 danbooru.csv 裡有沒有（空白、底線、大小寫都算同一個）；資產庫存 Anima tag 時檢查用
     pub fn has(&self, tag: &str) -> bool {
         let key = tag.trim().replace(' ', "_").to_lowercase();
-        !key.is_empty() && self.count.contains_key(&key)
+        !key.is_empty() && self.count.contains_key(key.as_str())
     }
 
     pub fn is_empty(&self) -> bool {
@@ -272,10 +272,8 @@ impl TagIndex {
     }
 
     fn cnt(&self, en: &str) -> i64 {
-        *self
-            .count
-            .get(&en.replace(' ', "_").to_lowercase())
-            .unwrap_or(&0)
+        let key = en.replace(' ', "_").to_lowercase();
+        self.count.get(key.as_str()).copied().unwrap_or(0)
     }
 
     pub fn search(&self, q: &str, limit: usize) -> Vec<Value> {
@@ -332,7 +330,7 @@ impl TagIndex {
         pre.sort_by_key(|r| -r.2);
         sub.sort_by_key(|r| -r.2);
         for (tag, cat, cnt, alias) in pre.into_iter().chain(sub).take(limit) {
-            out.push(json!({"tag": tag.replace('_', " "), "zh": self.zh.get(tag.as_str()).cloned().unwrap_or_default(),
+            out.push(json!({"tag": tag.replace('_', " "), "zh": self.zh.get(tag.as_ref()).cloned().unwrap_or_default(),
                             "count": cnt, "cat": cat_name(cat), "alias": alias}));
         }
         out

@@ -108,6 +108,8 @@ function paintMore() {
   // 2026-10-21 起版號用日期：26.10.21 顯示成 V261021（年.月.日，主版號 24 以上就是日期）；舊的 1.1.3 這種照舊只顯示主、次版號
   F("verText").textContent = displayVersion(sys?.version);
   F("verText").title = sys?.version || "";
+  // 左側選單最下面：完整版號，跟「有新版 26.xxxx.x」對得起來
+  if (F("snVer")) F("snVer").textContent = sys?.version ? `v${sys.version}` : "";
 }
 
 function meter(label, used, total, note) {

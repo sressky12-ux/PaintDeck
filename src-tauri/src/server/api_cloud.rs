@@ -1272,7 +1272,7 @@ impl Cloud {
     }
 
     /// 沒有 SSH 金鑰就用 Windows 內建的 ssh-keygen 做一把，權限收緊到只有自己（OpenSSH 會拒絕別人讀得到的私鑰）
-    async fn ensure_key(&self) -> Result<String, String> {
+    pub(crate) async fn ensure_key(&self) -> Result<String, String> {
         let k = self.key_file();
         if !k.exists() {
             std::fs::create_dir_all(&self.dir).map_err(|e| format!("建立 {} 失敗：{e}", self.dir.display()))?;
@@ -1841,6 +1841,30 @@ pub async fn test(State(app): State<Shared>) -> ApiResult {
         }
     };
     ok(json!({"ok": true, "msg": msg}))
+}
+
+/// 訓練台用，不管助手選哪種連法：產生（或讀出）生圖站的 SSH 公鑰；{connect: true} 再連進設定裡那台主機看顯卡和硬碟
+pub async fn ssh_check(State(app): State<Shared>, Body(b): Body) -> ApiResult {
+    let cloud = &app.agent.cloud;
+    let pubkey = cloud.ensure_key().await.map_err(bad)?;
+    if !truthy(b.get("connect")) {
+        return ok(json!({"ok": true, "pubkey": pubkey}));
+    }
+    let mut pod = cloud.ssh_pod();
+    if pod.ip.is_empty() {
+        return Err(bad("還沒貼 SSH 登入指令"));
+    }
+    cloud
+        .ssh(&pod, "echo ok", None, Duration::from_secs(30))
+        .await
+        .map_err(|e| {
+            // Windows 的 ssh 在 LogLevel=ERROR 下連不上時常常什麼都不印
+            let why = e.trim_start_matches("雲端指令失敗：").trim();
+            let why = if why.is_empty() { "那台機器沒有回原因".to_string() } else { why.to_string() };
+            bad(format!("SSH 連不上（{why}）。看一下：機器開機了嗎、登入指令有沒有貼對、第 2 步那行有沒有在那台機器上跑過"))
+        })?;
+    let (info, _) = cloud.ssh_probe(&mut pod).await.map_err(bad)?;
+    ok(json!({"ok": true, "pubkey": pubkey, "msg": format!("連上了：{info}")}))
 }
 
 /// {confirm: true, gpu?: GpuChoice 的 key}：RunPod 要網頁已經讓使用者看過那張卡的每小時價格並按了確認
