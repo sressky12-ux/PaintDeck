@@ -29,6 +29,9 @@ use tokio_util::sync::CancellationToken;
 pub const HOST: &str = "127.0.0.1";
 pub const PORT: u16 = 8199;
 pub const CTX: i64 = 16384;
+/// 生圖助手（adult_vision@9b／35b）的上下文：工作說明＋LoRA 目錄＋工具就要 5～9K，再加每輪的圖和思考，16K 第二輪就滿。
+/// Qwen3.5／3.6 是混合注意力（只有約四分之一層有 KV），32K 多出來的顯存只有幾百 MB；雲端助手也是 32768
+pub const AGENT_CTX: i64 = 32768;
 /// MoE 模型 GPU 模式放 CPU 的專家層數（-ncmoe）
 pub const MOE_CPU_LAYERS: i64 = 30;
 pub const CAPTION_ASK: &str = "Write the caption for this image.";
@@ -558,6 +561,58 @@ fn api_400_fallback(body: &mut Value, added_safety: &mut bool) -> bool {
     google.remove("safety_settings");
     if google.is_empty() { extra.remove("google"); }
     if extra.is_empty() { obj.remove("extra_body"); }
+    true
+}
+
+/// 伺服器回 4xx 說超過上下文（vLLM、llama.cpp、OpenAI 相容站自己架的 Qwen 常見）：把請求收小一點，回 true＝改了、可以重送。
+/// 先降 max_tokens（外接 API 至少給 8192，小上下文的伺服器第二輪就會「訊息＋8192」超過上限）；
+/// 降不了再把舊的圖換成一行字、最後從最舊的對話開始丟（第一則 system 和最後一則都留著）。
+fn fit_context(body: &mut Value, err: &str) -> bool {
+    let e = err.to_lowercase();
+    let overflow = e.contains("context") || e.contains("too many tokens") || e.contains("max_tokens") || e.contains("max_completion_tokens");
+    if !err.starts_with("llama-server 回應 4") || !overflow {
+        return false;
+    }
+    static CTX_N: LazyLock<Regex> = LazyLock::new(|| re(r"(?:maximum context length is|context length of|n_ctx\D{0,4})\s*(\d+)"));
+    static IN_N: LazyLock<Regex> = LazyLock::new(|| re(r"(\d+) in the messages|has (\d+) input tokens|(\d+) input tokens|n_prompt_tokens\D{0,4}(\d+)"));
+    let num = |r: &Regex| r.captures(&e).and_then(|c| c.iter().skip(1).flatten().next()).and_then(|m| m.as_str().parse::<i64>().ok());
+    let max = body["max_tokens"].as_i64().unwrap_or(0);
+    let prompt_only = e.contains("exceed_context_size");
+    if !prompt_only && max > 1024 {
+        let fit = match (num(&CTX_N), num(&IN_N)) {
+            (Some(ctx), Some(input)) => ctx - input - 64,
+            _ => max / 2,
+        };
+        if fit >= 1024 && fit < max {
+            body["max_tokens"] = json!(fit);
+            return true;
+        }
+    }
+    let Some(msgs) = body["messages"].as_array_mut() else { return false };
+    let last_img = msgs.iter().rposition(|m| m["content"].as_array().is_some_and(|a| a.iter().any(|p| p["type"] == "image_url")));
+    let mut dropped_img = false;
+    for (i, m) in msgs.iter_mut().enumerate() {
+        if Some(i) == last_img {
+            continue;
+        }
+        for p in m["content"].as_array_mut().into_iter().flatten() {
+            if p["type"] == "image_url" {
+                *p = json!({"type": "text", "text": "(an earlier image, no longer shown)"});
+                dropped_img = true;
+            }
+        }
+    }
+    if dropped_img {
+        return true;
+    }
+    let head = usize::from(msgs.first().is_some_and(|m| m["role"] == "system"));
+    if msgs.len() <= head + 1 {
+        return false;
+    }
+    msgs.remove(head);
+    while msgs.len() > head + 1 && msgs[head]["role"] != "user" {
+        msgs.remove(head);
+    }
     true
 }
 
@@ -1594,7 +1649,8 @@ impl Core {
         let (model, mmproj) = self.model_files(kind, None)?;
         let model_name = file_name(&model);
         crate::diagnostics::snapshot("llm_model_requested", &json!({"kind":kind,"gpu_layers_requested":ngl,"model":model,"mmproj":mmproj,"loaded_confirmed":false}));
-        let want = json!({"kind": kind, "ngl": ngl, "model": model_name});
+        let ctx = if kind.starts_with("adult_vision@") { AGENT_CTX } else { CTX };
+        let want = json!({"kind": kind, "ngl": ngl, "model": model_name, "ctx": ctx});
         let _g = win::FileLock::acquire(&self.lock, Duration::from_secs(180))?;
         let mut s = self.read_state();
         let same = !s.is_empty()
@@ -1624,7 +1680,7 @@ impl Core {
             "--port".into(),
             PORT.to_string(),
             "-c".into(),
-            CTX.to_string(),
+            ctx.to_string(),
             "-ngl".into(),
             ngl.to_string(),
             "--jinja".into(),
@@ -2855,7 +2911,35 @@ impl Service {
         self.chat_via(&self.http, base, key, body, em, zh).await
     }
 
+    /// 送一次；伺服器說超過上下文就照 fit_context 收小再送（最多幾次，收不動就把原本的錯誤交出去）
     async fn chat_via(
+        &self,
+        http: &reqwest::Client,
+        base: &str,
+        key: Option<&str>,
+        body: &Value,
+        em: &Emitter,
+        zh: bool,
+    ) -> Result<(String, String, Value), Fail> {
+        let mut smaller: Option<Value> = None;
+        for _ in 0..12 {
+            let b = smaller.as_ref().unwrap_or(body);
+            match self.chat_once(http, base, key, b, em, zh).await {
+                Err(Fail::Error(e)) => {
+                    let mut nb = b.clone();
+                    if !fit_context(&mut nb, &e) {
+                        return Err(Fail::Error(e));
+                    }
+                    em.emit("status", json!({"phase": "generating", "msg": "對話超過模型的上下文長度：把回覆上限或舊對話收短，再送一次…"})).await?;
+                    smaller = Some(nb);
+                }
+                other => return other,
+            }
+        }
+        self.chat_once(http, base, key, smaller.as_ref().unwrap_or(body), em, zh).await
+    }
+
+    async fn chat_once(
         &self,
         http: &reqwest::Client,
         base: &str,
@@ -4799,5 +4883,48 @@ mod tests {
         assert!(missing_visible_text("A red dress.", "穿「紅色洋裝」的成年女性").is_empty());
         assert_eq!(missing_visible_text("Autumn books", "海報大標題「秋日書市」，下面「10月27日」"), vec!["秋日書市", "10月27日"]);
         assert_eq!(missing_visible_text("A sign", "The sign reads \"OPEN\""), vec!["OPEN"]);
+    }
+}
+
+#[cfg(test)]
+mod fit_context_tests {
+    use super::fit_context;
+    use serde_json::json;
+
+    #[test]
+    fn vllm_max_tokens_shrinks_to_what_fits() {
+        let mut b = json!({"max_tokens": 8192, "messages": [{"role": "user", "content": "hi"}]});
+        let e = "llama-server 回應 400：{\"object\":\"error\",\"message\":\"This model's maximum context length is 16384 tokens. However, you requested 17000 tokens (8808 in the messages, 8192 in the completion).\"}";
+        assert!(fit_context(&mut b, e));
+        assert_eq!(b["max_tokens"], json!(16384 - 8808 - 64));
+    }
+
+    #[test]
+    fn prompt_too_long_drops_old_images_then_old_turns() {
+        let img = json!({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64,AA"}});
+        let mut b = json!({"max_tokens": 4096, "messages": [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": [{"type": "text", "text": "a"}, img.clone()]},
+            {"role": "assistant", "content": "{}"},
+            {"role": "user", "content": [{"type": "text", "text": "b"}, img.clone()]},
+        ]});
+        let e = "llama-server 回應 400：{\"error\":{\"code\":400,\"message\":\"the request exceeds the available context size, try increasing it\",\"type\":\"exceed_context_size_error\"}}";
+        assert!(fit_context(&mut b, e));
+        assert_eq!(b["max_tokens"], json!(4096));
+        let s = b.to_string();
+        assert_eq!(s.matches("data:image").count(), 1);
+        assert!(fit_context(&mut b, e));
+        let m = b["messages"].as_array().unwrap();
+        assert_eq!((m.len(), m[0]["role"].as_str(), m[1]["role"].as_str()), (2, Some("system"), Some("user")));
+        assert!(!fit_context(&mut b, e));
+    }
+
+    #[test]
+    fn other_errors_are_left_alone() {
+        let mut b = json!({"max_tokens": 8192, "messages": [{"role": "user", "content": "hi"}]});
+        assert!(!fit_context(&mut b, "llama-server 回應 401：invalid api key"));
+        assert!(!fit_context(&mut b, "llama-server 回應 500：context length exceeded"));
+        assert!(!fit_context(&mut b, "連不到 llama-server：timeout"));
+        assert_eq!(b["max_tokens"], json!(8192));
     }
 }

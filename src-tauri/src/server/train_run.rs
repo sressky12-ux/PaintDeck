@@ -237,12 +237,24 @@ async fn install_run(app: &Shared) -> Result<(), String> {
         })
         .await?;
     }
+    let spec = kit.join("manager").join("spec.py");
+    if let Ok(src) = std::fs::read_to_string(&spec) {
+        if src.contains(train::CUDA_GATE.0) {
+            std::fs::write(&spec, src.replace(train::CUDA_GATE.0, train::CUDA_GATE.1)).map_err(|e| format!("改不了 ai-toolkit 的驅動檢查：{e}"))?;
+        }
+    }
     say(app, "安裝訓練環境（PyTorch 和相依套件，約 6～8GB，要十幾分鐘到半小時）…");
     let mut cmd = tokio::process::Command::new(&py);
     // 不用 `-m manager`：ComfyUI 附的 python_embeded 有 ._pth 檔，sys.path 不含目前資料夾，-m 會找不到 manager
     // （2026-11-20 實際踩到）。直接跑 manager/__main__.py，它自己會把 ai-toolkit 根目錄插進 sys.path
     cmd.arg(kit.join("manager").join("__main__.py")).arg("install").current_dir(&kit).env("PYTHONUNBUFFERED", "1").env("PYTHONIOENCODING", "utf-8");
-    run_logged(app, cmd).await?;
+    if let Err(e) = run_logged(app, cmd).await {
+        // 安裝管理器失敗，但環境之前已經裝好（或使用者自己裝的）：先不擋，交給下面的 torch.cuda 檢查決定能不能用
+        if venv_python(&kit).is_none() {
+            return Err(e);
+        }
+        say(app, format!("ai-toolkit 安裝管理器沒跑完（{e}），改用已經裝好的環境，下面檢查它能不能用…"));
+    }
     let vpy = venv_python(&kit).ok_or("安裝跑完了，但找不到訓練器的 Python（.venv）")?;
     // 安裝管理器會在環境裡寫一支 sitecustomize.py（掛 ffmpeg 的路徑）。安裝路徑有中文時它用系統編碼寫，
     // Python 當 UTF-8 讀不了：每次啟動都噴錯、ffmpeg 也沒掛上。轉成 UTF-8（-S＝先不要載入它）

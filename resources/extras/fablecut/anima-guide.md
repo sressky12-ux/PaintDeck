@@ -74,7 +74,7 @@ MOSS 另外可給 `moss_te:"4b"`（文字編碼器改用 Qwen3.5-4B＋投影轉�
 - `hires:{enabled:true, scale:1.5, denoise:0.4, upscaler}`：高解析修復（txt2img、img2img）。
 - `control:{enabled:true, type:"any"|"lineart"|"scribble"|"depth"|"pose", preprocess:"canny"|"depth"|"pose"|"none", strength, end, image, invert}`：構圖控制，**只對 anima 的 txt2img／img2img 有效**，其他家族會被忽略。`type:"pose"` 用 `anima-lllite-pose-1`（吃 DWPose 樣式的彩色骨架圖，黑底；官方說效果比其他種弱，當「大致的姿勢」用）；`preprocess:"pose"` 從一般照片／圖自動抽骨架（SAM3 框人→SDPose 抽點→畫成骨架，要有 `sdpose_wholebody_fp16.safetensors` 與 SAM3）；自己畫好的骨架圖用 `preprocess:"none"`。
 - `pose_control`：Qwen 姿勢參考，只對 qwen21 有效。
-- `layout:[{type:"character"|"object"|"text", desc, text?, box:[x0,y0,x1,y1]}]`：MOSS 的版面框，座標是 0～1 的比例。
+- `layout:[{type:"character"|"object"|"text", desc, text?, tags?:[...], palette?:[...], box:[x0,y0,x1,y1]}]` 是 MOSS 的版面框，座標是 0～1 的比例。可另傳 `layout_summary:{meta?:[...], canvas?:"single"|"multi_panel"|"collage", palette?:[...]}` 描述全圖。`meta`、`tags` 和兩處 `palette` 都是字串陣列。
 - `count` 最多 32；送出途中某張失敗時，前面幾張已經在排隊，回應卻是錯誤，記得 `anima_jobs` 看一下。
 
 取消與佇列：`POST /api/interrupt`（停目前這張）、`POST /api/cancel {job}`（取消一個任務，正在跑的會中斷）、`POST /api/clear_queue`（清空等待中的，要確認）、`POST /api/jobs/retry {job, new_seed?}`、`POST /api/free`（ComfyUI 釋放顯存）。

@@ -977,6 +977,12 @@ pub fn caption_system(kind: &str, video: bool) -> String {
 /// ai-toolkit 釘住的版本（2026-11-09）
 pub const TOOLKIT_COMMIT: &str = "9ab33b1104d71bc4c6753761e40466daaadc4a78";
 
+/// ai-toolkit 安裝管理器（manager/spec.py）的驅動門檻：驅動只到 CUDA 12.5 以下（550 驅動，租來的 A6000、5880 Ada 常見）就直接擋下，
+/// 叫人更新驅動。玩家回報這道檢查多餘：PyTorch 的 cu126 靠 CUDA 小版本相容，舊一點的驅動多半也跑得動。
+/// 安裝前把門檻拿掉，一律照 cu126 裝；跑不跑得動交給裝完後的 torch.cuda 檢查判斷（不行會講清楚）。Blackwell 那條另外的檢查不動。
+/// 只換這一行；換了 ai-toolkit 版本、這行不在了就什麼都不做。
+pub const CUDA_GATE: (&str, &str) = ("if cuda >= (12, 6):", "if True:");
+
 /// 小幫手回報的檔案清單 → 這顆 LoRA 的各版，照步數排：[(第幾版, 檔案相對路徑)]。
 /// ai-toolkit 中途存 `<名字>_000000250.safetensors`，最後一版是 `<名字>.safetensors`。
 pub fn epoch_names(files: &[String], name: &str) -> Vec<(u32, String)> {
@@ -1021,7 +1027,10 @@ pub fn boot_script(port: u16, root: &str, ssh_run: Option<&str>) -> String {
         "  python3 -c \"import zipfile; zipfile.ZipFile('aitk.zip').extractall('.')\"".to_string(),
         format!("  rm -rf ai-toolkit && mv ai-toolkit-{TOOLKIT_COMMIT} ai-toolkit && rm -f aitk.zip"),
         "fi".to_string(),
-        format!("cd {root}/ai-toolkit && python3 -m manager install"),
+        format!("cd {root}/ai-toolkit"),
+        format!("sed -i 's/{}/{}/' manager/spec.py || true", CUDA_GATE.0, CUDA_GATE.1),
+        // 安裝管理器失敗但環境已經在（之前裝過）：PyTorch 看得到顯卡就照用，看不到才算失敗
+        "python3 -m manager install || { echo 'ai-toolkit 安裝管理器沒跑完，改用已經裝好的環境'; for p in .venv/bin/python venv/bin/python; do [ -x $p ] && $p -c 'import sys, torch; sys.exit(0 if torch.cuda.is_available() else 1)' && break; done || { echo 'PyTorch 看不到 NVIDIA 顯卡：驅動太舊或環境沒裝好' >&2; exit 1; }; }".to_string(),
     ];
     let (listen, work) = if let Some(run) = ssh_run {
         lines.push(format!("export TRAIN_TOKEN=\"$(cat {root}/token)\""));
@@ -1674,5 +1683,6 @@ mod tests {
         assert!(s.contains("/workspace/agent.py") && s.contains("source /etc/network_turbo") && s.contains("--connect-timeout 30 --retry 2"));
         assert!(s.contains(TOOLKIT_COMMIT) && s.contains("--port 8000") && s.contains("$TRAIN_TOKEN") && s.contains("$TRAIN_AGENT_B64") && s.contains("-m manager install"), "{s}");
         assert!(!s.contains('\r'));
+        assert!(s.contains("sed -i 's/if cuda >= (12, 6):/if True:/' manager/spec.py || true\npython3 -m manager install || {"), "{s}");
     }
 }

@@ -216,7 +216,30 @@ pub const LAYOUT_MAX: usize = 16;
 /// 跟 ComfyUI 的 MOSSImageLayoutPrompt 節點算法一樣，壓成一行當正面提示詞。只有 MOSS 吃這個格式。
 pub struct Layout {
     caption: String,
-    items: Vec<(&'static str, String, String, [f64; 4])>,
+    meta: Vec<String>,
+    canvas: Option<&'static str>,
+    palette: Vec<String>,
+    items: Vec<LayoutItem>,
+}
+
+struct LayoutItem {
+    kind: &'static str,
+    desc: String,
+    text: String,
+    tags: Vec<String>,
+    palette: Vec<String>,
+    bbox: [f64; 4],
+}
+
+fn layout_strings(value: Option<&Value>, rng: &mut PyRandom) -> Vec<String> {
+    value
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(Value::as_str)
+        .map(|item| expand_wildcards(item, rng).trim().to_string())
+        .filter(|item| !item.is_empty())
+        .collect()
 }
 
 impl Layout {
@@ -239,12 +262,36 @@ impl Layout {
             if x1 - x0 < 0.01 || y1 - y0 < 0.01 || (desc.is_empty() && text.trim().is_empty()) {
                 continue;
             }
-            items.push((kind, desc, text, [x0, y0, x1, y1]));
+            items.push(LayoutItem {
+                kind,
+                desc,
+                text,
+                tags: layout_strings(b.get("tags"), rng),
+                palette: layout_strings(b.get("palette"), rng),
+                bbox: [x0, y0, x1, y1],
+            });
         }
         if items.is_empty() {
             return None;
         }
-        Some(Layout { caption: caption.trim().to_string(), items })
+        let primary = p.get("layout_summary").and_then(Value::as_object);
+        let fallback = p.get("summary").and_then(Value::as_object);
+        let summary_field = |key| {
+            primary.and_then(|m| m.get(key)).or_else(|| fallback.and_then(|m| m.get(key)))
+        };
+        let canvas = match summary_field("canvas").and_then(Value::as_str).map(str::trim) {
+            Some("single") => Some("single"),
+            Some("multi_panel") => Some("multi_panel"),
+            Some("collage") => Some("collage"),
+            _ => None,
+        };
+        Some(Layout {
+            caption: caption.trim().to_string(),
+            meta: layout_strings(summary_field("meta"), rng),
+            canvas,
+            palette: layout_strings(summary_field("palette"), rng),
+            items,
+        })
     }
 
     /// w×h 畫面的排版 JSON（寬高不寫進去，生圖時用同樣的寬高）
@@ -257,24 +304,42 @@ impl Layout {
         let items: Vec<Value> = self
             .items
             .iter()
-            .map(|(kind, desc, text, [x0, y0, x1, y1])| {
+            .map(|item| {
+                let [x0, y0, x1, y1] = item.bbox;
                 let mut m = Map::new();
-                m.insert("label".into(), json!(kind));
+                m.insert("label".into(), json!(item.kind));
                 // 官方規則 caption 不能空：只寫了字的文字框補一句
-                m.insert("caption".into(), json!(if desc.is_empty() { "clear, legible lettering" } else { desc.as_str() }));
-                if *kind == "text" {
-                    m.insert("text".into(), json!(text));
+                m.insert("caption".into(), json!(if item.desc.is_empty() { "clear, legible lettering" } else { item.desc.as_str() }));
+                if item.kind == "text" {
+                    m.insert("text".into(), json!(item.text));
                 }
-                m.insert("bbox".into(), json!([edge(*y0, h, false), edge(*x0, w, false), edge(*y1, h, true), edge(*x1, w, true)]));
+                if !item.tags.is_empty() {
+                    m.insert("tags".into(), json!(item.tags));
+                }
+                if !item.palette.is_empty() {
+                    m.insert("palette".into(), json!(item.palette));
+                }
+                m.insert("bbox".into(), json!([edge(y0, h, false), edge(x0, w, false), edge(y1, h, true), edge(x1, w, true)]));
                 Value::Object(m)
             })
             .collect();
         let caption = if self.caption.is_empty() {
-            self.items.iter().map(|it| it.1.as_str()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(", ")
+            self.items.iter().map(|it| it.desc.as_str()).filter(|d| !d.is_empty()).collect::<Vec<_>>().join(", ")
         } else {
             self.caption.clone()
         };
-        json!({"summary": {"caption": caption}, "items": items, "bbox_coord_space": "abs_centralized", "bbox_format": "yxyx"}).to_string()
+        let mut summary = Map::new();
+        if !self.meta.is_empty() {
+            summary.insert("meta".into(), json!(self.meta));
+        }
+        if let Some(canvas) = self.canvas {
+            summary.insert("canvas".into(), json!(canvas));
+        }
+        if !self.palette.is_empty() {
+            summary.insert("palette".into(), json!(self.palette));
+        }
+        summary.insert("caption".into(), json!(caption));
+        json!({"summary": summary, "items": items, "bbox_coord_space": "abs_centralized", "bbox_format": "yxyx"}).to_string()
     }
 }
 
@@ -1881,6 +1946,11 @@ mod tests {
         // 一行、鍵的順序照官方
         let s = l.prompt(1536, 1024);
         assert!(!s.contains('\n') && s.starts_with("{\"summary\""));
+        assert_eq!(s, concat!(
+            r#"{"summary":{"caption":"warm studio photo"},"items":[{"label":"object","caption":"a white ceramic cup","bbox":[-288,-592,352,32]},"#,
+            r#"{"label":"text","caption":"clear, legible lettering","text":"把日常，过成诗。","bbox":[-256,153,-51,615]}],"#,
+            r#""bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}"#,
+        ));
 
         // 接進節點圖：MOSS 才包成 JSON；圖庫記的 prompt 還是使用者寫的那句；高解析修復照放大後的尺寸重算
         let dir = std::env::temp_dir();
@@ -1899,6 +1969,21 @@ mod tests {
         assert_eq!(lays[0]["summary"]["caption"], "a cat red sofa");
         assert_eq!(lays[0]["items"][0]["bbox"], json!([-256, -256, 256, 256]));
         assert_eq!(lays[1]["items"][0]["bbox"], json!([-384, -384, 384, 384]));
+        let mut with_metadata = q.clone();
+        with_metadata["layout_summary"] = json!({"meta": ["illustration"], "canvas": "single", "palette": ["red"]});
+        with_metadata["layout"][0]["tags"] = json!(["{tabby|calico}"]);
+        with_metadata["layout"][0]["palette"] = json!(["brown"]);
+        let (n, _) = build(&with_metadata, &dir, 0).unwrap();
+        let lays: Vec<Value> = texts(&n).iter().filter_map(|text| serde_json::from_str(text).ok()).collect();
+        assert_eq!(lays.len(), 2);
+        for (lay, radius) in lays.iter().zip([256, 384]) {
+            assert_eq!(lay["summary"], json!({"meta": ["illustration"], "canvas": "single", "palette": ["red"], "caption": "a cat red sofa"}));
+            assert_eq!(lay["items"][0]["palette"], json!(["brown"]));
+            assert_eq!(lay["items"][0]["bbox"], json!([-radius, -radius, radius, radius]));
+        }
+        let tags = &lays[0]["items"][0]["tags"];
+        assert!(tags == &json!(["tabby"]) || tags == &json!(["calico"]));
+        assert_eq!(tags, &lays[1]["items"][0]["tags"]);
         // 版面框＋色彩／深度控制＋高解析修復：兩段的正負條件都要來自同一顆控制節點，第二段照新尺寸重新包一次
         let mut qc = q.clone();
         qc["moss_control"] = json!({"enabled": true, "image": "ctl.png", "color": false});
@@ -1918,6 +2003,56 @@ mod tests {
         q["layout"] = json!([]);
         let (n, _) = build(&q, &dir, 0).unwrap();
         assert!(texts(&n).contains(&"a cat red sofa".to_string()));
+    }
+
+    #[test]
+    fn moss_layout_metadata_key_order_and_wildcards() {
+        let p = json!({
+            "layout_summary": {"meta": [" {poster|poster} ", " ", 5], "canvas": " multi_panel ", "palette": [" {red|red} "]},
+            "layout": [{"type": "text", "desc": " serif ", "text": " Title ", "box": [0, 0, 1, 1],
+                        "tags": [" {headline|headline} ", " ", false], "palette": [" {ivory|ivory} "]}],
+        });
+        let layout = Layout::from_params(&p, " cover ", &mut PyRandom::new(1)).unwrap();
+        assert_eq!(layout.prompt(256, 128), concat!(
+            r#"{"summary":{"meta":["poster"],"canvas":"multi_panel","palette":["red"],"caption":"cover"},"#,
+            r#""items":[{"label":"text","caption":"serif","text":" Title ","tags":["headline"],"palette":["ivory"],"bbox":[-64,-128,64,128]}],"#,
+            r#""bbox_coord_space":"abs_centralized","bbox_format":"yxyx"}"#,
+        ));
+    }
+
+    #[test]
+    fn moss_layout_summary_fallback() {
+        let mut p = json!({
+            "summary": {"meta": [" poster "], "canvas": " collage ", "palette": [" blue "], "caption": "ignored"},
+            "layout": [{"desc": "cup", "box": [0, 0, 1, 1]}],
+        });
+        let prompt = |params: &Value| -> Value {
+            let layout = Layout::from_params(params, "scene", &mut PyRandom::new(1)).unwrap();
+            serde_json::from_str(&layout.prompt(256, 128)).unwrap()
+        };
+        let expected = json!({"meta": ["poster"], "canvas": "collage", "palette": ["blue"], "caption": "scene"});
+        assert_eq!(prompt(&p)["summary"], expected);
+        p["layout_summary"] = json!("ignored");
+        assert_eq!(prompt(&p)["summary"], expected);
+        p["layout_summary"] = json!({"meta": ["comic"], "canvas": "single"});
+        assert_eq!(prompt(&p)["summary"], json!({"meta": ["comic"], "canvas": "single", "palette": ["blue"], "caption": "scene"}));
+        p["summary"] = json!("ignored");
+        assert_eq!(prompt(&p)["summary"], json!({"meta": ["comic"], "canvas": "single", "caption": "scene"}));
+    }
+
+    #[test]
+    fn moss_layout_omits_invalid_and_empty_metadata() {
+        for canvas in [json!("triptych"), json!("  "), json!(7), Value::Null] {
+            let p = json!({
+                "layout_summary": {"meta": [], "canvas": canvas, "palette": ["  ", null]},
+                "summary": {"canvas": "single", "meta": ["fallback"], "palette": ["fallback"]},
+                "layout": [{"desc": "cup", "text": "ignored", "box": [0, 0, 1, 1], "tags": [" "], "palette": []}],
+            });
+            let layout = Layout::from_params(&p, "", &mut PyRandom::new(1)).unwrap();
+            let prompt: Value = serde_json::from_str(&layout.prompt(256, 128)).unwrap();
+            assert_eq!(prompt["summary"], json!({"caption": "cup"}));
+            assert_eq!(prompt["items"], json!([{"label": "object", "caption": "cup", "bbox": [-64, -128, 64, 128]}]));
+        }
     }
 
     #[test]
