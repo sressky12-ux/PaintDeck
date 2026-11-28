@@ -381,7 +381,8 @@ async fn run_seg(app: &Shared, id: &str, i: usize, token: &CancellationToken) ->
     let c = store(app).get(id).ok_or("長片不見了")?;
     // 參考圖也送進 DiT：雲端要有繪匣的小節點、圖要還在（接續段拿第 1 段首幀當參考，首幀被清掉就照舊只給文字編碼器）
     let dit_files = hc::dit_refs(&c, i);
-    let opts = hc::GraphOpts { ref_node: dit_files.iter().all(|f| app.paths.input.join(f).is_file()) && super::api_cloud::chain_ref_node_ready(app).await, ..Default::default() };
+    let (model, te) = super::api_h3::cloud_files(app, "", &c["te"]).await?;
+    let opts = hc::GraphOpts { turbo_lora: crate::h3::official_ref2va(&model), model, te, ref_node: dit_files.iter().all(|f| app.paths.input.join(f).is_file()) && super::api_cloud::chain_ref_node_ready(app).await, ..Default::default() };
     for f in dit_files.iter().filter(|_| opts.ref_node) {
         super::api_cloud::upload_input(app, &app.paths.input.join(f)).await?;
     }
@@ -443,9 +444,9 @@ async fn local_opts(app: &Shared) -> Result<hc::GraphOpts, String> {
         .or_else(|| models.iter().find(|m| super::basename(m) == crate::h3::MODEL).cloned())
         .or_else(|| models.iter().find(|m| super::basename(m).to_lowercase().contains("10eros")).cloned())
         .ok_or("本機沒有長片能用的 H3 主模型（10Eros）：到下載中心或安裝精靈裝「H3 影片」，或把「在哪拍」改成雲端")?;
-    super::api_h3::check_local_files(app, &model).await?;
+    super::api_h3::check_local_files(app, &model, crate::h3::TE).await?;
     let chunks = (crate::h3::low_vram_model(&model) && super::api_h3::local_chunk_node(app).await).then_some(8);
-    Ok(hc::GraphOpts { model, chunks, ref_node: app.comfy.object_info(hc::REF_NODE).await.is_ok(), latent_in: None })
+    Ok(hc::GraphOpts { model, chunks, ref_node: app.comfy.object_info(hc::REF_NODE).await.is_ok(), ..Default::default() })
 }
 
 /// 本機 ComfyUI 沒有接續節點：把程式附帶的那份（resources\extras\h3_infinite.tar.gz，跟雲端裝的同一份）解到 custom_nodes。

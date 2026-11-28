@@ -307,6 +307,10 @@ def extract_all():
         JS(f.read_text("utf-8"), f"js/{f.name}").code(0)
     for f in sorted((ROOT / "src-tauri" / "src").rglob("*.rs")):
         rust(f.read_text("utf-8"), str(f.relative_to(ROOT / "src-tauri" / "src")).replace("\\", "/"))
+    # SSH 開機腳本用 echo 把進度傳回訓練台。
+    for script in ("resources/train/ssh_install.sh", "src-tauri/src/train.rs"):
+        for message in re.findall(r"\becho '([^'\n]+)'", (ROOT / script).read_text("utf-8")):
+            add(message, script)
     # 姿勢大彙整：選單上的名稱、分類、滑過去的說明（/api/poses）
     poses = json.loads((ROOT / "resources" / "poses" / "poses.json").read_text("utf-8"))
     for p in poses.get("poses", []):
@@ -338,7 +342,7 @@ def extract_all():
     return entries
 
 
-EXTRA = ["佇列", "待命", "改寫", "執行中", "待機", "無法使用", "連線中", "已連線", "顯存", "記憶體",
+EXTRA = ["版本不明", "佇列", "待命", "改寫", "執行中", "待機", "無法使用", "連線中", "已連線", "顯存", "記憶體",
          "機器還開著：開關機和計費在那家網站，用完記得去關機", "這台主機已有別的訓練在跑", "訓練用的連接埠已被占用", "沒有讀到訓練小幫手的程序編號",
          "臉", "手", "臉或手"]  # 後三個：api_play.rs「這張圖找不到{臉／手}…」的變數
 

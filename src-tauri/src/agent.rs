@@ -137,21 +137,22 @@ pub fn prompt_family<'a>(target: &str, fallback: &'a str) -> &'a str {
 }
 
 static H3_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)\bh3\b|minimax").unwrap());
+static H3_IMG_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)mmimage|(?:h3|minimax)[\s_-]*(?:image|img|圖|图|改圖|改图|畫圖|画图|生圖|生图)").unwrap());
 static VIDEO_ASK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)影片|視頻|视频|動起來|动起来|動畫|运镜|運鏡|\bvideo\b|\bclip\b|\banimate\b").unwrap());
 
-/// 「只寫詞」自動挑寫法：講到影片 → H3 影片（2026-10-30 起內建影片就是 H3）；Qwen 附一張圖 → 改圖、兩張以上 → 多圖參考；其他照家族
+/// 「只寫詞」自動挑寫法：講到影片 → H3 影片（排除明確指 H3 Image／圖片版）；Qwen／MiniMax 附一張圖 → 改圖、兩張以上 → 多圖參考；其他照家族
 pub fn pick_guide(family: &str, images: usize, ask: &str) -> &'static str {
-    if VIDEO_ASK.is_match(ask) || H3_ASK.is_match(ask) {
+    if VIDEO_ASK.is_match(ask) || (H3_ASK.is_match(ask) && !H3_IMG_ASK.is_match(ask) && family != MMIMG) {
         return "h3_video";
     }
     match (family, images) {
-        (QWEN21, 1) => "qwen_edit",
-        (QWEN21, n) if n >= 2 => "qwen_multiref",
+        (QWEN21 | MMIMG, 1) => "qwen_edit",
+        (QWEN21 | MMIMG, n) if n >= 2 => "qwen_multiref",
         _ => family_guide(family),
     }
 }
 
-/// 動手做模式：這個動作要照哪份寫法寫（改圖、影片、Qwen 用附圖畫）
+/// 動手做模式：這個動作要照哪份寫法寫（改圖、影片、Qwen／MiniMax 用附圖畫）
 pub fn needed_guide(action: &Map<String, Value>, family: &str, refs_mode: &str) -> Option<&'static str> {
     match tx(action.get("action").unwrap_or(&Value::Null)).as_str() {
         "call" => match tx(action.get("tool").unwrap_or(&Value::Null)).as_str() {
@@ -159,7 +160,7 @@ pub fn needed_guide(action: &Map<String, Value>, family: &str, refs_mode: &str) 
             "video" => Some("h3_video"),
             _ => None,
         },
-        "generate" if family == QWEN21 && refs_mode == "multi" => match action.get("refs").and_then(Value::as_array).map(Vec::len).unwrap_or(0) {
+        "generate" if matches!(family, QWEN21 | MMIMG) && refs_mode == "multi" => match action.get("refs").and_then(Value::as_array).map(Vec::len).unwrap_or(0) {
             0 => None,
             1 => Some("qwen_edit"),
             _ => Some("qwen_multiref"),
@@ -763,7 +764,7 @@ pub struct Check<'a> {
 
 static QUOTED: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#""[^"]*"|“[^”]*”|「[^」]*」|『[^』]*』"#).unwrap());
 static CJK: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"[\p{Han}\p{Hiragana}\p{Katakana}\p{Hangul}]").unwrap());
-static IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<image(\d+)>").unwrap());
+static IMAGE_TAG: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"<(?:image|Picture )(\d+)>").unwrap());
 // 9B 會把 JSON 欄位寫進提示詞裡（"…, refs:[1], denoise:0.75, 832x1216"）
 static FIELD_IN_PROMPT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r#"(?i)"?\b(refs?|denoise)"?\s*[:=]\s*(\[[^\]]*\]|[0-9]+(?:\.[0-9]+)?)"#).unwrap());
 // 單獨一項的尺寸：832x1216、1216、832（三位數 200 以上才算，年齡的 20 不動），還有抄進來的 loras:[]
@@ -1069,8 +1070,8 @@ fn parse_generate(m: &Map<String, Value>, check: Vec<String>, c: &Check) -> Resu
     if prompt.chars().count() < 15 {
         return Err("\"prompt\" is missing or too short. Write the complete prompt.".into());
     }
-    // Qwen 用附圖改圖／合成：官方寫法是「使用者寫中文就用中文下指令」
-    let qwen_refs = c.family == QWEN21 && c.refs_mode == "multi" && ["refs", "ref", "references", "reference_images", "user_images", "images"].iter().any(|k| m.get(*k).is_some_and(|v| ref_num(v).is_some() || v.as_array().is_some_and(|a| !a.is_empty())));
+    // Qwen／MiniMax 用附圖改圖／合成：允許中文指令
+    let qwen_refs = matches!(c.family, QWEN21 | MMIMG) && c.refs_mode == "multi" && ["refs", "ref", "references", "reference_images", "user_images", "images"].iter().any(|k| m.get(*k).is_some_and(|v| ref_num(v).is_some() || v.as_array().is_some_and(|a| !a.is_empty())));
     if !qwen_refs && has_cjk_outside_quotes(&prompt) {
         return Err("The prompt must be written in English: translate and expand the request into English (only text that must appear inside the picture may stay in quotes). Reply again.".into());
     }

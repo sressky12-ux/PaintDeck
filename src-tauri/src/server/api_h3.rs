@@ -349,8 +349,8 @@ pub(super) struct LocalFiles {
 }
 
 /// H3 本機要的檔缺哪些（主模型、文字編碼器、影像 VAE、聲音 VAE）：空的＝都有
-pub(super) fn local_missing(have: &LocalFiles, model: &str) -> Vec<String> {
-    let need = [(&have.unets, model), (&have.clips, h3::TE), (&have.vaes, h3::VAE), (&have.vaes, h3::AVAE)];
+pub(super) fn local_missing(have: &LocalFiles, model: &str, te: &str) -> Vec<String> {
+    let need = [(&have.unets, model), (&have.clips, te), (&have.vaes, h3::VAE), (&have.vaes, h3::AVAE)];
     need.into_iter().filter(|(v, n)| !v.iter().any(|x| x == n)).map(|(_, n)| n.to_string()).collect()
 }
 
@@ -363,8 +363,8 @@ pub(super) async fn local_files(app: &Shared) -> LocalFiles {
 }
 
 /// 送到本機前先查檔：缺了就直接講缺哪個、去哪補，不要送出去才拿到 ComfyUI 的「Value not in list」
-pub(super) async fn check_local_files(app: &Shared, model: &str) -> Result<(), String> {
-    let miss = local_missing(&local_files(app).await, model);
+pub(super) async fn check_local_files(app: &Shared, model: &str, te: &str) -> Result<(), String> {
+    let miss = local_missing(&local_files(app).await, model, te);
     if miss.is_empty() {
         return Ok(());
     }
@@ -421,6 +421,9 @@ pub fn from_gen(p: &Map<String, Value>, local_models: &[String]) -> Result<Value
     if !first.is_empty() {
         h["first"] = json!(first);
     }
+    if let Some(te) = p.get("te") {
+        h["te"] = json!(h3::te_name(te)?);
+    }
     if let Some(d) = p.get("director") {
         h["director"] = d.clone();
     }
@@ -436,12 +439,37 @@ pub(super) fn cloud_ready(packs: Option<super::api_cloud::Packs>) -> Result<supe
     Ok(packs)
 }
 
+pub(super) async fn cloud_files(app: &Shared, model: &str, te: &Value) -> Result<(String, String), String> {
+    let model = if model.is_empty() || model == h3::MODEL {
+        let names = super::api_cloud::remote_options(app, "UNETLoader", "unet_name").await;
+        h3::pick_cloud_model(&names).ok_or("讀不到雲端的 H3 影片模型，請確認連線和模型下載是否完成")?.to_owned()
+    } else {
+        model.to_owned()
+    };
+    let te = match h3::te_name(te)? {
+        Some(name) => name.to_owned(),
+        None => {
+            let names = super::api_cloud::remote_options(app, "CLIPLoader", "clip_name").await;
+            h3::pick_cloud_te(&names).ok_or("讀不到雲端的 H3 文字編碼器，請確認連線並下載 qwen3vl_32b_minimax_h3 文字編碼器")?.to_owned()
+        }
+    };
+    Ok((model, te))
+}
+
+async fn set_cloud_files(app: &Shared, p: &mut Map<String, Value>) -> Result<(), String> {
+    let (model, te) = cloud_files(app, p.get("model").and_then(Value::as_str).unwrap_or("").trim(), p.get("te").unwrap_or(&Value::Null)).await?;
+    p.insert("model".into(), json!(model));
+    p.insert("te".into(), json!(te));
+    Ok(())
+}
+
 /// 導演台選雲端：生成頁格式的參數換成 H3、上傳首幀、在雲端跑一支，跑完才回來 → (任務 id, 圖庫編號)。
 /// 最後一格（_poster/<poster>-last）跟成品一起下載回本機的 _poster
 pub(super) async fn cloud_one(app: &Shared, gen: &Map<String, Value>, token: &CancellationToken, on_status: &(dyn Fn(String) + Send + Sync)) -> Result<(String, Vec<i64>), String> {
     cloud_ready(app.agent.cloud.live_packs())?;
     app.agent.cloud.touch();
     let Value::Object(mut h) = from_gen(gen, &[])? else { return Err("送來的資料格式不對".into()) };
+    set_cloud_files(app, &mut h).await?;
     fit_chunks(&mut h, super::api_cloud::remote_has_node(app, "MiniMaxChunkFeedForward").await)?;
     let p = one(&Value::Object(h), 0);
     for n in media_names(&p) {
@@ -470,7 +498,7 @@ pub async fn submit_from_gen(app: &Shared, p: &Map<String, Value>, count: i64) -
         fit_chunks(o, local_chunk_node(app).await).map_err(bad)?;
     }
     let m = h["model"].as_str().unwrap_or("").to_string();
-    check_local_files(app, &m).await.map_err(bad)?;
+    check_local_files(app, &m, h["te"].as_str().unwrap_or(h3::TE)).await.map_err(bad)?;
     {
         let (hh, input) = (h.clone(), app.paths.input.clone());
         blocking(move || h3::build(&hh, &input, 0)).await.map_err(|e| bad(e.0))?;
@@ -557,7 +585,7 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     // RunningHub：整份節點圖丟上去跑（api_runninghub），不用開雲端機器
     let rhub = b["where"] == "runninghub";
     let cloud = b["where"] != "local" && !rhub;
-    // 生成頁的參數換 H3 的時候，本機才照本機有的模型挑；雲端、RunningHub 用預設的 int8
+    // 生成頁的參數換 H3 的時候，本機才照本機有的模型挑；雲端稍後查遠端清單
     let picks = if b.get("gen").is_some() && !cloud && !rhub { local_models(&app).await } else { vec![] };
     let mut p = params_of(&b, &picks).map_err(bad)?;
     if b.get("gen").is_some() {
@@ -575,6 +603,8 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     let has_chunk_node = if rhub {
         false
     } else if cloud {
+        cloud_ready(app.agent.cloud.live_packs()).map_err(bad)?;
+        set_cloud_files(&app, &mut p).await.map_err(bad)?;
         super::api_cloud::remote_has_node(&app, "MiniMaxChunkFeedForward").await
     } else {
         if p.get("model").and_then(Value::as_str).unwrap_or("").is_empty() {
@@ -625,7 +655,7 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
             "" => h3::MODEL,
             m => m,
         };
-        check_local_files(&app, model).await.map_err(bad)?;
+        check_local_files(&app, model, h3::te_name(&p["te"]).map_err(bad)?.unwrap_or(h3::TE)).await.map_err(bad)?;
         super::api_refmod::ensure_local(&app, &refmods).await.map_err(bad)?;
     }
     let task = format!("h3-{:x}", super::api_director::random_seed());
@@ -893,10 +923,10 @@ mod tests {
     fn missing_files_listed() {
         let s = |v: &[&str]| v.iter().map(|x| x.to_string()).collect::<Vec<_>>();
         let only_unet = LocalFiles { unets: s(&[h3::MODEL_W4A8]), clips: vec![], vaes: vec![] };
-        assert_eq!(local_missing(&only_unet, h3::MODEL_W4A8), vec![h3::TE, h3::VAE, h3::AVAE]);
+        assert_eq!(local_missing(&only_unet, h3::MODEL_W4A8, h3::TE), vec![h3::TE, h3::VAE, h3::AVAE]);
         let all = LocalFiles { unets: s(&[h3::MODEL_W4A8]), clips: s(&[h3::TE]), vaes: s(&[h3::VAE, h3::AVAE]) };
-        assert!(local_missing(&all, h3::MODEL_W4A8).is_empty());
-        assert_eq!(local_missing(&all, "my-own-h3.safetensors"), vec!["my-own-h3.safetensors"]);
+        assert!(local_missing(&all, h3::MODEL_W4A8, h3::TE).is_empty());
+        assert_eq!(local_missing(&all, "my-own-h3.safetensors", h3::TE), vec!["my-own-h3.safetensors"]);
     }
 
     /// 雲端送 H3 之前：沒開好、沒裝 H3 包都要擋（導演台跟 /api/h3/generate 同一句）

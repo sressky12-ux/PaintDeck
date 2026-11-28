@@ -80,7 +80,11 @@ export function init(api) {
     observer.observe(node, { childList: true, characterData: true, subtree: true });
   }
   observer.observe($("#layBox"), { attributes: true, attributeFilter: ["hidden"] });
-  $("#stageAddRef").onclick = () => ($("#refBox").hidden ? $("#initPick") : $("#refPick")).click();
+  $("#stageAddRef").onclick = () => {
+    const mode = $("#modeSeg button.on")?.dataset.mode;
+    if (mode === "txt2img") $("#modeSeg button[data-mode='img2img']")?.click();
+    ($("#refBox").hidden ? $("#initPick") : $("#refPick")).click();
+  };
   assetButton.onclick = () => assets.querySelector(".adr-head button")?.click();
   const compose = $('[data-dock="compose"]');
   $("#promptZoom").onclick = (e) => {

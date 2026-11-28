@@ -2,7 +2,7 @@
 // 後端 nodes.rs 的 /api/nodes；生成頁的「送到」下拉（gen.js）與任務面板的節點標籤（queue.js）也用這裡的純函式。
 import { $, $$, el, api, toast } from "./util.js";
 
-const FAMS = [["anima", "Anima"], ["qwen21", "Qwen 2.1"], ["other", "其他模型"], ["video", "影片"]];
+const FAMS = [["anima", "Anima"], ["qwen21", "Qwen 2.1"], ["mmimage", "MiniMax H3 Image"], ["other", "其他模型"], ["video", "影片"]];
 
 /** 純函式：勾選框資料 [{family, node, checked}] → 家族綁定 {family:[node,…]}。沒勾的家族不出現（＝哪台都行）。 */
 export function bindFromChecks(rows) {

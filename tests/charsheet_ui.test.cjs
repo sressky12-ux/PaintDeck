@@ -11,10 +11,18 @@ function load() {
   const source = fs.readFileSync(path.join(__dirname, '../ui/js/charsheet.js'), 'utf8')
     .replace(/^import .*;\r?\n/gm, '').replace(/^export /gm, '');
   const context = vm.createContext({ console, SHEET_PRESETS: { nude: NUDE_F } });
-  vm.runInContext(source + '\nglobalThis.subject = {qwenModel, qwenParams, nudeReq, rolesToSave, startRound, takeImage, emptySpec, specOf, specFilled, SPEC_FIELDS};', context, { filename: 'charsheet.js' });
+  vm.runInContext(source + '\nglobalThis.subject = {editModel, qwenModel, qwenParams, nudeReq, rolesToSave, startRound, takeImage, emptySpec, specOf, specFilled, SPEC_FIELDS};', context, { filename: 'charsheet.js' });
   return context.subject;
 }
 const plain = (v) => JSON.parse(JSON.stringify(v));
+
+test('editModel：支援 qwen21／mmimage／auto 切換', () => {
+  const { editModel } = load();
+  const ms = { unet_family: { 'qwen_image_2.1_turbo_int8.safetensors': 'qwen21', 'minimax_h3_image_pruned_w4a8.safetensors': 'mmimage' } };
+  assert.deepEqual(plain(editModel(ms, { family: 'anima' }, 'mmimage')), { model: 'minimax_h3_image_pruned_w4a8.safetensors', family: 'mmimage' });
+  assert.deepEqual(plain(editModel(ms, { family: 'mmimage', model: 'minimax_h3_image_pruned_w4a8.safetensors' }, 'auto')), { model: 'minimax_h3_image_pruned_w4a8.safetensors', family: 'mmimage' });
+  assert.deepEqual(plain(editModel(ms, { family: 'anima' }, 'qwen21')), { model: 'qwen_image_2.1_turbo_int8.safetensors', family: 'qwen21' });
+});
 
 test('qwenModel：生成頁是 Qwen 就用它，否則挑 turbo，沒有就 null', () => {
   const { qwenModel } = load();

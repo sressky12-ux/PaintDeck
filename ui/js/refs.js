@@ -22,7 +22,14 @@ const TEMPLATES = [
 ];
 
 let refs = [], ctx = null, dragFrom = -1;
-export function maxRefs(family = ctx?.family?.()) { return family === "mmimage" ? 16 : MAX; }
+export function isMultiFamily(family = ctx?.family?.()) {
+  return family === "qwen21" || family === "mmimage" || family === "custom" || !family;
+}
+export function maxRefs(family = ctx?.family?.()) {
+  if (family === "mmimage") return 16;
+  if (family === "qwen21" || family === "custom" || !family) return MAX;
+  return 1;
+}
 const tag = (i) => ctx?.family?.() === "mmimage" ? `<Picture ${i + 1}>` : `<image${i + 1}>`;
 
 export function init(c) {
@@ -40,10 +47,24 @@ export function init(c) {
 export const get = () => refs;
 export function set(list) { refs = [...(list || [])]; render(); }
 
+/** 替換第 1 張主圖（若原本有其他參考圖，keepRest=false 會整匣設為這張單圖） */
+export function setPrimary(r, keepRest = false) {
+  if (!r) { refs = []; render(); ctx?.save?.(); return; }
+  const item = { name: r.name, width: r.width, height: r.height, role: "base", ...(r.params ? { params: r.params } : {}) };
+  refs = keepRest && refs.length > 1 ? [item, ...refs.slice(1)] : [item];
+  render(); ctx?.save?.();
+}
+
 export async function addFiles(files) {
   const imgs = [...files].filter((f) => f.type.startsWith("image/"));
+  const cap = maxRefs();
   for (const f of imgs) {
-    if (refs.length >= maxRefs()) { toast(`參考圖最多 ${maxRefs()} 張`, "err"); break; }  // 已經加進去的照樣要畫出來、存起來
+    if (cap === 1 && refs.length >= 1) {
+      try { setPrimary(await uploadFile(f), true); } catch (e) { toast(e.message, "err"); }
+      if (imgs.length > 1) toast("目前模型只吃第 1 張圖；要放多張請換成 Qwen 2.1 或 MiniMax H3 Image");
+      return;
+    }
+    if (refs.length >= cap) { toast(`參考圖最多 ${cap} 張`, "err"); break; }  // 已經加進去的照樣要畫出來、存起來
     try { add(await uploadFile(f), false); } catch (e) { toast(e.message, "err"); }
   }
   render(); ctx.save();
@@ -51,8 +72,12 @@ export async function addFiles(files) {
 
 /** role 不給＝第一張底圖、其他人物；衣姿抽屜（posewear.js）會給 "outfit"／"pose" */
 export function add(r, rerender = true, role = null) {
-  if (refs.length >= maxRefs()) { toast(`參考圖最多 ${maxRefs()} 張`, "err"); return null; }
-  refs.push({ name: r.name, width: r.width, height: r.height, role: role && ROLES[role] ? role : refs.length ? "person" : "base" });
+  const cap = maxRefs();
+  if (refs.length >= cap) {
+    toast(cap === 1 ? "目前模型只吃 1 張圖；要放多張請換成 Qwen 2.1 或 MiniMax H3 Image" : `參考圖最多 ${cap} 張`, "err");
+    return null;
+  }
+  refs.push({ name: r.name, width: r.width, height: r.height, role: role && ROLES[role] ? role : refs.length ? "person" : "base", ...(r.params ? { params: r.params } : {}) });
   if (rerender) { render(); ctx.save(); }
   return refs.length;
 }
@@ -117,30 +142,37 @@ function insertTag(i) {
 export function render() {
   const tray = $("#refTray");
   tray.innerHTML = "";
+  const cap = maxRefs(), multi = isMultiFamily();
   refs.forEach((r, i) => {
-    const card = el("div", { class: "ref-card" + (i === 0 && r.role === "base" ? " first" : ""), draggable: "true",
+    const over = i >= cap;
+    const card = el("div", { class: "ref-card" + (i === 0 && r.role === "base" ? " first" : "") + (over ? " over-limit" : ""),
+      title: over ? "目前模型只吃第 1 張圖（切換回 Qwen 2.1 或 MiniMax H3 Image 可用全部）" : "",
+      style: over ? "opacity:0.45;filter:grayscale(0.7)" : "",
+      draggable: "true",
       ondragstart: (e) => { dragFrom = i; e.dataTransfer.effectAllowed = "move"; card.classList.add("dragging"); },
       ondragend: () => { dragFrom = -1; card.classList.remove("dragging"); },
       ondragover: (e) => { if (dragFrom >= 0) { e.preventDefault(); card.classList.add("over"); } },
       ondragleave: () => card.classList.remove("over"),
       ondrop: (e) => { if (dragFrom >= 0) { e.preventDefault(); e.stopPropagation(); const f = dragFrom; dragFrom = -1; move(f, i); } } },
       el("img", { src: `/input/${encodeURIComponent(r.name)}`, alt: "", draggable: "false" }),
-      el("button", { class: "ref-num", title: `把 ${tag(i)} 插進提示詞（游標的位置）`, onclick: () => insertTag(i) }, tag(i)),
+      multi
+        ? el("button", { class: "ref-num", title: `把 ${tag(i)} 插進提示詞（游標的位置）`, onclick: () => insertTag(i) }, tag(i))
+        : el("span", { class: "ref-num" }, i === 0 ? "主圖" : `#${i + 1} 略過`),
       el("button", { class: "icon ref-del", title: "移除這張", onclick: () => remove(i) }, "✕"),
-      el("select", { class: "ref-role", title: "這張圖要拿來做什麼（自動寫提示詞時用）",
+      multi ? el("select", { class: "ref-role", title: "這張圖要拿來做什麼（自動寫提示詞時用）",
         onchange: (e) => setRole(i, e.target.value) },
-        ...Object.entries(ROLES).map(([k, v]) => el("option", { value: k, selected: r.role === k }, v))));
+        ...Object.entries(ROLES).map(([k, v]) => el("option", { value: k, selected: r.role === k }, v))) : null);
     tray.append(card);
   });
-  if (refs.length < maxRefs()) {
-    const zone = el("div", { class: "ref-add", title: "拖曳圖片到這裡（可一次多張），或點一下選檔案", onclick: pickMany },
-      el("div", {}, "＋"), el("div", { class: "sm" }, refs.length ? "再加一張" : "拖曳或點此加入參考圖（可多選）"));
+  if (refs.length < cap) {
+    const zone = el("div", { class: "ref-add", title: multi ? "拖曳圖片到這裡（可一次多張），或點一下選檔案" : "拖曳圖片到這裡，或點一下選檔案", onclick: pickMany },
+      el("div", {}, "＋"), el("div", { class: "sm" }, refs.length ? "再加一張" : multi ? "拖曳或點此加入輸入／參考圖（可多選）" : "拖曳或點此放入圖片"));
     zone.addEventListener("dragover", (e) => { if (e.dataTransfer.types.includes("Files")) { e.preventDefault(); zone.classList.add("over"); } });
     zone.addEventListener("dragleave", () => zone.classList.remove("over"));
     zone.addEventListener("drop", (e) => { e.preventDefault(); zone.classList.remove("over"); addFiles(e.dataTransfer.files); });
     tray.append(zone);
   }
-  $("#refCount").textContent = `${refs.length} / ${maxRefs()}` + (refs.length > 4 ? "・張數多會比較慢" : "");
+  $("#refCount").textContent = `${refs.length} / ${cap}` + (!multi && refs.length > 1 ? "・目前模型只吃第 1 張" : refs.length > 4 ? "・張數多會比較慢" : "");
   ctx?.onChange?.();
 }
 
@@ -195,7 +227,8 @@ export function compose(ask = false, group = false) {
 
 // 送出前檢查：張數、提示詞裡的標記
 export function check(prompt) {
-  if (!refs.length) return "請先加入至少一張參考圖";
+  if (!refs.length) return "請先加入至少一張圖片";
+  if (!isMultiFamily()) return null;
   if (refs.length > maxRefs()) return `目前有 ${refs.length} 張參考圖，這個家族最多 ${maxRefs()} 張，請先移除多出的圖。`;
   const used = [...prompt.matchAll(/<(?:image|Picture )(\d+)>/g)].map((m) => +m[1]);
   const bad = used.filter((k) => k < 1 || k > refs.length);

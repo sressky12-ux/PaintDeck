@@ -38,7 +38,60 @@ pub const MOSS_VAE: &str = "flux2-vae.safetensors";
 /// Krea 2（Comfy-Org/Krea-2 的 ComfyUI 版檔案，ComfyUI 0.43 內建支援）：Qwen3-VL-4B 文字編碼器（CLIPLoader type krea2）＋
 /// 跟 Anima 同一顆 qwen_image_vae。官方 Turbo 範本：8 步、CFG 1、euler＋simple、負面＝ConditioningZeroOut（shift 1.15 是模型預設，不用另外接）
 pub const MMIMG_MAX_REFS: usize = 16;
+pub const MMIMG_DEFAULT_MODEL: &str = "minimax_h3_image_pruned_w4a8.safetensors";
+pub const MMIMG_VAE: &str = "minimax_h3_image_vae_fp16.safetensors";
 pub const KREA2_TE: &str = "qwen3vl_4b_int8_convrot.safetensors";
+
+/// 依模型家族產生第 n 張參考圖的提示詞標記（Qwen 2.1 用 `<imageN>`，MiniMax H3 Image 用 `<Picture N>`）
+pub fn ref_tag(family: &str, n: usize) -> String {
+    if family == crate::families::MMIMG {
+        format!("<Picture {n}>")
+    } else {
+        format!("<image{n}>")
+    }
+}
+
+/// 把外部或使用者提示詞裡的 `<imageN>` 以及獨立的 `图N`/`圖N` 轉成 MiniMax H3 Image 的 `<Picture N>`。
+/// 帶詞界保護，避免誤傷「地圖2」「截圖1」「原圖1」「四視圖1」等複合名詞。
+pub fn adapt_mmimage_refs(text: &str) -> String {
+    use std::sync::OnceLock;
+    static IMG_RE: OnceLock<regex::Regex> = OnceLock::new();
+    static ZH_RE: OnceLock<regex::Regex> = OnceLock::new();
+    let img_re = IMG_RE.get_or_init(|| regex::Regex::new(r"(?i)<image\s*(\d+)>").unwrap());
+    let zh_re = ZH_RE.get_or_init(|| regex::Regex::new(r"[图圖]\s*(\d+)").unwrap());
+    let step1 = img_re.replace_all(text, "<Picture $1>");
+    const BAD_PREFIXES: &[&str] = &[
+        "地", "截", "构", "構", "原", "视", "視", "缩", "縮", "插", "底", "草", "拼", "彩", "套",
+        "设计", "設計", "设定", "設定", "参考", "參考", "背景", "流程", "示意", "平面", "建筑", "建築",
+        "工程", "统计", "統計", "曲线", "曲線", "折线", "折線", "柱状", "柱狀", "圆饼", "圓餅", "线", "線",
+    ];
+    let mut out = String::with_capacity(step1.len());
+    let mut last = 0usize;
+    for cap in zh_re.captures_iter(&step1) {
+        let m = cap.get(0).unwrap();
+        let before = &step1[..m.start()];
+        let is_compound = BAD_PREFIXES.iter().any(|p| before.ends_with(p));
+        out.push_str(&step1[last..m.start()]);
+        if is_compound {
+            out.push_str(m.as_str());
+        } else {
+            out.push_str(&format!("<Picture {}>", &cap[1]));
+        }
+        last = m.end();
+    }
+    out.push_str(&step1[last..]);
+    out
+}
+
+/// 單圖編輯給 MiniMax 時，若指令完全沒提到 `<Picture ` 則補上指向 `<Picture 1>` 的前綴
+fn ensure_mm_picture1(text: &str) -> String {
+    let t = text.trim();
+    if t.is_empty() || t.contains("<Picture ") {
+        t.to_string()
+    } else {
+        format!("Edit <Picture 1>. {t}")
+    }
+}
 /// SDXL 系（Illustrious、NoobAI、Pony）的預設負面詞：NoobAI-XL 1.1 官方說明的負面詞，拿掉 nsfw 和防獸人的那幾個
 pub const SDXL_NEG: &str = "worst quality, old, early, low quality, lowres, signature, username, logo, bad hands, mutated hands";
 
@@ -373,6 +426,8 @@ pub struct Graph {
     vae: Option<Ref>,
     /// MOSS 用 4B 文字編碼器（params.moss_te＝"4b"）
     moss_4b: bool,
+    /// MiniMax H3 Image 指定文字編碼器（params.mm_te，空白用 crate::h3::TE）
+    mm_te: Option<String>,
 }
 
 impl Graph {
@@ -384,6 +439,7 @@ impl Graph {
             clip: None,
             vae: None,
             moss_4b: false,
+            mm_te: None,
         }
     }
     fn q(&self) -> bool {
@@ -449,6 +505,12 @@ impl Graph {
                     "CLIPLoader",
                     json!({"clip_name": KREA2_TE, "type": "krea2", "device": "default"}),
                 )
+            } else if self.mmimage() {
+                let te = self.mm_te.as_deref().filter(|s| !s.is_empty()).unwrap_or(crate::h3::TE);
+                self.add(
+                    "CLIPLoader",
+                    json!({"clip_name": te, "type": "minimax", "device": "default"}),
+                )
             } else {
                 self.add(
                     "CLIPLoader",
@@ -465,6 +527,8 @@ impl Graph {
                 QWEN21_VAE
             } else if self.moss() {
                 MOSS_VAE
+            } else if self.mmimage() {
+                MMIMG_VAE
             } else {
                 VAE
             };
@@ -661,14 +725,42 @@ fn edit_qwen_params(p: &Value, fam: &str) -> Value {
 const SHEET_KEEP: &str = "【保持要求】\n以图1为待编辑原图，仅执行上面的修改要求。保持图1的人物身份、脸部、发型、身体比例、肩宽、腰胯比例、四肢长度、体型、站姿、表情、视角和四视图排版一致。\n四个视图呈现同一角色、同一套服装，服装的颜色、材质、剪裁与装饰在各视角对应，侧面和背面结构合理延续正面。局部特写与全身视图同步修改。\n未要求修改的内容保持原样，尽量延续图1的画风、光照与背景。不改变画面中的视图数量，不添加额外人物。";
 const SHEET_REF: &str = "【有图2时】\n图2仅提供本次指定的服装或材质参考；人物身份、身材、姿势与构图仍以图1为准。若图2包含模特，不采用该模特的脸、发型、身材或姿势。衣服适配图1原有身体比例，宽松衣物可自然改变服装外轮廓。";
 
+/// 一鍵脫衣、四視圖編輯、差分是否改用 MiniMax H3 Image（engine == "mmimage"，或 "auto" 且生成頁選的是 mmimage）
+fn edit_uses_mmimage(p: &Value, sub_key: &str, fam: &str) -> bool {
+    let eng = p.get(sub_key).and_then(|v| v.get("engine")).and_then(Value::as_str).unwrap_or("auto");
+    eng == crate::families::MMIMG || (eng == "auto" && fam == crate::families::MMIMG)
+}
+
+/// 一鍵脫衣、四視圖編輯、差分的 MiniMax H3 Image 那段：生成頁選的是 mmimage 就照它，不然用解析到的 mm_edit_model，強制關 mm_pe
+fn edit_mmimage_params(p: &Value, fam: &str) -> Value {
+    let mut mp = if fam == crate::families::MMIMG {
+        p.clone()
+    } else {
+        let model = s(p.get("mm_edit_model"), MMIMG_DEFAULT_MODEL);
+        json!({"model": model, "cfg": 1, "sampler": "euler", "scheduler": "simple", "steps": 6, "loras": []})
+    };
+    mp["mm_pe"] = json!("");
+    mp["pose_control"] = Value::Null;
+    mp
+}
+
 /// 四視圖編輯給 Qwen 的完整指令：本次修改要求＋保持要求（＋有圖2時的說明）
 pub fn sheet_prompt(req: &str, has_ref: bool) -> String {
+    sheet_prompt_for(req, has_ref, "qwen21")
+}
+
+/// 四視圖編輯完整指令（依家族決定圖1／圖2或 `<Picture 1>`／`<Picture 2>`）
+pub fn sheet_prompt_for(req: &str, has_ref: bool, family: &str) -> String {
     let mut s = format!("【本次修改要求】\n{}\n\n{SHEET_KEEP}", req.trim());
     if has_ref {
         s.push_str("\n\n");
         s.push_str(SHEET_REF);
     }
-    s
+    if family == crate::families::MMIMG {
+        adapt_mmimage_refs(&s)
+    } else {
+        s
+    }
 }
 
 // ---------------------------------------------------------------- 差分、擴圖、修臉、去背
@@ -677,11 +769,23 @@ const DIFF_KEEP: &str = "【保持要求】\n以图1为待编辑原图，仅执�
 
 /// 差分給 Qwen 的完整指令
 pub fn diff_prompt(req: &str) -> String {
-    format!("【本次修改要求】\n{}\n\n{DIFF_KEEP}", req.trim())
+    diff_prompt_for(req, "qwen21")
+}
+
+/// 差分完整指令（依家族決定圖1或 `<Picture 1>`）
+pub fn diff_prompt_for(req: &str, family: &str) -> String {
+    let s = format!("【本次修改要求】\n{}\n\n{DIFF_KEEP}", req.trim());
+    if family == crate::families::MMIMG {
+        adapt_mmimage_refs(&s)
+    } else {
+        s
+    }
 }
 
 /// 擴圖時給 Qwen 2.1 的前綴（只進節點圖，不進圖庫記的提示詞）
 const OUTPAINT_HINT: &str = "Extend the scene naturally into the empty gray borders so the whole frame is one seamless picture, with no gray areas or frames left.";
+/// 擴圖時給 MiniMax H3 Image 的前綴（餵未補灰邊的原圖當 `<Picture 1>`，2026-11-28 探針 p2a 實測優於餵灰邊圖）
+const MMIMG_OUTPAINT_HINT: &str = "Extend <Picture 1> seamlessly outward into the surrounding canvas so the entire frame forms one continuous, natural scene matching its lighting and style.";
 
 /// 修臉／修手用的偵測模型（ComfyUI 0.38 原生 SAM3_Detect；Comfy-Org/sam3.1，放 models\checkpoints）
 pub const SAM3_CKPT: &str = "sam3.1_multiplex_fp16.safetensors";
@@ -999,93 +1103,172 @@ fn mask_bbox(path: &Path) -> R<Option<(i64, i64, i64, i64)>> {
     })
 }
 
-/// 回傳 (nodes, info)。info 是實際使用的提示詞、種子、尺寸，存進圖庫。
-/// ComfyUI v0.46.2 的 image_minimax_h3_image_t2i／edit 共用同一組條件與取樣節點。
-fn mmimage_graph(g: &mut Graph, p: &Value, mode: &str, prompt: &str, seed: i64) -> R<(Ref, i64, i64)> {
-    let edit = match mode {
-        "txt2img" => false,
-        "multiref" => true,
-        _ => return err("MiniMax H3 Image 支援文生圖和多圖參考"),
-    };
-    let refs = p["refs"].as_array().map(Vec::as_slice).unwrap_or_default();
-    if edit && (refs.is_empty() || refs.len() > MMIMG_MAX_REFS) {
-        return err(format!("MiniMax H3 Image 多圖參考需要 1～{MMIMG_MAX_REFS} 張圖，目前有 {} 張", refs.len()));
-    }
-
-    // UNETLoader 與生成頁共用 LoRA 堆疊。
-    let model = model_chain(g, p, vec![]);
-    // CLIPLoader (2/30)：圖像條件和擴寫器都使用 minimax 類型。
-    let loader = |g: &mut Graph, name: &str| g.add("CLIPLoader", json!({"clip_name": name, "type":"minimax", "device":"default"}));
-    let te = p["mm_te"].as_str().filter(|s| !s.is_empty()).unwrap_or(crate::h3::TE);
-    let clip = loader(g, te);
-    // VAELoader (3/31)：同一顆 VAE 編碼參考圖、解碼成品。
-    let vae = g.add("VAELoader", json!({"vae_name":"minimax_h3_image_vae_fp16.safetensors"}));
-    let (mut w, mut h) = (snap(f(p.get("width"), 2048.0), 32, 32), snap(f(p.get("height"), 2048.0), 32, 32));
-    let mut cond = json!({"clip":clip,"vae":vae,"width":w,"height":h,"prompt":prompt});
-    let mut images = vec![];
-    if edit {
-        for (index, r) in refs.iter().enumerate() {
-            let Some(name) = r["image"].as_str().filter(|s| !s.is_empty()) else {
-                return err(format!("第 {} 張參考圖沒有檔名", index + 1));
-            };
-            // LoadImage (45)：按參考匣順序接入各自的輸入。
-            let mut img = g.add("LoadImage", json!({"image":name}));
-            if index == 0 {
-                // ResizeImageMaskNode (56、48)：先縮放至 4MP，再對齊 32。
-                img = g.add("ResizeImageMaskNode", json!({"input":img,"resize_type":"scale total pixels","resize_type.megapixels":4,"scale_method":"area"}));
-                img = g.add("ResizeImageMaskNode", json!({"input":img,"resize_type":"scale to multiple","resize_type.multiple":32,"scale_method":"area"}));
-                if s(p.get("size_mode"), "auto") == "auto" {
-                    // GetImageSize (50)：自動尺寸直接取縮放後的底圖。
-                    let size = g.add("GetImageSize", json!({"image":img}));
-                    cond["width"] = size.clone();
-                    cond["height"] = Graph::slot(&size, 1);
-                    let (rw, rh) = (f(r.get("width"), 0.0), f(r.get("height"), 0.0));
-                    if rw > 0.0 && rh > 0.0 {
-                        let scale = (4194304.0 / (rw * rh)).sqrt();
-                        (w, h) = ((rw * scale).round() as i64 / 32 * 32, (rh * scale).round() as i64 / 32 * 32);
-                    } else { (w, h) = (0, 0); }
-                }
-            }
-            cond[format!("images.image_{}", index + 1)] = img.clone();
-            images.push(img);
-        }
-    }
-    if let Some(pe) = p["mm_pe"].as_str().filter(|s| !s.is_empty()) {
-        // PrimitiveStringMultiline、StringReplace：原樣保留範本提示，只替換使用者的指令。
-        let (system, instruction) = if edit {
-            (include_str!("../../resources/share/mmimage_pe_edit.txt"), include_str!("../../resources/share/mmimage_instruction_edit.txt"))
-        } else {
-            (include_str!("../../resources/share/mmimage_pe_t2i.txt"), include_str!("../../resources/share/mmimage_instruction_t2i.txt"))
-        };
-        // TextGenerateV2 (15/34)：動態選項的欄位帶 sampling_mode 前綴。
-        let mut inputs = json!({"clip":loader(g, pe),"system_prompt":system,"prompt":instruction.replace("{input text}", prompt),
-            "max_length":if edit {8196} else {8192},"sampling_mode":"on","sampling_mode.temperature":1.0,
-            "sampling_mode.top_k":20,"sampling_mode.top_p":0.95,"sampling_mode.min_p":0.0,
-            "sampling_mode.repetition_penalty":1.0,"sampling_mode.presence_penalty":0.0,"sampling_mode.seed":0,
-            "thinking":true,"use_default_template":true,"mtp":"auto"});
-        for (index, img) in images.into_iter().enumerate() {
-            inputs[format!("images.image{}", index + 1)] = img;
-        }
-        let generated = g.add("TextGenerateV2", inputs);
-        // JsonExtractString (26/44)：只把 expanded_caption 交給生圖模型。
-        cond["prompt"] = g.add("JsonExtractString", json!({"json_string":generated,"key":"expanded_caption"}));
-    }
-    // MiniMaxH3ImageConditioning (5/32)：輸出正面條件和 latent。
-    let positive = g.add("MiniMaxH3ImageConditioning", cond);
-    // ConditioningZeroOut (6/33)：負面條件沿用歸零的正面條件。
-    let negative = g.add("ConditioningZeroOut", json!({"conditioning":positive}));
-    // KSampler (7/38)：文生圖與改圖都是完整的六步取樣。
-    let samples = g.add("KSampler", json!({"model":model,"positive":positive,"negative":negative,
-        "latent_image":Graph::slot(&positive,1),"seed":seed,"steps":i(p.get("steps"),6),"cfg":f(p.get("cfg"),1.0),
-        "sampler_name":s(p.get("sampler"),"euler"),"scheduler":s(p.get("scheduler"),"simple"),"denoise":1.0}));
-    // VAEDecode (8/42)：顯存較小時可改分塊解碼。
-    let tile = i(p.get("vae_tiled"), 0);
-    let image = if tile > 0 {
-        g.add("VAEDecodeTiled", json!({"samples":samples,"vae":vae,"tile_size":tile,"overlap":64,"temporal_size":64,"temporal_overlap":8}))
+/// MiniMax H3 Image 取樣：denoise == 1.0 走標準 6 步 KSampler；denoise < 1.0 改走 KSamplerAdvanced 精準切在 6 步 PDD 網格上
+#[allow(clippy::too_many_arguments)]
+fn mmimage_sample(g: &mut Graph, model: &Ref, positive: &Ref, negative: &Ref, latent: &Ref, p: &Value, seed: i64, denoise: f64) -> Ref {
+    let steps = i(p.get("steps"), 6).max(1);
+    let cfg = f(p.get("cfg"), 1.0);
+    let sampler = s(p.get("sampler"), "euler");
+    let scheduler = s(p.get("scheduler"), "simple");
+    if denoise >= 0.999 {
+        g.add("KSampler", json!({
+            "model": model, "positive": positive, "negative": negative,
+            "latent_image": latent, "seed": seed, "steps": steps, "cfg": cfg,
+            "sampler_name": sampler, "scheduler": scheduler, "denoise": 1.0,
+        }))
     } else {
-        g.add("VAEDecode", json!({"samples":samples,"vae":vae}))
-    };
-    Ok((image, w, h))
+        let start_at = (((1.0 - denoise.clamp(0.05, 1.0)) * steps as f64).round() as i64).clamp(0, steps - 1);
+        g.add("KSamplerAdvanced", json!({
+            "add_noise": "enable", "noise_seed": seed, "steps": steps, "cfg": cfg,
+            "sampler_name": sampler, "scheduler": scheduler,
+            "start_at_step": start_at, "end_at_step": steps,
+            "return_with_leftover_noise": "disable",
+            "model": model, "positive": positive, "negative": negative, "latent_image": latent,
+        }))
+    }
+}
+
+/// MiniMax H3 Image 解碼：照 vae_tiled 決定用 VAEDecodeTiled 或 VAEDecode
+fn mmimage_decode(g: &mut Graph, samples: &Ref, p: &Value) -> Ref {
+    let vae = g.vae();
+    let tile = i(p.get("vae_tiled"), 0);
+    if tile > 0 {
+        g.add("VAEDecodeTiled", json!({"samples": samples, "vae": vae, "tile_size": tile, "overlap": 64, "temporal_size": 64, "temporal_overlap": 8}))
+    } else {
+        g.add("VAEDecode", json!({"samples": samples, "vae": vae}))
+    }
+}
+
+/// MiniMax H3 Image 共用條件編碼：回傳 (positive, negative, empty_latent)
+#[allow(clippy::too_many_arguments)]
+fn mmimage_cond(g: &mut Graph, p: &Value, prompt: &str, images: &[Ref], width: Value, height: Value, allow_pe: bool) -> (Ref, Ref, Ref) {
+    let clip = g.clip();
+    let vae = g.vae();
+    let mut cond = json!({"clip": clip, "vae": vae, "width": width, "height": height, "prompt": prompt});
+    for (index, img) in images.iter().enumerate() {
+        cond[format!("images.image_{}", index + 1)] = img.clone();
+    }
+    let edit = !images.is_empty();
+    if allow_pe {
+        if let Some(pe) = p["mm_pe"].as_str().filter(|s| !s.is_empty()) {
+            let (system, instruction) = if edit {
+                (include_str!("../../resources/share/mmimage_pe_edit.txt"), include_str!("../../resources/share/mmimage_instruction_edit.txt"))
+            } else {
+                (include_str!("../../resources/share/mmimage_pe_t2i.txt"), include_str!("../../resources/share/mmimage_instruction_t2i.txt"))
+            };
+            let pe_clip = g.add("CLIPLoader", json!({"clip_name": pe, "type": "minimax", "device": "default"}));
+            let mut inputs = json!({"clip": pe_clip, "system_prompt": system, "prompt": instruction.replace("{input text}", prompt),
+                "max_length": if edit { 8196 } else { 8192 }, "sampling_mode": "on", "sampling_mode.temperature": 1.0,
+                "sampling_mode.top_k": 20, "sampling_mode.top_p": 0.95, "sampling_mode.min_p": 0.0,
+                "sampling_mode.repetition_penalty": 1.0, "sampling_mode.presence_penalty": 0.0, "sampling_mode.seed": 0,
+                "thinking": true, "use_default_template": true, "mtp": "auto"});
+            for (index, img) in images.iter().enumerate() {
+                inputs[format!("images.image{}", index + 1)] = img.clone();
+            }
+            let generated = g.add("TextGenerateV2", inputs);
+            cond["prompt"] = g.add("JsonExtractString", json!({"json_string": generated, "key": "expanded_caption"}));
+        }
+    }
+    let positive = g.add("MiniMaxH3ImageConditioning", cond);
+    let negative = g.add("ConditioningZeroOut", json!({"conditioning": positive}));
+    let latent = Graph::slot(&positive, 1);
+    (positive, negative, latent)
+}
+
+/// ComfyUI v0.46.2 的 image_minimax_h3_image_t2i／edit 共用同一組條件與取樣節點（涵蓋 txt2img、img2img、multiref）。
+fn mmimage_graph(g: &mut Graph, p: &Value, input_dir: &Path, mode: &str, prompt: &str, seed: i64) -> R<(Ref, i64, i64)> {
+    let model = model_chain(g, p, vec![]);
+    let inp = |name: &Value| input_dir.join(name.as_str().unwrap_or(""));
+    match mode {
+        "txt2img" => {
+            let (w, h) = (snap(f(p.get("width"), 2048.0), 32, 32), snap(f(p.get("height"), 2048.0), 32, 32));
+            let (pos, neg, lat) = mmimage_cond(g, p, prompt, &[], json!(w), json!(h), true);
+            let samples = mmimage_sample(g, &model, &pos, &neg, &lat, p, seed, 1.0);
+            let image = mmimage_decode(g, &samples, p);
+            Ok((image, w, h))
+        }
+        "img2img" => {
+            let init = p.get("init_image").cloned().unwrap_or(Value::Null);
+            let (ow, oh) = image_size(&inp(&init))?;
+            let max_px = or_f(p, "mm_max_pixels", or_f(p, "pixels", 1280.0 * 1280.0));
+            let (w, h) = if s(p.get("size_mode"), "auto") == "auto" {
+                fit_pixels(ow, oh, max_px, 32)
+            } else {
+                (snap(f(p.get("width"), 2048.0), 32, 256), snap(f(p.get("height"), 2048.0), 32, 256))
+            };
+            let li = g.add("LoadImage", json!({"image": init}));
+            let src = g.scale(&li, w, h, "center", "lanczos");
+            let denoise = f(p.get("denoise"), 1.0).clamp(0.05, 1.0);
+            let mp = adapt_mmimage_refs(prompt);
+            let (pos, neg, empty_lat) = mmimage_cond(g, p, &mp, std::slice::from_ref(&src), json!(w), json!(h), true);
+            let lat = if denoise >= 0.999 { empty_lat } else { g.encode(&src, w, h) };
+            let samples = mmimage_sample(g, &model, &pos, &neg, &lat, p, seed, denoise);
+            let image = mmimage_decode(g, &samples, p);
+            Ok((image, w, h))
+        }
+        "multiref" => {
+            let refs = p["refs"].as_array().map(Vec::as_slice).unwrap_or_default();
+            if refs.is_empty() || refs.len() > MMIMG_MAX_REFS {
+                return err(format!("MiniMax H3 Image 多圖參考需要 1～{MMIMG_MAX_REFS} 張圖，目前有 {} 張", refs.len()));
+            }
+            let max_px = p.get("mm_max_pixels").and_then(Value::as_f64).filter(|v| *v > 0.0);
+            let auto = s(p.get("size_mode"), "auto") == "auto";
+            let (mut w, mut h) = (snap(f(p.get("width"), 2048.0), 32, 32), snap(f(p.get("height"), 2048.0), 32, 32));
+            let (mut cond_w, mut cond_h) = (json!(w), json!(h));
+            let mut images = vec![];
+            for (index, r) in refs.iter().enumerate() {
+                let Some(name) = r["image"].as_str().filter(|s| !s.is_empty()) else {
+                    return err(format!("第 {} 張參考圖沒有檔名", index + 1));
+                };
+                let mut img = g.add("LoadImage", json!({"image": name}));
+                if index == 0 {
+                    if let Some(cap_px) = max_px {
+                        let (rw, rh) = image_size(&inp(&r["image"]))
+                            .or_else(|_| {
+                                let (rw, rh) = (i(r.get("width"), 0), i(r.get("height"), 0));
+                                if rw > 0 && rh > 0 { Ok((rw, rh)) } else { err("無法得知參考圖尺寸") }
+                            })?;
+                        if auto {
+                            let (tw, th) = fit_pixels(rw, rh, cap_px, 32);
+                            (w, h) = (tw, th);
+                            (cond_w, cond_h) = (json!(w), json!(h));
+                        }
+                        img = g.scale(&img, w, h, "center", "lanczos");
+                    } else {
+                        // 手動多圖參考：沿用官方 4MP 對齊 32 節點鏈（並從硬碟 fallback 讀真實尺寸，避免 DB 記 0×0）
+                        img = g.add("ResizeImageMaskNode", json!({"input": img, "resize_type": "scale total pixels", "resize_type.megapixels": 4, "scale_method": "area"}));
+                        img = g.add("ResizeImageMaskNode", json!({"input": img, "resize_type": "scale to multiple", "resize_type.multiple": 32, "scale_method": "area"}));
+                        if auto {
+                            let size = g.add("GetImageSize", json!({"image": img}));
+                            cond_w = size.clone();
+                            cond_h = Graph::slot(&size, 1);
+                            let (rw, rh) = (f(r.get("width"), 0.0), f(r.get("height"), 0.0));
+                            let (rw, rh) = if rw > 0.0 && rh > 0.0 {
+                                (rw, rh)
+                            } else if let Ok((iw, ih)) = image_size(&inp(&r["image"])) {
+                                (iw as f64, ih as f64)
+                            } else {
+                                (0.0, 0.0)
+                            };
+                            if rw > 0.0 && rh > 0.0 {
+                                let scale = (4194304.0 / (rw * rh)).sqrt();
+                                (w, h) = ((rw * scale).round() as i64 / 32 * 32, (rh * scale).round() as i64 / 32 * 32);
+                            } else {
+                                (w, h) = (0, 0);
+                            }
+                        }
+                    }
+                }
+                images.push(img);
+            }
+            let mp = adapt_mmimage_refs(prompt);
+            let (pos, neg, lat) = mmimage_cond(g, p, &mp, &images, cond_w, cond_h, true);
+            let samples = mmimage_sample(g, &model, &pos, &neg, &lat, p, seed, 1.0);
+            let image = mmimage_decode(g, &samples, p);
+            Ok((image, w, h))
+        }
+        _ => err(format!("MiniMax H3 Image 不支援模式：{mode}")),
+    }
 }
 
 pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Value>, Value)> {
@@ -1105,15 +1288,17 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
         .unwrap_or("anima")
         .to_string();
     let q = fam == "qwen21";
-    let step = if q { 32 } else { 16 };
+    let mm = fam == crate::families::MMIMG;
+    let step = if q || mm { 32 } else { 16 };
     let mut g = Graph::new(&fam);
     g.moss_4b = s(p.get("moss_te"), "") == "4b";
+    g.mm_te = p["mm_te"].as_str().filter(|s| !s.is_empty()).map(str::to_string);
     let inp = |name: &Value| input_dir.join(name.as_str().unwrap_or(""));
     let empty = json!({});
 
     let (img, w, h);
     match mode.as_str() {
-        _ if g.mmimage() => (img, w, h) = mmimage_graph(&mut g, p, &mode, &prompt, seed)?,
+        "txt2img" if g.mmimage() => (img, w, h) = mmimage_graph(&mut g, p, input_dir, "txt2img", &prompt, seed)?,
         "txt2img" => {
             let (w0, h0) = (
                 snap(f(p.get("width"), 0.0), step, 256),
@@ -1164,6 +1349,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             let im = g.decode(&smp, w0, h0);
             (img, w, h) = hires(&mut g, im, p, &model, &pos, &neg, seed, w0, h0, lay.as_ref(), &negative);
         }
+        "img2img" if g.mmimage() => (img, w, h) = mmimage_graph(&mut g, p, input_dir, "img2img", &prompt, seed)?,
         "img2img" => {
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
             let (ow, oh) = image_size(&inp(&init))?;
@@ -1232,7 +1418,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 .get("inpaint")
                 .filter(|v| truthy(Some(v)))
                 .unwrap_or(&empty);
-            let (orig, full_mask);
+            let (orig, full_mask, orig_unpadded);
             if outpaint {
                 let op = p.get("outpaint").filter(|v| v.is_object()).unwrap_or(&empty);
                 // 節點要 8 的倍數：往上取
@@ -1247,6 +1433,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                     "ImagePadForOutpaint",
                     json!({"image": li, "left": l, "top": t, "right": r, "bottom": b, "feathering": feather}),
                 );
+                orig_unpadded = Some(li);
                 orig = pad.clone();
                 full_mask = Graph::slot(&pad, 1);
                 (ow, oh) = (ow + l + r, oh + t + b);
@@ -1254,6 +1441,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                     return err("擴圖後超過 4096×4096，請把往外擴的像素改小");
                 }
             } else {
+                orig_unpadded = None;
                 orig = g.add("LoadImage", json!({"image": init}));
                 full_mask = g.add(
                     "LoadImageMask",
@@ -1307,31 +1495,47 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 ));
             }
             let model = model_chain(&mut g, p, lll);
-            // Qwen 2.1：整塊區域當參考圖，重繪處才接得上周圍（擴圖時它會照參考圖把灰邊畫出來：補一句叫它延伸場景）
-            let (pos, neg) = if q {
-                let qp = if outpaint { format!("{OUTPAINT_HINT} {prompt}") } else { prompt.clone() };
-                let (a, b, _) = g.qtext(&qp, &negative, std::slice::from_ref(&work));
-                (a, b)
+            let out = if g.mmimage() {
+                // MiniMax H3 Image：擴圖餵未補灰邊的原圖當 <Picture 1>（探針 p2a 實測接縫最自然），重繪則餵裁切區 work
+                let ref_img = if outpaint { orig_unpadded.unwrap_or_else(|| work.clone()) } else { work.clone() };
+                let mp = if outpaint {
+                    let tail = adapt_mmimage_refs(&prompt);
+                    if tail.trim().is_empty() { MMIMG_OUTPAINT_HINT.to_string() } else { format!("{MMIMG_OUTPAINT_HINT} {tail}") }
+                } else {
+                    ensure_mm_picture1(&adapt_mmimage_refs(&prompt))
+                };
+                let (pos, neg, _) = mmimage_cond(&mut g, p, &mp, std::slice::from_ref(&ref_img), json!(w0), json!(h0), false);
+                let enc = g.encode(&work, w0, h0);
+                let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
+                let smp = mmimage_sample(&mut g, &model, &pos, &neg, &lat, p, seed, f(p.get("denoise"), 1.0));
+                mmimage_decode(&mut g, &smp, p)
             } else {
-                let pos = g.text(&prompt);
-                let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
-                (pos, neg)
+                // Qwen 2.1：整塊區域當參考圖，重繪處才接得上周圍（擴圖時它會照參考圖把灰邊畫出來：補一句叫它延伸場景）
+                let (pos, neg) = if q {
+                    let qp = if outpaint { format!("{OUTPAINT_HINT} {prompt}") } else { prompt.clone() };
+                    let (a, b, _) = g.qtext(&qp, &negative, std::slice::from_ref(&work));
+                    (a, b)
+                } else {
+                    let pos = g.text(&prompt);
+                    let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
+                    (pos, neg)
+                };
+                let enc = g.encode(&work, w0, h0);
+                let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
+                let smp = sample(
+                    &mut g,
+                    &model,
+                    &pos,
+                    &neg,
+                    &lat,
+                    p,
+                    seed,
+                    f(p.get("denoise"), 1.0),
+                    None,
+                    (w0, h0),
+                );
+                g.decode(&smp, w0, h0)
             };
-            let enc = g.encode(&work, w0, h0);
-            let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
-            let smp = sample(
-                &mut g,
-                &model,
-                &pos,
-                &neg,
-                &lat,
-                p,
-                seed,
-                f(p.get("denoise"), 1.0),
-                None,
-                (w0, h0),
-            );
-            let out = g.decode(&smp, w0, h0);
             // 縮回原尺寸後貼回原圖：遮罩外的像素完全保留，邊緣用模糊遮罩過渡
             let out = g.scale(&out, rw, rh, "disabled", "lanczos");
             let cmask = if grow != 0 {
@@ -1346,10 +1550,11 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             img = g.add("ImageCompositeMasked", json!({"destination": orig, "source": out, "x": rx, "y": ry, "resize_source": false, "mask": cmask}));
             (w, h) = (ow, oh);
         }
+        "multiref" if g.mmimage() => (img, w, h) = mmimage_graph(&mut g, p, input_dir, "multiref", &prompt, seed)?,
         "multiref" => {
-            // 多圖參考（只有 Qwen 2.1）：最多 10 張參考圖一起交給編碼器，提示詞用 <image1>… 指名
+            // 多圖參考（Qwen 2.1 最多 10 張；MiniMax H3 Image 走上方分支最多 16 張）
             if !q {
-                return err("多圖參考只支援 Qwen 2.1 模型（Noct Q），請先在「模型」換成 Qwen 2.1");
+                return err("多圖參考支援 Qwen 2.1 與 MiniMax H3 Image 模型，請先切換模型");
             }
             let refs: Vec<&Value> = match p.get("refs") {
                 Some(Value::Array(a)) => a
@@ -1460,23 +1665,34 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             (w, h) = (ow, oh);
         }
         "strip" => {
-            // 一鍵脫衣：Qwen 2.1 改圖脫掉 →（可選）Anima 低重繪精修 →（可選）只把改到的地方貼回 Qwen 那張
+            // 一鍵脫衣：改圖引擎（Qwen 2.1 或 MiniMax H3 Image）→（可選）Anima 低重繪精修 →（可選）只把改到的地方貼回
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
             let (ow, oh) = image_size(&inp(&init))?;
             let st = p.get("strip").filter(|v| v.is_object()).unwrap_or(&empty);
-            // 改圖指令和精修 tag 由內容補丁算好塞進 params（server::api_gen::prepare），graph 本身不含露骨文字
-            // 生成頁選的是 Qwen 模型就用它（連同步數、CFG、LoRA）；不然用官方 Turbo，LoRA 留給 Anima 精修那段
-            let qp = edit_qwen_params(p, &fam);
-            g.switch_family("qwen21");
+            let use_mm = edit_uses_mmimage(p, "strip", &fam);
             let (w0, h0) = fit_pixels(ow, oh, QWEN21_PIXELS, 32);
             let li = g.add("LoadImage", json!({"image": init}));
             // 拉伸、不裁切：最後再拉回原尺寸，構圖一點都不少
             let src = g.scale(&li, w0, h0, "disabled", "lanczos");
-            let qprompt = s(st.get("qwen_prompt"), "").to_string();
-            let qmodel = model_chain(&mut g, &qp, vec![]);
-            let (qpos, qneg, qlat) = g.qtext(&qprompt, "", std::slice::from_ref(&src));
-            let qs = sample(&mut g, &qmodel, &qpos, &qneg, &qlat, &qp, seed, 1.0, None, (w0, h0));
-            let qimg = g.decode(&qs, w0, h0);
+            let raw_prompt = s(st.get("qwen_prompt"), "").to_string();
+            let (qimg, qprompt, edit_fam) = if use_mm {
+                let mp = edit_mmimage_params(p, &fam);
+                g.switch_family(crate::families::MMIMG);
+                let sp = ensure_mm_picture1(&adapt_mmimage_refs(&raw_prompt));
+                let mmodel = model_chain(&mut g, &mp, vec![]);
+                let (mpos, mneg, mlat) = mmimage_cond(&mut g, &mp, &sp, std::slice::from_ref(&src), json!(w0), json!(h0), false);
+                let ms = mmimage_sample(&mut g, &mmodel, &mpos, &mneg, &mlat, &mp, seed, 1.0);
+                (mmimage_decode(&mut g, &ms, &mp), sp, crate::families::MMIMG)
+            } else {
+                // 改圖指令和精修 tag 由內容補丁算好塞進 params（server::api_gen::prepare），graph 本身不含露骨文字
+                // 生成頁選的是 Qwen 模型就用它（連同步數、CFG、LoRA）；不然用官方 Turbo，LoRA 留給 Anima 精修那段
+                let qp = edit_qwen_params(p, &fam);
+                g.switch_family("qwen21");
+                let qmodel = model_chain(&mut g, &qp, vec![]);
+                let (qpos, qneg, qlat) = g.qtext(&raw_prompt, "", std::slice::from_ref(&src));
+                let qs = sample(&mut g, &qmodel, &qpos, &qneg, &qlat, &qp, seed, 1.0, None, (w0, h0));
+                (g.decode(&qs, w0, h0), raw_prompt, "qwen21")
+            };
             let refine = st.get("refine").map(|v| truthy(Some(v))).unwrap_or(true);
             let (out, ow2, oh2) = if !refine {
                 (qimg, w0, h0)
@@ -1531,10 +1747,10 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             img = if (ow2, oh2) != (tw, th) { g.scale(&out, tw, th, "disabled", "lanczos") } else { out };
             (w, h) = (tw, th);
             prompt = qprompt;
-            fam = "qwen21".into();
+            fam = edit_fam.into();
         }
         "sheet" => {
-            // 四視圖編輯：圖1＝角色設定稿（構圖、尺寸照它），圖2＝可選的服裝參考；Qwen 改圖重繪 1.0
+            // 四視圖編輯：圖1＝角色設定稿（構圖、尺寸照它），圖2＝可選的服裝參考；支援 Qwen 2.1 與 MiniMax H3 Image
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
             let (ow, oh) = image_size(&inp(&init))?;
             let sh = p.get("sheet").filter(|v| v.is_object()).unwrap_or(&empty);
@@ -1542,8 +1758,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             if req.is_empty() {
                 return err("請先寫「修改要求」（或從常用要求挑一個）");
             }
-            let qp = edit_qwen_params(p, &fam);
-            g.switch_family("qwen21");
+            let use_mm = edit_uses_mmimage(p, "sheet", &fam);
             let (w0, h0) = fit_pixels(ow, oh, 1280.0 * 1280.0, 32);
             let li = g.add("LoadImage", json!({"image": init}));
             let mut imgs = vec![g.scale(&li, w0, h0, "center", "lanczos")];
@@ -1554,36 +1769,65 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 let ri = g.add("LoadImage", json!({"image": rf}));
                 imgs.push(g.scale(&ri, tw, th, "center", "lanczos"));
             }
-            let sp = sheet_prompt(&req, rf.is_some());
-            let model = model_chain(&mut g, &qp, vec![]);
-            let (pos, neg, lat) = g.qtext(&sp, "", &imgs);
-            let smp = sample(&mut g, &model, &pos, &neg, &lat, &qp, seed, 1.0, None, (w0, h0));
-            img = g.decode(&smp, w0, h0);
-            (w, h) = (w0, h0);
-            prompt = sp;
-            fam = "qwen21".into();
+            if use_mm {
+                let mp = edit_mmimage_params(p, &fam);
+                g.switch_family(crate::families::MMIMG);
+                let sp = sheet_prompt_for(&req, rf.is_some(), crate::families::MMIMG);
+                let model = model_chain(&mut g, &mp, vec![]);
+                let (pos, neg, lat) = mmimage_cond(&mut g, &mp, &sp, &imgs, json!(w0), json!(h0), false);
+                let smp = mmimage_sample(&mut g, &model, &pos, &neg, &lat, &mp, seed, 1.0);
+                img = mmimage_decode(&mut g, &smp, &mp);
+                (w, h) = (w0, h0);
+                prompt = sp;
+                fam = crate::families::MMIMG.into();
+            } else {
+                let qp = edit_qwen_params(p, &fam);
+                g.switch_family("qwen21");
+                let sp = sheet_prompt(&req, rf.is_some());
+                let model = model_chain(&mut g, &qp, vec![]);
+                let (pos, neg, lat) = g.qtext(&sp, "", &imgs);
+                let smp = sample(&mut g, &model, &pos, &neg, &lat, &qp, seed, 1.0, None, (w0, h0));
+                img = g.decode(&smp, w0, h0);
+                (w, h) = (w0, h0);
+                prompt = sp;
+                fam = "qwen21".into();
+            }
         }
         "diff" => {
-            // 差分：一張角色圖改表情／動作，Qwen 2.1 改圖重繪 1.0（生成頁不是 Qwen 時用官方 Turbo）
+            // 差分：一張角色圖改表情／動作，支援 Qwen 2.1 與 MiniMax H3 Image
             let init = p.get("init_image").cloned().unwrap_or(Value::Null);
             let (ow, oh) = image_size(&inp(&init))?;
             let req = p.get("diff").map(|d| s(d.get("req"), "")).unwrap_or("").trim().to_string();
             if req.is_empty() {
                 return err("差分：請先選或寫一個要改的表情／動作");
             }
-            let qp = edit_qwen_params(p, &fam);
-            g.switch_family("qwen21");
+            let use_mm = edit_uses_mmimage(p, "diff", &fam);
             let (w0, h0) = fit_pixels(ow, oh, QWEN21_PIXELS, 32);
             let li = g.add("LoadImage", json!({"image": init}));
             let src = g.scale(&li, w0, h0, "center", "lanczos");
-            let dp = diff_prompt(&req);
-            let model = model_chain(&mut g, &qp, vec![]);
-            let (pos, neg, lat) = g.qtext(&dp, "", std::slice::from_ref(&src));
-            let smp = sample(&mut g, &model, &pos, &neg, &lat, &qp, seed, 1.0, None, (w0, h0));
-            img = g.decode(&smp, w0, h0);
-            (w, h) = (w0, h0);
-            prompt = dp;
-            fam = "qwen21".into();
+            if use_mm {
+                let mp = edit_mmimage_params(p, &fam);
+                g.switch_family(crate::families::MMIMG);
+                let dp = diff_prompt_for(&req, crate::families::MMIMG);
+                let model = model_chain(&mut g, &mp, vec![]);
+                let (pos, neg, lat) = mmimage_cond(&mut g, &mp, &dp, std::slice::from_ref(&src), json!(w0), json!(h0), false);
+                let smp = mmimage_sample(&mut g, &model, &pos, &neg, &lat, &mp, seed, 1.0);
+                img = mmimage_decode(&mut g, &smp, &mp);
+                (w, h) = (w0, h0);
+                prompt = dp;
+                fam = crate::families::MMIMG.into();
+            } else {
+                let qp = edit_qwen_params(p, &fam);
+                g.switch_family("qwen21");
+                let dp = diff_prompt(&req);
+                let model = model_chain(&mut g, &qp, vec![]);
+                let (pos, neg, lat) = g.qtext(&dp, "", std::slice::from_ref(&src));
+                let smp = sample(&mut g, &model, &pos, &neg, &lat, &qp, seed, 1.0, None, (w0, h0));
+                img = g.decode(&smp, w0, h0);
+                (w, h) = (w0, h0);
+                prompt = dp;
+                fam = "qwen21".into();
+            }
         }
         "detail" => {
             // 修臉／修手：/api/detail 先用 SAM3 找出每個物件的遮罩（存在 input），這裡每個遮罩各裁一塊、放大重畫、貼回；
@@ -1611,7 +1855,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             let text = if extra.is_empty() { prompt.clone() } else { format!("{prompt}, {extra}") };
             let model = model_chain(&mut g, p, vec![]);
             let cfg = f(p.get("cfg"), 0.0);
-            let shared = (!q).then(|| {
+            let shared = (!q && !mm).then(|| {
                 let pos = g.text(&text);
                 (pos.clone(), g.neg_text(&pos, &negative, cfg))
             });
@@ -1637,17 +1881,26 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                     let expand = 1i64.max((grow as f64 * w0 as f64 / rw as f64).trunc() as i64);
                     wmask = g.add("GrowMask", json!({"mask": wmask, "expand": expand, "tapered_corners": true}));
                 }
-                let (pos, neg) = match &shared {
-                    Some(x) => x.clone(),
-                    None => {
-                        let (a, b, _) = g.qtext(&text, &negative, std::slice::from_ref(&work));
-                        (a, b)
-                    }
+                let out = if mm {
+                    let mp = ensure_mm_picture1(&adapt_mmimage_refs(&text));
+                    let (pos, neg, _) = mmimage_cond(&mut g, p, &mp, std::slice::from_ref(&work), json!(w0), json!(h0), false);
+                    let enc = g.encode(&work, w0, h0);
+                    let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
+                    let smp = mmimage_sample(&mut g, &model, &pos, &neg, &lat, p, seed + k as i64, den);
+                    mmimage_decode(&mut g, &smp, p)
+                } else {
+                    let (pos, neg) = match &shared {
+                        Some(x) => x.clone(),
+                        None => {
+                            let (a, b, _) = g.qtext(&text, &negative, std::slice::from_ref(&work));
+                            (a, b)
+                        }
+                    };
+                    let enc = g.encode(&work, w0, h0);
+                    let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
+                    let smp = sample(&mut g, &model, &pos, &neg, &lat, p, seed + k as i64, den, None, (w0, h0));
+                    g.decode(&smp, w0, h0)
                 };
-                let enc = g.encode(&work, w0, h0);
-                let lat = g.add("SetLatentNoiseMask", json!({"samples": enc, "mask": wmask}));
-                let smp = sample(&mut g, &model, &pos, &neg, &lat, p, seed + k as i64, den, None, (w0, h0));
-                let out = g.decode(&smp, w0, h0);
                 let out = g.scale(&out, rw, rh, "disabled", "lanczos");
                 let cmask = if grow > 0 {
                     g.add("GrowMask", json!({"mask": rmask, "expand": grow, "tapered_corners": true}))
@@ -1682,7 +1935,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
                 .filter(|v| truthy(Some(v)))
                 .unwrap_or(&empty);
             let sc = f(up.get("scale"), 2.0);
-            let st = if q { 32 } else { 8 };
+            let st = if q || mm { 32 } else { 8 };
             let (w0, h0) = (snap(ow as f64 * sc, st, 64), snap(oh as f64 * sc, st, 64));
             let loader = g.add(
                 "UpscaleModelLoader",
@@ -1696,28 +1949,36 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
             let mut im = g.scale(&im, w0, h0, "disabled", "lanczos");
             if truthy(up.get("refine")) {
                 let model = model_chain(&mut g, p, vec![]);
-                let (pos, neg) = if q {
-                    let (a, b, _) = g.qtext(&prompt, &negative, &[]);
-                    (a, b)
+                if mm {
+                    let mp = ensure_mm_picture1(&adapt_mmimage_refs(&prompt));
+                    let (pos, neg, _) = mmimage_cond(&mut g, p, &mp, std::slice::from_ref(&im), json!(w0), json!(h0), false);
+                    let lat = g.encode(&im, w0, h0);
+                    let smp = mmimage_sample(&mut g, &model, &pos, &neg, &lat, p, seed, f(up.get("denoise"), 0.3));
+                    im = mmimage_decode(&mut g, &smp, p);
                 } else {
-                    let pos = g.text(&prompt);
-                    let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
-                    (pos, neg)
-                };
-                let lat = g.encode(&im, w0, h0);
-                let smp = sample(
-                    &mut g,
-                    &model,
-                    &pos,
-                    &neg,
-                    &lat,
-                    p,
-                    seed,
-                    f(up.get("denoise"), 0.3),
-                    None,
-                    (w0, h0),
-                );
-                im = g.decode(&smp, w0, h0);
+                    let (pos, neg) = if q {
+                        let (a, b, _) = g.qtext(&prompt, &negative, &[]);
+                        (a, b)
+                    } else {
+                        let pos = g.text(&prompt);
+                        let neg = g.neg_text(&pos, &negative, f(p.get("cfg"), 0.0));
+                        (pos, neg)
+                    };
+                    let lat = g.encode(&im, w0, h0);
+                    let smp = sample(
+                        &mut g,
+                        &model,
+                        &pos,
+                        &neg,
+                        &lat,
+                        p,
+                        seed,
+                        f(up.get("denoise"), 0.3),
+                        None,
+                        (w0, h0),
+                    );
+                    im = g.decode(&smp, w0, h0);
+                }
             }
             (img, w, h) = (im, w0, h0);
         }
@@ -2113,8 +2374,92 @@ mod tests {
         assert_eq!(n.values().find(|v| v["class_type"] == "KSampler").unwrap()["inputs"]["denoise"], 1.0);
         let mut m = p.clone();
         m["mode"] = json!("multiref");
-        assert!(build(&m, &dir, 0).unwrap_err().0.contains("只支援 Qwen 2.1"));
+        assert!(build(&m, &dir, 0).unwrap_err().0.contains("支援 Qwen 2.1"));
         let _ = std::fs::remove_file(img);
+    }
+
+    #[test]
+    fn adapt_mmimage_refs_preserves_compounds() {
+        assert_eq!(adapt_mmimage_refs("把图1的衣服换成<image2>的款式"), "把<Picture 1>的衣服换成<Picture 2>的款式");
+        assert_eq!(adapt_mmimage_refs("保留地圖2、截圖1、原圖1、四視圖1，但把圖1改成圖2"), "保留地圖2、截圖1、原圖1、四視圖1，但把<Picture 1>改成<Picture 2>");
+    }
+
+    #[test]
+    fn mmimage_all_edit_modes_and_rembg_upscale() {
+        let dir = play_dir("mm_edits", 768, 512, &[(100, 100, 300, 300)]);
+        let base = json!({"family": "mmimage", "model": MMIMG_DEFAULT_MODEL, "prompt": "edit <image1>", "negative": "",
+                          "seed": 7, "steps": 6, "cfg": 1, "sampler": "euler", "scheduler": "simple", "init_image": "in.png"});
+        // img2img (denoise=1.0 → KSampler 完整 6 步參考改圖；denoise<1.0 → KSamplerAdvanced PDD 切步)
+        let mut p = base.clone();
+        p["mode"] = json!("img2img");
+        p["denoise"] = json!(1.0);
+        let (n, info) = build(&p, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "KSampler").len(), 1);
+        assert!(by_class(&n, "VAEEncode").is_empty());
+        assert_eq!(by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"]["prompt"], "edit <Picture 1>");
+        assert_eq!(info["width"].as_i64().unwrap() % 32, 0);
+        p["denoise"] = json!(0.5);
+        let (n, _) = build(&p, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "KSamplerAdvanced").len(), 1);
+        assert_eq!(by_class(&n, "KSamplerAdvanced")[0]["inputs"]["start_at_step"], 3);
+        assert_eq!(by_class(&n, "VAEEncode").len(), 1);
+        // inpaint & outpaint & detail
+        let mut inp = base.clone();
+        inp["mode"] = json!("inpaint");
+        inp["mask"] = json!("m0.png");
+        let (n, _) = build(&inp, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "SetLatentNoiseMask").len(), 1);
+        assert_eq!(by_class(&n, "MiniMaxH3ImageConditioning").len(), 1);
+        let mut outp = base.clone();
+        outp["mode"] = json!("outpaint");
+        outp["outpaint"] = json!({"left": 128, "right": 128, "top": 0, "bottom": 0, "feather": 40});
+        let (n, _) = build(&outp, &dir, 0).unwrap();
+        let cond = &by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"];
+        // 餵未補灰邊原圖（LoadImage）進 MiniMaxH3ImageConditioning
+        assert_eq!(n[cond["images.image_1"][0].as_str().unwrap()]["class_type"], "LoadImage");
+        let mut det = base.clone();
+        det["mode"] = json!("detail");
+        det["denoise"] = json!(0.4);
+        det["detail"] = json!({"masks": ["m0.png"]});
+        let (n, _) = build(&det, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "KSamplerAdvanced").len(), 1);
+        assert_eq!(by_class(&n, "SetLatentNoiseMask").len(), 1);
+        // rembg & upscale (refine=false / true) 不再被攔截
+        let mut rb = base.clone();
+        rb["mode"] = json!("rembg");
+        let (n, _) = build(&rb, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "RemoveBackground").len(), 1);
+        let mut up = base.clone();
+        up["mode"] = json!("upscale");
+        up["upscale"] = json!({"scale": 2, "refine": false});
+        let (n, _) = build(&up, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "ImageUpscaleWithModel").len(), 1);
+        assert!(by_class(&n, "KSamplerAdvanced").is_empty());
+        up["upscale"] = json!({"scale": 2, "refine": true, "denoise": 0.3});
+        let (n, _) = build(&up, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "KSamplerAdvanced").len(), 1);
+        // strip / sheet / diff 指定 engine: "mmimage"
+        let mut st = base.clone();
+        st["family"] = json!("anima");
+        st["model"] = json!("anima-turbo-v1.1.safetensors");
+        st["mode"] = json!("strip");
+        st["strip"] = json!({"engine": "mmimage", "refine": false, "qwen_prompt": "edit image"});
+        let (n, info) = build(&st, &dir, 0).unwrap();
+        assert_eq!(by_class(&n, "MiniMaxH3ImageConditioning").len(), 1);
+        assert_eq!(info["family"], "mmimage");
+        let mut sh = st.clone();
+        sh["mode"] = json!("sheet");
+        sh["sheet"] = json!({"engine": "mmimage", "req": "把图1的上衣改黑"});
+        let (n, info) = build(&sh, &dir, 0).unwrap();
+        assert!(by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"]["prompt"].as_str().unwrap().contains("<Picture 1>"));
+        assert_eq!(info["family"], "mmimage");
+        let mut df = st.clone();
+        df["mode"] = json!("diff");
+        df["diff"] = json!({"engine": "mmimage", "req": "微笑"});
+        let (n, info) = build(&df, &dir, 0).unwrap();
+        assert!(by_class(&n, "MiniMaxH3ImageConditioning")[0]["inputs"]["prompt"].as_str().unwrap().contains("<Picture 1>"));
+        assert_eq!(info["family"], "mmimage");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

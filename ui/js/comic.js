@@ -490,7 +490,7 @@ function renderRuns() {
       el("div", { class: "row gap wrap" },
         el("span", { class: "muted sm grow" }, r.seed != null ? `種子 ${r.seed}` : ""),
         r.flow !== "a" ? el("button", { type: "button", class: "akey sm", disabled: running || !canFix,
-          title: canFix ? "用 Qwen 2.1 照角色卡的參考圖把每一格的角色修得更像，再把表情改回原本的樣子（一格約 60～80 秒；找不齊格子就整頁一次修）。原圖留著，修好的另存一張"
+          title: canFix ? "照角色卡的參考圖把每一格的角色修得更像，再把表情改回原本的樣子（上方可選 Qwen 2.1 或 MiniMax H3 Image；找不齊格子就整頁一次修）。原圖留著，修好的另存一張"
             : "先在「這頁的角色」用資產抽屜加角色（資產要有正面特寫或多視圖）",
           onclick: () => fixRun(r.page) }, r.fix ? "再修一次" : "照資產修角色") : null,
         el("button", { type: "button", class: "minikey", title: "從這個清單拿掉（圖還在圖庫）", "aria-label": "從清單拿掉",
@@ -503,7 +503,8 @@ async function fixRun(page) {
   await save();
   status("修角色…", "amb");
   try {
-    await api("/api/comic/fix", { json: { id: P.id, page } });
+    const engine = F("cmFixEngine")?.value || store.get("editEngine", "qwen21");
+    await api("/api/comic/fix", { json: { id: P.id, page, engine } });
     setRunning(true);
     reload();
   } catch (e) { status("待機"); toast(e.message, "err"); }
@@ -556,6 +557,11 @@ export function onEvent(m) {
 
 // ---------------------------------------------------------------- 初始化
 export function init() {
+  const fixEng = F("cmFixEngine");
+  if (fixEng) {
+    fixEng.value = store.get("editEngine", "qwen21");
+    fixEng.onchange = () => store.set("editEngine", fixEng.value);
+  }
   // 漫畫：角色 → 角色卡（claim）；場景、道具、片段…的文字照舊接在外貌補充後面
   drawer.mount(F("cmAssets"), { family: () => "comic", insert: drawer.appendTo(F("cmCast")), claim: (it, p) => it.kind === "char" && addChar(it, p) });
   F("cmLoraAdd").onclick = () => loras.openPicker((l, trig) => addLora(l, trig), "moss", { multi: true, have: new Set((P?.loras || []).map((x) => x.name)) });

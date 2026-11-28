@@ -977,6 +977,10 @@ pub fn caption_system(kind: &str, video: bool) -> String {
 /// ai-toolkit 釘住的版本（2026-11-09）
 pub const TOOLKIT_COMMIT: &str = "9ab33b1104d71bc4c6753761e40466daaadc4a78";
 
+pub const TOOLKIT_VERSION: &str = "0.13.41";
+/// 版本須對應 TOOLKIT_COMMIT，需要支援 CUDA 13 的驅動。
+pub const TOOLKIT_IMAGE: &str = "ostris/aitoolkit:0.13.41";
+
 /// ai-toolkit 安裝管理器（manager/spec.py）的驅動門檻：驅動只到 CUDA 12.5 以下（550 驅動，租來的 A6000、5880 Ada 常見）就直接擋下，
 /// 叫人更新驅動。玩家回報這道檢查多餘：PyTorch 的 cu126 靠 CUDA 小版本相容，舊一點的驅動多半也跑得動。
 /// 安裝前把門檻拿掉，一律照 cu126 裝；跑不跑得動交給裝完後的 torch.cuda 檢查判斷（不行會講清楚）。Blackwell 那條另外的檢查不動。
@@ -1016,33 +1020,35 @@ pub fn estimate(fam: &Fam, steps: u64, usd_per_hour: f64) -> (f64, f64) {
     (hours, hours * usd_per_hour)
 }
 
-/// 雲端訓練機的開機指令（bash）。RunPod 從環境變數讀小幫手和口令；SSH 從工作資料夾讀。root 是固定的 /workspace 或 ssh_probe 驗過的路徑。
-pub fn boot_script(port: u16, root: &str, ssh_run: Option<&str>) -> String {
-    let mut lines = vec![
-        "set -e".to_string(),
-        "if [ -f /etc/network_turbo ]; then source /etc/network_turbo; fi".to_string(),
-        format!("mkdir -p {root} && cd {root}"),
-        "if [ ! -f ai-toolkit/run.py ]; then".to_string(),
-        format!("  curl -fsSL --connect-timeout 30 --retry 2 -o aitk.zip https://codeload.github.com/ostris/ai-toolkit/zip/{TOOLKIT_COMMIT}"),
-        "  python3 -c \"import zipfile; zipfile.ZipFile('aitk.zip').extractall('.')\"".to_string(),
-        format!("  rm -rf ai-toolkit && mv ai-toolkit-{TOOLKIT_COMMIT} ai-toolkit && rm -f aitk.zip"),
-        "fi".to_string(),
-        format!("cd {root}/ai-toolkit"),
-        format!("sed -i 's/{}/{}/' manager/spec.py || true", CUDA_GATE.0, CUDA_GATE.1),
-        // 安裝管理器失敗但環境已經在（之前裝過）：PyTorch 看得到顯卡就照用，看不到才算失敗
-        "python3 -m manager install || { echo 'ai-toolkit 安裝管理器沒跑完，改用已經裝好的環境'; for p in .venv/bin/python venv/bin/python; do [ -x $p ] && $p -c 'import sys, torch; sys.exit(0 if torch.cuda.is_available() else 1)' && break; done || { echo 'PyTorch 看不到 NVIDIA 顯卡：驅動太舊或環境沒裝好' >&2; exit 1; }; }".to_string(),
-    ];
-    let (listen, work) = if let Some(run) = ssh_run {
-        lines.push(format!("export TRAIN_TOKEN=\"$(cat {root}/token)\""));
-        ("--host 127.0.0.1", format!("{root}/work/{run}"))
-    } else {
-        lines.push(format!("echo \"$TRAIN_AGENT_B64\" | base64 -d > {root}/agent.py"));
-        ("--host 0.0.0.0", format!("{root}/train_work"))
+pub fn image_boot_script(port: u16) -> String {
+    format!(r#"set -e
+mkdir -p /workspace
+echo "$TRAIN_AGENT_B64" | base64 -d > /workspace/agent.py
+exec /usr/bin/python3 /workspace/agent.py --host 0.0.0.0 --port {port} --token "$TRAIN_TOKEN" --work /workspace/train_work --toolkit /app/ai-toolkit --python /usr/bin/python3"#)
+}
+
+pub fn boot_script(port: u16, root: &str, run: &str, mirror: &str, existing: Option<(&str, &str)>) -> String {
+    let setup = match existing {
+        Some((dir, py)) => format!("KIT='{dir}'\nPY='{py}'"),
+        None => format!("ROOT='{root}'\nVERSION={TOOLKIT_VERSION}\nCOMMIT={TOOLKIT_COMMIT}\nCUDA_PATCH='s/{}/{}/'\n{}",
+            CUDA_GATE.0, CUDA_GATE.1, include_str!("../../resources/train/ssh_install.sh").replace("\r\n", "\n")),
     };
-    let token_arg = if ssh_run.is_some() { "" } else { " --token \"$TRAIN_TOKEN\"" };
-    lines.push(format!("PY={root}/ai-toolkit/.venv/bin/python; [ -x \"$PY\" ] || PY={root}/ai-toolkit/venv/bin/python"));
-    lines.push(format!("exec \"$PY\" {root}/agent.py {listen} --port {port}{token_arg} --work {work} --toolkit {root}/ai-toolkit --python \"$PY\""));
-    lines.join("\n")
+    format!(r#"set -e
+if [ -f /etc/network_turbo ]; then source /etc/network_turbo; fi
+mode='{mirror}'
+if [ "$mode" = auto ]; then
+    if curl -s -m 5 -o /dev/null https://www.google.com; then mode=off; else mode=cn; fi
+fi
+if [ "$mode" = cn ]; then
+    export HF_ENDPOINT=https://hf-mirror.com PIP_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple UV_INDEX_URL=https://pypi.tuna.tsinghua.edu.cn/simple UV_PYTHON_INSTALL_MIRROR=https://registry.npmmirror.com/-/binary/python-build-standalone/
+    echo '已開啟中國大陸下載加速'
+else
+    echo '使用主機原本的網路設定'
+fi
+{setup}
+echo '啟動訓練小幫手…'
+export TRAIN_TOKEN="$(cat {root}/token)"
+exec "$PY" {root}/agent.py --host 127.0.0.1 --port {port} --work {root}/work/{run} --toolkit "$KIT" --python "$PY""#)
 }
 
 // ================================================================ C 站
@@ -1671,7 +1677,7 @@ mod tests {
 
     #[test]
     fn ssh_boot_uses_its_folder_and_private_token() {
-        let s = boot_script(38200, "/home/player/train", Some("test_run"));
+        let s = boot_script(38200, "/home/player/train", "test_run", "auto", Some(("/opt/kit", "/usr/bin/python3")));
         assert!(s.contains("/home/player/train/token") && s.contains("--host 127.0.0.1 --port 38200"));
         assert!(s.contains("--work /home/player/train/work/test_run"));
         assert!(!s.contains("/workspace") && !s.contains("--token") && !s.contains("TRAIN_AGENT_B64"));
@@ -1679,10 +1685,10 @@ mod tests {
 
     #[test]
     fn boot_script_has_pinned_commit_and_port() {
-        let s = boot_script(8000, "/workspace", None);
-        assert!(s.contains("/workspace/agent.py") && s.contains("source /etc/network_turbo") && s.contains("--connect-timeout 30 --retry 2"));
-        assert!(s.contains(TOOLKIT_COMMIT) && s.contains("--port 8000") && s.contains("$TRAIN_TOKEN") && s.contains("$TRAIN_AGENT_B64") && s.contains("-m manager install"), "{s}");
+        let s = boot_script(8000, "/workspace", "test", "cn", None);
+        for expected in [TOOLKIT_COMMIT, "--port 8000", "--retry 5", "--system-site-packages", "-m manager install", CUDA_GATE.0, "UV_PYTHON_INSTALL_MIRROR", "HF_ENDPOINT"] {
+            assert!(s.contains(expected), "{expected}");
+        }
         assert!(!s.contains('\r'));
-        assert!(s.contains("sed -i 's/if cuda >= (12, 6):/if True:/' manager/spec.py || true\npython3 -m manager install || {"), "{s}");
     }
 }

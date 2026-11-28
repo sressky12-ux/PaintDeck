@@ -144,6 +144,7 @@ async function state(fresh) {
 /** 生圖站看檔頭判斷不出來（other／沒有）時，照檔名猜 */
 function guessFamily(model) {
   const n = String(model || "").toLowerCase();
+  if (/minimax[_-]?h3[_-]?image|mmimage/.test(n)) return "mmimage";
   if (/(^|[\\/_-])anima|silvermoon/.test(n)) return "anima";
   if (/qwen[_-]?image|qwen.?2\.?1/.test(n)) return "qwen21";
   if (/moss/.test(n)) return "moss";
@@ -157,11 +158,12 @@ function familyOf(st, model) {
   return f && f !== "other" ? f : guessFamily(model) || f || "";
 }
 
-/** 選模型：沒指定就挑 Anima Turbo（沒有就第一個 anima）；影片、H3 的模型不挑 */
+/** 選模型：沒指定就挑 Anima Turbo（沒有就第一個 anima）；影片模型不挑（保留 MiniMax H3 Image） */
 function pickModel(st, family) {
-  const all = Object.keys((st.models && st.models.unet_family) || {}).filter((n) => !/h3|ltx|wan/i.test(n));
+  const isVideoModel = (n) => (/ltx|wan/i.test(n) || (/h3/i.test(n) && familyOf(st, n) !== "mmimage"));
+  const all = Object.keys((st.models && st.models.unet_family) || {}).filter((n) => !isVideoModel(n));
   const names = all.filter((n) => familyOf(st, n) === (family || "anima"));
-  return names.find((n) => /anima-turbo/i.test(n)) || names.find((n) => /turbo/i.test(n)) || names[0] || "";
+  return names.find((n) => /anima-turbo/i.test(n)) || names.find((n) => /turbo/i.test(n)) || names.find((n) => /w4a8/i.test(n)) || names[0] || "";
 }
 
 async function withDefaults(params) {
@@ -176,7 +178,11 @@ async function withDefaults(params) {
   const fam = familyOf(st, p.model);
   const turbo = /turbo/i.test(p.model || "");
   set("mode", mode);
-  if (fam === "moss") {
+  if (fam === "mmimage") {
+    set("steps", 6); set("cfg", 1); set("sampler", "euler"); set("scheduler", "simple");
+    set("negative", "");
+    if (mode === "txt2img") { set("width", 1024); set("height", 1536); }
+  } else if (fam === "moss") {
     const fast = (p.loras || []).some((l) => /moss_speed_dmd/i.test(l.name || ""));
     set("steps", fast ? 10 : 25); set("cfg", 3); set("sampler", "euler"); set("scheduler", "sgm_uniform");
     set("negative", MOSS_NEG);

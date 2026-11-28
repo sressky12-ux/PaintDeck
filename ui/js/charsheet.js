@@ -4,7 +4,7 @@
 // ③ 正面特寫（鎖臉的固定參考圖）④ 選填：轉身圖走四視圖編輯變裸體版
 // ⑤ 角色設定表（AI 看圖填 → 改 → 鎖定；鎖定的固定文字由後端 charspec.rs 組）⑥ 外觀描述＋反推 tag，存成資產庫的角色（新的或加到現有的）
 // 生成頁四視圖、資產庫角色卡、導演台角色設定卡、圖片動作「做設定圖」都開這一個視窗。資產庫的角色開進來會帶入已有的圖和設定表，缺什麼補什麼。
-import { api, el, toast, openModal, pickFile, uploadFile } from "./util.js";
+import { api, el, toast, openModal, pickFile, uploadFile, store } from "./util.js";
 import { pickFromGallery } from "./gallery.js";
 import { app } from "./state.js";
 import * as gen from "./gen.js";
@@ -28,22 +28,45 @@ export const SPEC_FIELDS = [
 ];
 
 // ---------------------------------------------------------------- 純函式（tests/charsheet_ui.test.cjs）
-/** 用哪顆 Qwen 2.1：生成頁選的就是 Qwen 就用它，不然挑官方 Turbo（名字有 turbo 的），都沒有回 null */
-export function qwenModel(models, base) {
-  if (base?.family === "qwen21" && base.model) return base.model;
-  const ms = Object.entries(models?.unet_family || {}).filter(([, f]) => f === "qwen21").map(([n]) => n);
-  return ms.find((n) => /qwen[_-]image[_-]2\.1[_-]turbo/i.test(n)) || ms.find((n) => /turbo/i.test(n)) || ms[0] || null;
+/** 挑改圖模型：engine 為 "qwen21"｜"mmimage"｜"auto"（auto 時生成頁選的就是兩者之一就用它，否則先 Qwen 2.1、沒有再 MiniMax H3 Image） */
+export function editModel(models, base, engine = "auto") {
+  const fams = models?.unet_family || {};
+  const listOf = (f) => Object.entries(fams).filter(([, x]) => x === f).map(([n]) => n);
+  const pickQwen = () => {
+    if (base?.family === "qwen21" && base.model) return base.model;
+    const ms = listOf("qwen21");
+    return ms.find((n) => /qwen[_-]image[_-]2\.1[_-]turbo/i.test(n)) || ms.find((n) => /turbo/i.test(n)) || ms[0] || null;
+  };
+  const pickMm = () => {
+    if (base?.family === "mmimage" && base.model) return base.model;
+    const ms = listOf("mmimage");
+    return ms.find((n) => /w4a8/i.test(n)) || ms[0] || null;
+  };
+  if (engine === "mmimage") { const m = pickMm(); return m ? { model: m, family: "mmimage" } : null; }
+  if (engine === "qwen21") { const m = pickQwen(); return m ? { model: m, family: "qwen21" } : null; }
+  if (base?.family === "mmimage" && base.model) return { model: base.model, family: "mmimage" };
+  const q = pickQwen();
+  if (q) return { model: q, family: "qwen21" };
+  const mm = pickMm();
+  return mm ? { model: mm, family: "mmimage" } : null;
 }
 
-/** Qwen 多圖參考的參數：同一顆模型照生成頁（步數、CFG、LoRA）；不然官方 Turbo 8 步、CFG 1、不掛 LoRA */
-export function qwenParams(base, model, prompt, refInput, w, h) {
-  const same = base.family === "qwen21" && base.model === model;
+/** 向下相容（tests/charsheet_ui.test.cjs） */
+export function qwenModel(models, base) {
+  return editModel(models, base, "qwen21")?.model || null;
+}
+
+/** 改圖（Qwen 2.1 或 MiniMax H3 Image）多圖參考的參數 */
+export function qwenParams(base, model, prompt, refInput, w, h, engine = "qwen21") {
+  const isMm = engine === "mmimage" || base?.family === "mmimage" && base.model === model;
+  const same = (isMm ? base.family === "mmimage" : base.family === "qwen21") && base.model === model;
   return {
     mode: "multiref", model, prompt, negative: "", seed: null, turbo_lora: false,
     loras: same ? base.loras || [] : [],
-    steps: same ? base.steps : 8, cfg: same ? base.cfg : 1,
+    steps: same ? base.steps : (isMm ? 6 : 8), cfg: same ? base.cfg : 1,
     sampler: same ? base.sampler : "euler", scheduler: same ? base.scheduler : "simple",
     refs: [{ image: refInput }], size_mode: "fixed", width: w, height: h, pixels: 1024 * 1024, ref_pixels: 1024 * 1024,
+    ...(isMm ? { mm_pe: "" } : {}),
   };
 }
 
@@ -114,7 +137,8 @@ function restore() {
 }
 
 const base = () => gen.baseParams();
-const qwen = () => qwenModel(app.state?.models, base());
+const curEngine = () => F("csEngine")?.value || store.get("editEngine", "qwen21");
+const editTarget = () => editModel(app.state?.models, base(), curEngine());
 const fileUrl = (f) => `/api/assets/file/${encodeURIComponent(f)}`;
 
 /**
@@ -188,8 +212,21 @@ function paint() {
   pic("csFace", st.pick.face?.url, "還沒選");
   pic("csPort", st.pick.portrait?.url, "還沒選");
   pic("csNude", st.pick.nude?.url, "還沒選");
-  const q = qwen();
+  const engSel = F("csEngine");
+  if (engSel && !engSel.dataset.synced) {
+    engSel.value = store.get("csEngine", store.get("editEngine", "auto"));
+    engSel.dataset.synced = "1";
+  }
+  const q = editTarget();
   F("csNoQwen").hidden = !!q;
+  if (!q) {
+    const e = curEngine();
+    F("csNoQwen").textContent = e === "mmimage"
+      ? "找不到 MiniMax H3 Image 模型，請先安裝或改選 Qwen 2.1。"
+      : e === "qwen21"
+      ? "找不到 Qwen 2.1 模型，請先安裝或改選 MiniMax H3 Image。"
+      : "找不到 Qwen 2.1 或 MiniMax H3 Image 模型：展開轉身圖、臉部特寫和正面特寫需要其中一種模型。";
+  }
   F("csTurnGo").disabled = F("csFaceGo").disabled = F("csPortGo").disabled = !q || !st.start;
   F("csNudeGo").disabled = !q || !st.pick.turnaround;
   F("csDescGo").disabled = F("csTagsGo").disabled = !st.start;
@@ -286,27 +323,27 @@ async function drawBase() {
   await send("base", { ...p, mode: "txt2img", prompt: text.replace(/[\s,.，。]+$/, "") + prompt, seed: null, width: 832, height: 1216 }, 4);
 }
 
-/** kind：turnaround｜face｜portrait（Qwen 2.1 照定稿畫） */
+/** kind：turnaround｜face｜portrait（Qwen 2.1 或 MiniMax H3 Image 照定稿畫） */
 async function drawSheet(kind) {
   readForm();
-  const model = qwen();
-  if (!model || !st.start) return;
+  const target = editTarget();
+  if (!target || !st.start) return;
   const b = base();
   try {
-    const { prompt, width, height } = await api("/api/charsheet/prompt", { json: { kind, desc: st.desc, family: b.family } });
-    await send(kind, qwenParams(b, model, prompt, st.start.input, width, height), 2);
+    const { prompt, width, height } = await api("/api/charsheet/prompt", { json: { kind, desc: st.desc, family: b.family, engine: target.family } });
+    await send(kind, qwenParams(b, target.model, prompt, st.start.input, width, height, target.family), 2);
   } catch (e) { toast(e.message, "err"); }
 }
 
 async function drawNude() {
   readForm();
-  const model = qwen(), t = st.pick.turnaround;
-  if (!model || !t) return;
+  const target = editTarget(), t = st.pick.turnaround;
+  if (!target || !t) return;
   try {
     const r = await inputOf(t);
     if (!r) return;
-    const { mode, refs, size_mode, prompt, ...qp } = qwenParams(base(), model, "", r.name, r.width, r.height);
-    await send("nude", { ...qp, mode: "sheet", prompt: "", init_image: r.name, sheet: { req: nudeReq(st.sex) } }, 2);
+    const { mode, refs, size_mode, prompt, ...qp } = qwenParams(base(), target.model, "", r.name, r.width, r.height, target.family);
+    await send("nude", { ...qp, mode: "sheet", prompt: "", init_image: r.name, sheet: { req: nudeReq(st.sex), engine: target.family } }, 2);
   } catch (e) { toast(e.message, "err"); }
 }
 
@@ -427,6 +464,16 @@ async function save() {
 
 export function init() {
   for (const id of ["csName", "csSex", "csText", "csDesc", "csDescZh", "csTags"]) F(id).onchange = readForm;
+  const engSel = F("csEngine");
+  if (engSel) {
+    engSel.value = store.get("csEngine", store.get("editEngine", "auto"));
+    engSel.dataset.synced = "1";
+    engSel.onchange = () => {
+      store.set("csEngine", engSel.value);
+      if (engSel.value !== "auto") store.set("editEngine", engSel.value);
+      paint();
+    };
+  }
   F("csUp").onclick = async () => {
     const f = await pickFile();
     if (!f) return;

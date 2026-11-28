@@ -17,10 +17,12 @@ const TARGETS = [
   ["modelscope", "魔塔", "實驗性：包好資料集，到魔塔網頁送出"],
 ];
 const CLOUD_WAYS = [
-  ["ssh", "我已經租好一台", "AutoDL、恆源雲、矩池雲、Vast.ai…有 SSH 登入指令就行，繪匣自己裝訓練器"],
+  ["ssh", "我已經租好一台", "AutoDL、恆源雲、矩池雲、Vast.ai…有 SSH 登入指令就能連線"],
   ["runpod", "幫我租一台（RunPod）", "全自動租機、煉完關機；要 RunPod 帳號，用美元儲值"],
+  ["colab", "用 Google Colab", "開繪匣的筆記本按全部執行，貼回網址和口令；免費 T4 可煉 SDXL、Anima"],
   ["remote", "進階：自己架小幫手", "自己在訓練機上裝 ai-toolkit、開小幫手，填網址和口令"],
 ];
+const COLAB_URL = "https://colab.research.google.com/github/sressky12-ux/PaintDeck/blob/main/resources/train/paintdeck_colab.ipynb";
 
 const S = { list: [], fams: [], trainer: null, vram: 0, v: null, step: 1, target: "local", cloud: "ssh", prog: null, gpus: null, quote: null, cmp: null, traits: null, auto: null, draft: { name: "", kind: "style", family: "anima", trigger: "" }, loaded: false };
 
@@ -504,6 +506,14 @@ function sshSteps(running) {
     catch (e) { Object.assign(st, { msg: e.message, ok: false }); }
     render();
   } }, "測試連線");
+  const key = `trainSsh:${cfg.ssh_user || "root"}@${cfg.ssh_host || ""}:${port}:`;
+  const mirror = el("select", {}, ...[["auto", "自動判斷"], ["cn", "中國大陸加速"], ["off", "不用加速"]].map(([value, label]) => el("option", { value }, label)));
+  const toolkit = el("input", { type: "text", spellcheck: "false" });
+  const base = el("input", { type: "text", spellcheck: "false" });
+  for (const [name, field] of [["mirror", mirror], ["toolkit", toolkit], ["base_path", base]]) {
+    field.value = localStorage.getItem(key + name) || (name === "mirror" ? "auto" : "");
+    field.addEventListener("input", () => localStorage.setItem(key + name, field.value));
+  }
   const copy = (label, text, tip) => el("button", { class: "akey sm", type: "button", onclick: async () => { await copyText(text); toast(tip, "ok"); } }, label);
   return [
     el("b", {}, "1. 貼上那台機器的 SSH 登入指令"),
@@ -518,9 +528,13 @@ function sshSteps(running) {
     el("b", {}, "3. 測試連線"),
     el("div", { class: "toolbar" }, test), msg,
     el("b", {}, "4. 開始訓練"),
-    note("繪匣會自己裝訓練器（第一次約 10～20 分鐘），煉完把每一版抓回來。機器的開關機和計費在那家網站，煉完記得去關機。"),
+    note("AutoDL 社群映像裡裝好的 ai-toolkit 會自動找到。找不到才安裝，煉完記得到租機網站關機。"),
+    el("details", {}, el("summary", {}, "進階（選填）"),
+      el("label", { class: "tr-f" }, "網路", mirror),
+      el("label", { class: "tr-f" }, "機器上已經裝好的 ai-toolkit 路徑（留空＝自動找）", toolkit),
+      el("label", { class: "tr-f" }, "底模在機器上的路徑（留空＝自動下載；AutoDL 共享硬碟的模型填這裡）", base)),
     el("div", { class: "toolbar" },
-      el("button", { class: "akey go", type: "button", disabled: running || !cfg.ssh_host, onclick: () => startTrain("ssh", {}) }, "開始訓練"),
+      el("button", { class: "akey go", type: "button", disabled: running || !cfg.ssh_host, onclick: () => startTrain("ssh", { mirror: mirror.value, toolkit: toolkit.value.trim(), base_path: base.value.trim() }) }, "開始訓練"),
       el("span", { class: "grow" }),
       el("button", { class: "link sm", type: "button", onclick: () => { app.showPage("agent"); openCloudSettings(); } }, "進階設定（主機上的資料夾、自己的私鑰）")),
   ];
@@ -564,12 +578,27 @@ function step5() {
       if (!S.gpus) call(`/api/train/${p.id}/quote`, { target: "runpod" }).then((r) => { S.gpus = r ? r.gpus : []; render(); });
       const sel = el("select", {}, ...(S.gpus || []).map((g) => el("option", { value: g.key }, `${g.name}（${g.vram}GB）每小時 $${g.usd_per_hour}・這次約 ${g.hours} 小時 ≈ $${g.usd}${g.stock ? "" : "（現在沒貨）"}`)));
       detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub,
-        note("繪匣會租一台 RunPod 的機器、自己裝好訓練器、煉完把每一版抓回來，然後把機器關掉。金鑰用助手頁「雲端設定」那一把。"),
+        note("RunPod 使用官方映像，訓練器已裝好。煉完會抓回每一版並關機。金鑰用助手頁「雲端設定」那一把。"),
         S.gpus ? (S.gpus.length ? el("label", { class: "tr-f" }, "顯卡", sel) : el("div", { class: "tr-warn" }, "拿不到顯卡清單：先到助手頁的「雲端設定」填 RunPod 金鑰")) : note("查價中…"),
-        note("價錢是估的：開機裝環境那十幾分鐘也算錢，實際看排隊和顯卡。"),
+        note("下載映像約 6GB，通常要 5～10 分鐘，這段也會計費。"),
         el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running || !(S.gpus && S.gpus.length), onclick: () => { const g = S.gpus.find((x) => x.key === sel.value); startTrain("runpod", { gpu: sel.value }, `要租 ${g.name}，每小時 $${g.usd_per_hour}，這次估計約 $${g.usd}（${g.hours} 小時，${steps} 步）。\n\n按確定就會開機、開始計費；煉完會自動關機。`); } }, "看好了，租機開始")));
     } else if (S.cloud === "ssh") {
       detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub, ...sshSteps(running));
+    } else if (S.cloud === "colab") {
+      const url = el("input", { type: "text", placeholder: "https://xxxx.trycloudflare.com", spellcheck: "false", value: localStorage.getItem("trainColabUrl") || "" });
+      const tok = el("input", { type: "text", placeholder: "筆記本印出來的口令", spellcheck: "false" });
+      detail = box("雲端顯卡", note("你的顯卡從哪來？"), sub,
+        note("1. 按下面的按鈕在 Colab 開啟繪匣的筆記本，上方選單「執行階段 → 變更執行階段類型」選 T4 GPU，再按「執行階段 → 全部執行」。"),
+        el("div", { class: "toolbar" }, el("button", { class: "akey", type: "button", onclick: () => window.open(COLAB_URL, "_blank", "noopener") }, "在 Colab 開啟筆記本")),
+        note("2. 等最後一格印出網址和口令（第一次約 5～10 分鐘），貼到下面，按開始訓練。"),
+        note("3. Colab 分頁要一直開著；關掉或閒置太久，Colab 會收回機器，訓練會中斷。免費 T4 只有 16GB：SDXL、Anima 可以煉，Qwen、MOSS、Krea 很勉強，H3 不行。"),
+        el("label", { class: "tr-f" }, "網址", url), el("label", { class: "tr-f" }, "口令", tok),
+        el("div", { class: "toolbar" }, el("button", { class: "akey go", type: "button", disabled: running, onclick: () => {
+          if (!/^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/.test(url.value.trim())) return toast("網址要貼筆記本印出來的 https://….trycloudflare.com", "err");
+          if (tok.value.trim().length < 8) return toast("口令要貼筆記本印出來的那一串", "err");
+          localStorage.setItem("trainColabUrl", url.value.trim());
+          startTrain("remote", { url: url.value.trim(), token: tok.value.trim(), vram_gb: 15 });
+        } }, "開始訓練")));
     } else {
       const url = el("input", { type: "text", placeholder: "http://192.168.1.50:8000", spellcheck: "false", value: localStorage.getItem("trainRemoteUrl") || "" });
       const tok = el("input", { type: "password", placeholder: "口令（開小幫手時自己設的那一串）" });

@@ -562,13 +562,13 @@ fn image_family(app: &Shared, p: &Value) -> &'static str {
     families::family_of(&app.paths.unet_roots(), &model)
 }
 
-/// 這段要拿哪些角色的設定圖當參考圖（只有 Qwen 2.1 能用多圖參考；最多 3 張）
+/// 這段要拿哪些角色的設定圖當參考圖（Qwen 2.1 與 MiniMax H3 Image 支援多圖參考；最多 3 張）
 fn seg_refs(app: &Shared, p: &Value, chars: &[Value], seg: &Value) -> Vec<(String, String)> {
     frame_reference_list(image_family(app, p), p, chars, seg)
 }
 
 fn frame_reference_list(family: &str, p: &Value, chars: &[Value], seg: &Value) -> Vec<(String, String)> {
-    if family != families::QWEN21 {
+    if !matches!(family, families::QWEN21 | families::MMIMG) {
         return vec![];
     }
     let present: Vec<String> = seg["characters"].as_array().into_iter().flatten().map(tx).collect();
@@ -874,11 +874,16 @@ async fn make_frame(app: &Shared, id: &str, i: usize, p: &Value, tag: &str, toke
     for k in ["init_image", "refs", "mask", "inpaint", "upscale", "control", "idea", "pe_prompt", "layout"] {
         q.remove(k);
     }
+    let img_fam = image_family(app, p);
     // 這段拉的版面框（只有 MOSS 吃；後端 graphs.rs 照 FRAME_W×FRAME_H 換算）
-    if image_family(app, p) == families::MOSS {
+    if img_fam == families::MOSS {
         if let Some(l) = seg["layout"].as_array().filter(|a| !a.is_empty()) {
             q.insert("layout".into(), json!(l));
         }
+    }
+    if img_fam == families::MMIMG {
+        prompt = crate::graphs::adapt_mmimage_refs(&prompt);
+        q.insert("mm_pe".into(), json!(""));
     }
     q.insert("prompt".into(), json!(prompt));
     q.insert("seed".into(), json!(random_seed()));

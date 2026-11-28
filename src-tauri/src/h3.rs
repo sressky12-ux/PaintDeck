@@ -24,6 +24,36 @@ pub fn low_vram_model(name: &str) -> bool {
     l.ends_with(".gguf") || l.contains("w4a8")
 }
 pub const TE: &str = "qwen3vl_32b_minimax_h3_nvfp4_awq.safetensors";
+pub fn te_name(v: &Value) -> Result<Option<&str>, String> {
+    if v.is_null() || v.as_str().is_some_and(|s| s.trim().is_empty()) {
+        return Ok(None);
+    }
+    let name = v.as_str().unwrap_or("").trim();
+    if name.contains(':') || name.chars().any(char::is_control) || name.split(['/', '\\']).any(|part| matches!(part, "" | "." | "..")) {
+        return Err("文字編碼器檔名不對，請填 ComfyUI 清單裡的名稱".into());
+    }
+    Ok(Some(name))
+}
+
+pub fn pick_cloud_te(names: &[String]) -> Option<&str> {
+    names.iter().filter(|n| basename(n).starts_with("qwen3vl_32b_minimax_h3")).min_by_key(|n| match basename(n) {
+        TE => 0,
+        "qwen3vl_32b_minimax_h3_bf16.safetensors" => 1,
+        "qwen3vl_32b_minimax_h3_int8_convrot.safetensors" => 2,
+        _ => 3,
+    }).map(String::as_str)
+}
+
+pub fn pick_cloud_model(names: &[String]) -> Option<&str> {
+    names.iter().filter(|n| {
+        let base = basename(n);
+        base.starts_with("minimax_h3_ref2va") || base.starts_with("10Eros")
+    }).min_by_key(|n| {
+        let base = basename(n);
+        if base == MODEL { 0 } else if base.contains("bf16") { 1 } else if base.contains("int8") { 2 } else { 3 }
+    }).map(String::as_str)
+}
+
 pub const VAE: &str = "minimax_h3_video_vae_int8_convrot.safetensors";
 pub const AVAE: &str = "minimax_h3_audio_vae_fp32.safetensors";
 /// 二采用的 3D 潛空間放大（HF LBH-123-AI/Minimax_h3_latent_Upscaler 的 3d_conv_v1；YZ金魚工作流用的是它的舊檔名），放 models\latent_upscale_models
@@ -512,7 +542,7 @@ pub fn build(p: &Value, input_dir: &Path, seed_offset: i64) -> R<(Map<String, Va
     if let Some(c) = chunks.filter(|c| (2..=64).contains(c)) {
         model = g.add("MiniMaxChunkFeedForward", json!({"model": model, "chunks": c, "seq_threshold": 4096}));
     }
-    let clip = g.add("CLIPLoader", json!({"clip_name": TE, "type": "minimax", "device": "default"}));
+    let clip = g.add("CLIPLoader", json!({"clip_name": te_name(&p["te"]).map_err(GraphError)?.unwrap_or(TE), "type": "minimax", "device": "default"}));
     let vae = g.add("VAELoader", json!({"vae_name": VAE}));
     let avae = g.add("VAELoader", json!({"vae_name": AVAE}));
 
@@ -707,6 +737,31 @@ fn basename(n: &str) -> &str {
 }
 
 #[cfg(test)]
+mod cloud_pick_tests {
+    use super::*;
+
+    #[test]
+    fn encoder_priority_and_missing() {
+        let names = ["unrelated", "qwen3vl_32b_minimax_h3_other", "qwen3vl_32b_minimax_h3_int8_convrot.safetensors",
+            "sub/qwen3vl_32b_minimax_h3_bf16.safetensors", TE].map(String::from);
+        assert_eq!(pick_cloud_te(&names[..1]), None);
+        for end in 2..=names.len() {
+            assert_eq!(pick_cloud_te(&names[..end]), Some(names[end - 1].as_str()));
+        }
+        assert!(te_name(&json!("../bad")).is_err());
+    }
+
+    #[test]
+    fn model_priority_and_missing() {
+        let names = ["other_bf16", "10Eros_other", OFFICIAL_REF2VA, "minimax_h3_ref2va_pruned_bf16.safetensors", MODEL].map(String::from);
+        assert_eq!(pick_cloud_model(&names[..1]), None);
+        for end in 2..=names.len() {
+            assert_eq!(pick_cloud_model(&names[..end]), Some(names[end - 1].as_str()));
+        }
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
@@ -768,7 +823,9 @@ mod tests {
         assert_eq!(by_class(&n, "SaveVideo")[0]["inputs"]["filename_prefix"], "AnimaWeb/video");
         assert_eq!(by_class(&n, "SaveImage").len(), 2);
         assert_eq!(by_class(&n, "UNETLoader")[0]["inputs"]["unet_name"], MODEL);
-        let (g, _) = build(&json!({"prompt": "x", "model": "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf"}), &dir(), 0).unwrap();
+        assert_eq!(by_class(&n, "CLIPLoader")[0]["inputs"]["clip_name"], TE);
+        let (g, _) = build(&json!({"prompt": "x", "te": "custom.safetensors", "model": "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf"}), &dir(), 0).unwrap();
+        assert_eq!(by_class(&g, "CLIPLoader")[0]["inputs"]["clip_name"], "custom.safetensors");
         assert!(by_class(&g, "UNETLoader").is_empty());
         assert_eq!(by_class(&g, "UnetLoaderGGUF")[0]["inputs"]["unet_name"], "10Eros-Max-Turbo-Beta5-Q3_K_M.gguf");
         assert_eq!(by_class(&g, "MiniMaxChunkFeedForward")[0]["inputs"]["chunks"], 8, "GGUF 沒指定就切 8");

@@ -341,9 +341,10 @@ async function batch(act) {
   if (act === "compare") return openCompare(ids);
   if (act === "zip") return exportZip(ids);
   if (act === "multiref") {
-    const gen = await import("./gen.js");
-    for (const id of ids.slice(0, 10)) await gen.imageAction("multiref", { id }, null, true);
-    toast(ids.length > 10 ? "多圖參考最多 10 張，只加了前 10 張" : `已加入 ${ids.length} 張到多圖參考`, ids.length > 10 ? "err" : "ok");
+    const [gen, refs] = await Promise.all([import("./gen.js"), import("./refs.js")]);
+    const cap = Math.max(1, refs.maxRefs());
+    for (const id of ids.slice(0, cap)) await gen.imageAction("multiref", { id }, null, true);
+    toast(ids.length > cap ? `目前模型參考圖最多 ${cap} 張，只加了前 ${cap} 張` : `已加入 ${ids.length} 張到圖生圖／改圖參考`, ids.length > cap ? "err" : "ok");
     app.showPage("gen");
     return;
   }

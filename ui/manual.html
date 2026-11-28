@@ -369,7 +369,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
     <a href="#prompt"><span class="n">03</span><span class="led"></span>寫提示詞</a>
     <a href="#pe"><span class="n">04</span><span class="led"></span>AI 改寫</a>
     <a href="#layout"><span class="n">05</span><span class="led"></span>版面框</a>
-    <a href="#modes"><span class="n">06</span><span class="led"></span>七種模式</a>
+    <a href="#modes"><span class="n">06</span><span class="led"></span>六種模式</a>
     <a href="#play"><span class="n">07</span><span class="led"></span>生圖玩法</a>
     <a href="#lora"><span class="n">08</span><span class="led"></span>LoRA</a>
     <a href="#lib"><span class="n">09</span><span class="led"></span>提示詞庫</a>
@@ -403,7 +403,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       </table></div>
       <h3>步驟</h3>
       <ul class="tips">
-        <li>雙擊 <code>繪匣 PaintDeck_26.1127.1_x64-setup.exe</code>。安裝檔沒有付費簽章，Windows 可能跳出「Windows 已保護您的電腦」：按「其他資訊」→「仍要執行」。</li>
+        <li>雙擊 <code>繪匣 PaintDeck_26.1128.4_x64-setup.exe</code>。安裝檔沒有付費簽章，Windows 可能跳出「Windows 已保護您的電腦」：按「其他資訊」→「仍要執行」。</li>
         <li>從 Anima／PaintDeck 舊版接手：精靈會優先選原設定的資料與 ComfyUI。找到多份圖庫時請自行選擇，不會自動挑圖片最多的。資料資料夾不用改名，也不用搬模型。找不到原位置時，可按「自己指定舊資料」；選到內層 data 會自動辨識外層，原路徑失效或資料庫讀不到時不會新建空白圖庫取代它。</li>
         <li>開始前確認「本次使用的位置」。沿用資料時，模型頁預設不新增勾選下載，缺哪些功能再自行勾選。第一頁可展開「程式位置與舊版安裝紀錄」核對路徑；不要同時開新舊版，同資料夾的舊解除安裝項目先確認再處理，MCP 設定需重新複製。</li>
         <li>第一次打開會進安裝精靈，一共四步：<b>檢查電腦</b> → <b>資料與 ComfyUI 放哪裡</b> → <b>要下載哪些模型</b> → <b>安裝</b>。右上角可以切換繁體中文／简体中文／English。</li>
@@ -521,7 +521,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       </ul>
       <h3>MiniMax H3 Image 的寫法</h3>
       <ul class="tips">
-        <li>能做兩件事：<b>文生圖</b>、<b>多圖參考</b>（最多 16 張）。圖生圖、局部重繪、版面框這些不支援，選到它時那幾個模式會變灰。</li>
+        <li>全站改圖功能都能用：<b>文生圖</b>、<b>圖生圖／改圖</b>（單張或多張參考，最多 16 張）、<b>局部重繪</b>、<b>擴圖</b>、<b>修臉／修手</b>、<b>多視圖編輯</b>、<b>差分</b>、<b>角色設定圖工坊</b>、<b>整本上色</b>、<b>漫畫台修角色</b>皆可切換選用（只有 MOSS 專用的版面框不支援）。</li>
         <li>要裝的檔：安裝精靈勾「MiniMax H3 Image 圖片（選配）」，內含主模型 w4a8、VAE、文字編碼器（跟 H3 影片共用）。大顯卡想用 int8／bf16 或 27B 擴寫器，再勾「高精度」那一包。</li>
         <li>尺寸改用 <b>比例＋百萬畫素</b> 選，預設 1:1、4MP（2048×2048，官方調校的尺寸），最高 20MP，邊長自動對齊 32。</li>
         <li><b>8GB 顯卡</b>：按尺寸區的「8GB 建議」＝4MP、分塊解碼 512、不開提示詞擴寫器，文字編碼器用 nvfp4。RTX 3070 實測 4MP 約 55 秒（第一張要載模型，約 2 分鐘）、16MP 約 165 秒。</li>
@@ -672,18 +672,17 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
   <section class="ch" id="modes">
     <div class="txt">
       <div class="ch-no">06</div>
-      <h2>七種模式，一排琴鍵切換</h2>
-      <p>觀景窗上方的模式鍵決定這次要做什麼。除了文生圖，其他都要先放一張圖：拖進框裡、按 <kbd>Ctrl</kbd><kbd>V</kbd> 貼上，或按「從圖庫選」。觀景窗和圖庫大圖下面也有同名的按鈕，按一下就把那張圖送過去（擴圖在「玩法…」裡面）。</p>
+      <h2>六種模式，一排琴鍵切換</h2>
+      <p>觀景窗上方的模式鍵決定這次要做什麼。除了文生圖，其他都要先放一張圖：拖進框裡、按 <kbd>Ctrl</kbd><kbd>V</kbd> 貼上，或按「從圖庫選」。觀景窗和圖庫大圖下面也有同名的按鈕，按一下就把那張圖送過去（擴圖在「影像工具」裡面）。</p>
       <ol class="steps" data-for="s-modes"></ol>
       <div class="tbl-w"><table>
         <thead><tr><th>模式</th><th>適合</th><th>關鍵設定</th></tr></thead>
         <tbody>
-          <tr><td>圖生圖</td><td>照一張圖重畫</td><td>重繪幅度：Anima 預設 0.6；MOSS 0.7 以下構圖不變、0.8 以上幾乎整張重畫</td></tr>
+          <tr><td>圖生圖／改圖</td><td>單張圖生圖／改圖，或多張參考圖組合（人、衣服、場景重組）</td><td>放 1 張走單圖改圖（可調重繪幅度）；選 Qwen 2.1（最多 10 張）或 MiniMax H3 Image（最多 16 張）放 2 張以上自動切換成多圖參考，提示詞用 <code>&lt;image1&gt;</code>／<code>&lt;Picture 1&gt;</code> 指名</td></tr>
           <tr><td>局部重繪</td><td>只改一小塊</td><td>畫遮罩；範圍選「只重繪遮罩區」最適合修臉、修手</td></tr>
           <tr><td>擴圖</td><td>把畫面往外延伸：橫圖變直圖、補出被裁掉的身體或背景</td><td>四邊各往外擴幾像素，或按快捷鈕；步驟見第 07 章</td></tr>
-          <tr><td>多圖參考</td><td>人、衣服、場景各取一張重組</td><td>只有 Qwen 2.1；第 1 張是底圖，提示詞用 <code>&lt;image1&gt;</code> 指名</td></tr>
           <tr><td>放大</td><td>把圖放大變清楚</td><td>倍率 1.5／2／3／4，可加 AI 精修</td></tr>
-          <tr><td>四視圖</td><td>角色設定稿一次改：換衣、改色</td><td>每個視角同步改；要點名改哪件，例如「紅色西裝外套」</td></tr>
+          <tr><td>多視圖編輯</td><td>角色設定稿一次改：換衣、改色</td><td>每個視角同步改，可切換 Qwen 2.1 或 MiniMax H3 Image；要點名改哪件，例如「紅色西裝外套」</td></tr>
         </tbody>
       </table></div>
       <h3>附加功能</h3>
@@ -693,7 +692,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li><b>生成後自動修臉</b>、<b>X/Y 對照表</b>、<b>塗鴉畫布</b>：也在「附加」這一區，用法見下一章。</li>
         <li><b>拿去 ComfyUI 改…</b>（模型那一格下面）：把目前這個功能照目前的設定存成 ComfyUI 工作流，存的位置自己選，視窗裡有三步說明。想在 ComfyUI 裡自己改內建的流程時用，改好可以匯回來取代內建的（第 16 章）。還沒放輸入圖、遮罩也能存，會先用佔位圖代替。</li>
       </ul>
-      <p class="note"><b>四視圖不用切模型：</b>它會自動用 Qwen 2.1 官方 Turbo，所以要先裝好它（基本版就有）。</p>
+      <p class="note"><b>四視圖不用切模型：</b>它可切換 Qwen 2.1 官方 Turbo 或 MiniMax H3 Image，裝了其中一種就能用。</p>
     </div>
     <div class="stage-w" id="s-modes"></div>
   </section>
@@ -823,7 +822,7 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
         <li>有些模型要登入 Civitai 才能下載：到設定頁貼上 Civitai API key，只存在這台電腦（申請步驟見第 01 章）。</li>
         <li>LoRA 已經放在別的地方（A1111 的 <code>models\Lora</code>、別的 ComfyUI）？到「設定 → 模型與工作流」把那個資料夾加進「外部模型資料夾」就能直接用。手上的單一檔案，拖進同一區的「加裝模型」框，生圖站看檔案內容自動放進對的資料夾。</li>
       </ul>
-      <p class="note"><b>自己煉一顆 LoRA：</b>選單「訓練」把一包圖變成 LoRA，分六步，每一步都先自動做好，你看一眼、想改再改。<b>專案</b>：取名字、選煉畫風／角色／概念、選用在哪個模型，觸發詞留空會自動給一個。<b>訓練圖</b>：把圖拖進來或貼資料夾路徑，會複製一份、縮到合適大小（原圖不動），太小的、幾乎一樣的會標出來；畫風建議 30～200 張、角色 15～60 張。<b>描述</b>：按一下自動寫（Anima、SDXL 用 tag，Qwen、MOSS、Krea 2 用英文句子），煉角色時每張都有的髮色瞳色會建議拿掉，讓觸發詞記住它。<b>參數</b>：只要選輕／標準／充分，旁邊會寫為什麼是這個步數。<b>在哪煉</b>：本機顯卡（選好家族後依畫面安裝引擎，8GB 顯卡可以煉 SDXL 或 MOSS）、雲端顯卡（已經在 AutoDL、恆源雲這類網站租好機器，選「我已經租好一台」：貼上網站給的 SSH 登入指令、在那台機器的終端機貼一次繪匣給的那行、按測試連線，就能開始，繪匣自動裝好並透過通道連線，煉完要自己到租機網站關機；選「幫我租一台（RunPod）」會先報價、煉完自動關機；會自己架小幫手的人選「進階：自己架小幫手」）、C 站（先試算要幾 Buzz）、魔塔（包好資料集，到魔塔網頁送出）。<b>訓練與驗收</b>：每存一版就抓回來，按「出對照表」用同一句提示詞把每一版、幾個強度各畫一張，挑好按「就用這版」，它就出現在 LoRA 卡匣裡。花錢的地方送出前一定會先問；本機訓練時顯卡會被占滿，先不要生圖。</p>
+      <p class="note"><b>自己煉一顆 LoRA：</b>選單「訓練」把一包圖變成 LoRA，分六步，每一步都先自動做好，你看一眼、想改再改。<b>專案</b>：取名字、選煉畫風／角色／概念、選用在哪個模型，觸發詞留空會自動給一個。<b>訓練圖</b>：把圖拖進來或貼資料夾路徑，會複製一份、縮到合適大小（原圖不動），太小的、幾乎一樣的會標出來；畫風建議 30～200 張、角色 15～60 張。<b>描述</b>：按一下自動寫（Anima、SDXL 用 tag，Qwen、MOSS、Krea 2 用英文句子），煉角色時每張都有的髮色瞳色會建議拿掉，讓觸發詞記住它。<b>參數</b>：只要選輕／標準／充分，旁邊會寫為什麼是這個步數。<b>在哪煉</b>：本機顯卡（選好家族後依畫面安裝引擎，8GB 顯卡可以煉 SDXL 或 MOSS）、雲端顯卡（已經在 AutoDL、恆源雲這類網站租好機器，選「我已經租好一台」：貼上網站給的 SSH 登入指令、在那台機器的終端機貼一次繪匣給的那行、按測試連線，就能開始；機器上已經裝好 ai-toolkit（例如 AutoDL 社群映像）會直接拿來用，沒有才自動安裝，在中國大陸的機器記得在「進階（選填）」把網路選「中國大陸加速」，等超過 45 分鐘再按一次開始會接著裝、不會重來，煉完要自己到租機網站關機；選「幫我租一台（RunPod）」會先報價、用官方裝好的映像開機、煉完自動關機；選「用 Google Colab」按「在 Colab 開啟筆記本」→ 選 T4 GPU → 全部執行，把最後印出的網址和口令貼回來，分頁要一直開著，免費 T4 適合 SDXL、Anima；會自己架小幫手的人選「進階：自己架小幫手」）、C 站（先試算要幾 Buzz）、魔塔（包好資料集，到魔塔網頁送出）。<b>訓練與驗收</b>：每存一版就抓回來，按「出對照表」用同一句提示詞把每一版、幾個強度各畫一張，挑好按「就用這版」，它就出現在 LoRA 卡匣裡。花錢的地方送出前一定會先問；本機訓練時顯卡會被占滿，先不要生圖。</p>
       <p class="note"><b>用 8GB 顯卡煉 MOSS：</b>新建 MOSS 專案，在「在哪煉」選本機，照 KohakuMoss 引擎（作者 KBlueLeaf）的健檢清單按修正按鈕。下載前會告訴你大小，紅燈處理好就能開始。有圖還在排隊，選「等畫完自動開始」。第一次進到訓練要編譯顯卡程式，可能等 1～5 分鐘。中途停止後按「接著煉」，有完整存檔就從那裡繼續。煉完看對照表，先看「不掛（對照）」那欄，再比較同一個種子掛上各版 LoRA 的差別。</p>
       <p class="note"><b>MOSS 想快一點：</b>選 MOSS 模型時會出現「MOSS 快速」勾選框，勾了自動掛加速 LoRA 0.35、步數改 10，一張從約 40 秒變約 16 秒。要先下載加速 LoRA（檔名 <code>moss_speed_dmd…</code>）；它在安裝精靈的「MOSS-Image 文生圖繪圖」包裡；沒有的話勾了會問要不要直接下載（約 1.1 GB），下載好自動勾上。</p>
       <p class="note"><b>MOSS 照指令改圖：</b>MOSS 模型＋「圖生圖」模式會出現「照指令改圖」勾選。勾了之後輸入圖當參考圖，提示詞寫要怎麼改（例如「把外套改成紅色，其他保持不變」），會自動掛上 MOSS 編輯 LoRA（<code>moss_edit_chinoll</code>，也在 MOSS 包裡，沒有的話勾了會問要不要下載；Civitai 的 MOSS 編輯 LoRA 也能用）。重繪固定 1、參考圖自動縮到約 0.5MP，8GB 顯卡 20 步實測約 1 分鐘。繪匣更新後開站會自動換上新的 MOSS 支援；ComfyUI 不是繪匣開的，畫面會提醒你重開一次 ComfyUI。</p>
@@ -894,12 +893,13 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       <div class="ch-no">12</div>
       <h2>雲端顯卡：電腦不夠力，就接一張大卡</h2>
       <p>生圖助手選「雲端」腦袋時，35B 的腦袋和 MOSS-Image 生圖都改在雲端的大顯卡上跑：一輪十幾秒，眼力跟本機 35B 一樣，畫好的圖照樣存回你電腦的圖庫。8GB 的卡跑 35B 要好幾分鐘一輪，這時候接雲端最划算。</p>
-      <p>到「助手」頁右邊的「雲端顯卡」（或導演頁「H3 影片」分頁右邊）按 <b>雲端設定…</b>，三種接法選一種：</p>
+      <p>到「助手」頁右邊的「雲端顯卡」（或導演頁「H3 影片」分頁右邊）按 <b>雲端設定…</b>，四種接法選一種：</p>
       <div class="tbl-w"><table>
         <thead><tr><th>接法</th><th>適合誰</th><th>生圖站幫你做什麼</th></tr></thead>
         <tbody>
           <tr><td><b>RunPod 自動租</b></td><td>第一次用、想最省事</td><td>租卡、安裝、閒置太久自動刪機，全包</td></tr>
           <tr><td><b>任何雲端主機</b></td><td>已經在用 Vast.ai、AutoDL、Lambda、TensorDock 這類，或有自己的伺服器</td><td>用 SSH 連進你租好的機器自動安裝；開關機和計費在那家網站</td></tr>
+          <tr><td><b>Google Colab</b></td><td>有 Colab Pro、想用 G4（96GB）跑滿血 H3 影片</td><td>給你一份筆記本：裝好 ComfyUI、H3 節點和模型，印出網址和口令貼回來就能用（只有 H3 影片，沒有助手腦袋）</td></tr>
           <tr><td><b>直接連網址</b></td><td>已經有在跑的 ComfyUI＋LLM（Colab、Kaggle、朋友的電腦…）</td><td>只負責連過去用，什麼都不裝</td></tr>
         </tbody>
       </table></div>
@@ -946,6 +946,13 @@ td.num { font: 600 13.5px/1.4 var(--f-data); font-variant-numeric: tabular-nums;
       </ol>
       <p class="note"><b>想讓它閒置時自動關機：</b>在「進階」勾「順便叫主機關機」。AutoDL 這類關機就停止計費；Vast.ai、Lambda 關機後可能還收硬碟費或照樣計費，要到網站刪除才算數。</p>
 
+      <h3>接法：Google Colab（H3 影片）</h3>
+      <ol>
+        <li><b>雲端設定…</b> → 選 <b>Google Colab</b> → 按「在 Colab 開啟筆記本」。</li>
+        <li>Colab 上方「執行階段 → 變更執行階段類型」選 <b>G4</b>（96GB，跑滿血版最順；A100 也行，L4 只能跑 int8），再按「執行階段 → 全部執行」。第一格的模型保持「自動」就好：G4／A100 會下載滿血 bf16，第一次要下載約 100GB，大約 10～20 分鐘。</li>
+        <li>第 4 格印出 <b>網址</b>（https://….trycloudflare.com）和 <b>口令</b>，貼回繪匣，按「保存並測試連線」。之後 H3 影片台選「雲端」就是用這台；短片、長片都可以。</li>
+      </ol>
+      <p class="note"><b>Colab 會一直扣運算單元：</b>G4 每小時約 9～10 個（Pro 每月 100 個）。Colab 分頁要開著，用完到 Colab「執行階段 → 中斷連線並刪除執行階段」。每次重開機網址和口令都會換，要重新貼。滿血版沒有 Turbo，步數照官方建議（約 25～50 步）會比較慢；8 步以內繪匣會自動掛 DMD Turbo LoRA。</p>
       <h3>接法三：直接連網址</h3>
       <ul class="tips">
         <li>你要先有：一個能從外面連的 <b>ComfyUI 網址</b>（最新版，裝好 MOSS-Image 三個檔），和一個 <b>OpenAI 相容的 LLM 網址</b>（llama-server、vLLM 都行，要看得懂圖，例如 Qwen3.6-35B-A3B 加 mmproj）。</li>
@@ -1304,7 +1311,7 @@ const STATUS = '<div class="m-status" data-k="status"><span class="dot"></span>C
 const RAIL = '<div class="m-pan m-rail" data-k="rail"><span class="on" data-k="r-gen">生成</span><span data-k="r-gal">圖庫</span><span data-k="r-lora">LoRA</span><span data-k="r-dl">下載</span><span data-k="r-dir">導演</span><span data-k="r-cm">漫畫</span><span data-k="r-ag">助手</span><span class="sp"></span><span data-k="r-q">任務</span><span data-k="r-set">設定</span></div>';
 const MACHINE = TOP + `<div class="m-body m-stage">
   <div class="m-pan m-rail" data-k="rail"><span class="on">01 生成</span><span>02 隨機</span><span>03 圖庫</span><span>全部功能 ▾</span><span data-k="r-q">佇列</span></div>
-  <div class="m-piano"><span class="on">文生圖</span><span>圖生圖</span><span>局部重繪</span><span>擴圖</span><span>多圖參考</span><span>放大</span><span>四視圖</span></div>
+  <div class="m-piano"><span class="on">文生圖</span><span>圖生圖／改圖</span><span>局部重繪</span><span>擴圖</span><span>放大</span><span>多視圖編輯</span></div>
   <div class="m-pan m-ctrl" data-k="ctrl">
     <div class="m-lbl">提示詞</div><div class="m-scr" data-k="prompt"></div>
     <div class="m-chips"><span class="chipm">ENGINE</span><span class="chipm">LoRA</span><span class="chipm" data-k="c1">尺寸 1024×1536</span><span class="chipm" data-k="knobs">8 步 · CFG 1 · ×4</span><div class="m-big" data-k="go">生成</div></div>
@@ -1503,7 +1510,7 @@ S.pe = new Scene("s-pe", PE_HTML, [
 ]);
 
 const MODES_HTML = TOP + `<div class="full">
-  <div class="m-piano" data-k="piano" style="grid-template-columns:repeat(7,1fr)"><span class="on" data-k="m0">文生圖</span><span data-k="m1">圖生圖</span><span data-k="m2">局部重繪</span><span data-k="m7">擴圖</span><span data-k="m3">多圖參考</span><span data-k="m4">放大</span><span data-k="m6">四視圖</span></div>
+  <div class="m-piano" data-k="piano" style="grid-template-columns:repeat(6,1fr)"><span class="on" data-k="m0">文生圖</span><span data-k="m1">圖生圖／改圖</span><span data-k="m2">局部重繪</span><span data-k="m7">擴圖</span><span data-k="m4">放大</span><span data-k="m6">多視圖編輯</span></div>
   <div style="flex:1;position:relative" data-k="area">
     <div data-k="p1" hidden class="row" style="gap:14px;align-items:flex-start">
       <div class="refc" style="width:96px;animation:none"><img data-art="dawn" alt="" style="height:130px"><small>輸入圖</small></div>
@@ -1537,7 +1544,7 @@ const MODE = (c, n) => { c.all('[data-k^="m"]').forEach((e) => e.dataset.k.lengt
 S.modes = new Scene("s-modes", MODES_HTML, [
   { t: "圖生圖：放一張圖，調「重繪幅度」。0.6 左右會保留構圖、換掉細節。", a: async (c) => { await c.press("m1"); MODE(c, 1); await c.wait(400); c.k("sl").style.setProperty("--v", "60%"); c.k("den").textContent = "0.60"; c.k("o1").style.filter = "hue-rotate(-40deg) saturate(1.4) contrast(1.1)"; await c.wait(900); } },
   { t: "局部重繪：按「畫遮罩」，塗出要改的地方。只有紅色的範圍會重畫。", hold: 1400, a: async (c) => { await c.press("m2"); MODE(c, 2); await c.press("brush"); c.k("mask").classList.add("on"); await c.wait(1400); } },
-  { t: "多圖參考：放兩張以上的圖，在提示詞裡用 &lt;image1&gt;、&lt;image2&gt; 指名。", hold: 1600, a: async (c) => { await c.press("m3"); MODE(c, 3);
+  { t: "圖生圖／改圖（多張參考）：放兩張以上的圖自動進多圖參考，用 &lt;image1&gt;／&lt;Picture 1&gt; 指名。", hold: 1600, a: async (c) => { await c.press("m1"); MODE(c, 3);
       c.k("tray").innerHTML = `<div class="refc"><span class="num">1</span><img src="${ART.dusk}" alt=""><small>人物（底圖）</small></div><div class="refc" style="animation-delay:.15s"><span class="num">2</span><img src="${ART.snow}" alt=""><small>場景</small></div>`;
       await c.wait(500); c.k("mp").innerHTML = '把 <mark class="w-img">&lt;image1&gt;</mark> 的人放進 <mark class="w-img">&lt;image2&gt;</mark> 的雪景裡，保留臉、髮型和身材。'; await c.wait(600); } },
   { t: "放大：選倍率，2 倍就是長寬各乘 2。尺寸和張數都不用設。", a: async (c) => { await c.press("m4"); MODE(c, 4); await c.press("x2"); } },

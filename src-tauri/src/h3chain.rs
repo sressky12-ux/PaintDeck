@@ -126,7 +126,7 @@ pub fn normalize(v: &Value) -> Result<Value, String> {
         "aspect": pick(&v["aspect"], ASPECTS, "9:16"), "quality": pick(&v["quality"], QUALITIES, "std"), "size": size,
         "look": s("look"), "scene": s("scene"), "style": s("style"), "voice": s("voice"), "sound": s("sound"),
         "ref": opt_file(&v["ref"], "角色參考圖")?, "first": opt_file(&v["first"], "第 1 段首幀")?,
-        "refs": refs, "sheet": sheet, "review": v["review"].as_bool().unwrap_or(false), "where": pick(&v["where"], WHERES, "runpod"),
+        "te": h3::te_name(&v["te"])?, "refs": refs, "sheet": sheet, "review": v["review"].as_bool().unwrap_or(false), "where": pick(&v["where"], WHERES, "runpod"),
         // 接續段把參考圖（沒有就用第 1 段首幀）也送進 DiT：預設開，舊存檔沒有這欄也算開
         "ref_dit": v["ref_dit"].as_bool().unwrap_or(true),
         "segments": segs, "final": v.get("final").cloned().unwrap_or(Value::Null),
@@ -234,6 +234,8 @@ pub fn on_local(c: &Value) -> bool {
 #[derive(Clone, Debug)]
 pub struct GraphOpts {
     pub model: String,
+    pub te: String,
+    pub turbo_lora: bool,
     /// MiniMaxChunkFeedForward 切幾塊（小顯存卡用，結果一樣）；None＝不切
     pub chunks: Option<i64>,
     pub ref_node: bool,
@@ -245,7 +247,7 @@ pub struct GraphOpts {
 
 impl Default for GraphOpts {
     fn default() -> Self {
-        GraphOpts { model: h3::MODEL.to_string(), chunks: None, ref_node: false, latent_in: None }
+        GraphOpts { model: h3::MODEL.to_string(), te: h3::TE.into(), turbo_lora: false, chunks: None, ref_node: false, latent_in: None }
     }
 }
 
@@ -349,11 +351,14 @@ pub fn seg_graph_with(c: &Value, i: usize, seed: i64, o: &GraphOpts) -> Result<M
     } else {
         add("UNETLoader", json!({"unet_name": o.model, "weight_dtype": "default"}))
     };
+    if o.turbo_lora {
+        unet = add("LoraLoaderModelOnly", json!({"model": [unet, 0], "lora_name": h3::TURBO_REF2VA, "strength_model": 1.0}));
+    }
     if let Some(n) = o.chunks.filter(|n| (2..=64).contains(n)) {
         unet = add("MiniMaxChunkFeedForward", json!({"model": [unet, 0], "chunks": n, "seq_threshold": 4096}));
     }
     let dit: Vec<String> = if o.ref_node { dit_refs(c, i) } else { vec![] };
-    let clip = add("CLIPLoader", json!({"clip_name": h3::TE, "type": "minimax", "device": "default"}));
+    let clip = add("CLIPLoader", json!({"clip_name": o.te, "type": "minimax", "device": "default"}));
     let vae = add("VAELoader", json!({"vae_name": h3::VAE}));
     let avae = add("VAELoader", json!({"vae_name": h3::AVAE}));
     let mut cond_in = json!({"clip": [clip, 0], "vae": [vae, 0], "prompt": seg_prompt_with(c, i, dit.len()), "width": w, "height": h, "duration": secs, "ref_image_size": "match"});
@@ -701,6 +706,18 @@ mod tests {
         assert!(st.get("first_frame").is_none() && st.get("qwen_reference_1").is_none());
     }
 
+    #[test]
+    fn cloud_chain_uses_selected_encoder_and_turbo() {
+        let c = normalize(&json!({"id":"abc", "where":"runpod", "te":"custom.safetensors", "segments":[{}]})).unwrap();
+        let opts = GraphOpts { model: h3::OFFICIAL_REF2VA.into(), te: tx(&c["te"]), turbo_lora: true, ..Default::default() };
+        let graph = seg_graph_with(&c, 0, 1, &opts).unwrap();
+        assert_eq!(classes(&graph, "CLIPLoader")[0]["inputs"]["clip_name"], "custom.safetensors");
+        let guider = &classes(&graph, "BasicGuider")[0]["inputs"];
+        let lora = &graph[guider["model"][0].as_str().unwrap()]["inputs"];
+        assert_eq!(lora["lora_name"], h3::TURBO_REF2VA);
+        assert_eq!(graph[lora["model"][0].as_str().unwrap()]["inputs"]["unet_name"], h3::OFFICIAL_REF2VA);
+    }
+
     /// 本機拍：where=local 留得住、估時用本機的速度；節點圖換成本機的模型（GGUF 用 GGUF 載入器）、小顯存切塊接在取樣前
     #[test]
     fn local_chain_uses_local_model_and_chunks() {
@@ -710,13 +727,13 @@ mod tests {
         assert_eq!(est_secs(&c), 10.0 * LOCAL_SECS_PER_SEC);
         v["where"] = json!("somewhere");
         assert_eq!(normalize(&v).unwrap()["where"], "runpod");
-        let o = GraphOpts { model: "10Eros_w4a8.safetensors".into(), chunks: Some(8), ref_node: false, latent_in: None };
+        let o = GraphOpts { model: "10Eros_w4a8.safetensors".into(), chunks: Some(8), ..Default::default() };
         let g = seg_graph_with(&c, 0, 1, &o).unwrap();
         assert_eq!(classes(&g, "UNETLoader")[0]["inputs"]["unet_name"], "10Eros_w4a8.safetensors");
         let chunk = g.iter().find(|(_, n)| n["class_type"] == "MiniMaxChunkFeedForward").map(|(k, _)| k.clone()).unwrap();
         assert_eq!(classes(&g, "BasicGuider")[0]["inputs"]["model"][0], chunk);
         assert_eq!(classes(&g, "BasicScheduler")[0]["inputs"]["model"][0], chunk);
-        let g = seg_graph_with(&c, 0, 1, &GraphOpts { model: "h3-Q3.gguf".into(), chunks: None, ref_node: false, latent_in: None }).unwrap();
+        let g = seg_graph_with(&c, 0, 1, &GraphOpts { model: "h3-Q3.gguf".into(), ..Default::default() }).unwrap();
         assert_eq!(classes(&g, "UnetLoaderGGUF")[0]["inputs"]["unet_name"], "h3-Q3.gguf");
         assert!(classes(&g, "UNETLoader").is_empty() && classes(&g, "MiniMaxChunkFeedForward").is_empty());
     }

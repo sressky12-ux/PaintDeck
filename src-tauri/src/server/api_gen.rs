@@ -488,8 +488,12 @@ fn ignored_notes(p: &Map<String, Value>, fam: &str, mode: &str) -> Vec<String> {
     if pose && !pose_ok {
         out.push(format!("姿勢參考圖只在 Anima（文生圖、圖生圖）、MOSS（文生圖）、Qwen 2.1 有作用：這次（{name}・{mode}）沒有套用"));
     }
-    if p.get("hires").is_some_and(|h| truthy(Some(h)) && truthy(h.get("enabled"))) && !sampled {
-        out.push(format!("高解析修復只在文生圖、圖生圖有作用：這次（{mode}）沒有套用"));
+    if p.get("hires").is_some_and(|h| truthy(Some(h)) && truthy(h.get("enabled"))) && (!sampled || fam == families::MMIMG) {
+        if fam == families::MMIMG {
+            out.push(format!("高解析修復不支援 {name}：這次沒有套用"));
+        } else {
+            out.push(format!("高解析修復只在文生圖、圖生圖有作用：這次（{mode}）沒有套用"));
+        }
     }
     if p.get("layout").and_then(Value::as_array).is_some_and(|a| !a.is_empty()) && !(fam == families::MOSS && sampled) {
         out.push(format!("版面框只在 MOSS 的文生圖、圖生圖有作用：這次（{name}・{mode}）沒有套用"));
@@ -501,7 +505,61 @@ fn ignored_notes(p: &Map<String, Value>, fam: &str, mode: &str) -> Vec<String> {
             out.push(format!("Qwen 2.1 Turbo 用固定的蒸餾排程：步數 {n} 和排程器沒有作用（要調步數請換非 Turbo 的模型）"));
         }
     }
+    if fam == families::MMIMG && matches!(mode, "txt2img" | "img2img" | "multiref" | "inpaint" | "outpaint" | "detail") {
+        if let Some(n) = p.get("steps").and_then(crate::py::int).filter(|n| *n != 6) {
+            out.push(format!("MiniMax H3 Image 是 6 步蒸餾模型：步數 {n} 可能讓畫質變差（建議用 6 步）"));
+        }
+        if let Some(c) = p.get("cfg").and_then(crate::py::float).filter(|c| (*c - 1.0).abs() > 0.01) {
+            out.push(format!("MiniMax H3 Image 建議 CFG 1：目前 CFG {c} 可能過曝或失真"));
+        }
+    }
     out
+}
+
+/// 從 ComfyUI 目前可用的 UNET 清單挑一顆 MiniMax H3 Image 模型（優先 w4a8 量化版，8GB 友善）
+pub(super) async fn pick_mmimage_model(app: &Shared) -> Option<String> {
+    let all = app.comfy.options("UNETLoader", "unet_name").await.ok()?;
+    let roots = app.paths.unet_roots();
+    let names: Vec<String> = all
+        .iter()
+        .filter_map(|v| v.as_str().map(str::to_owned))
+        .filter(|n| families::family_of(&roots, n) == families::MMIMG)
+        .collect();
+    names
+        .iter()
+        .find(|n| n.to_lowercase().contains("w4a8"))
+        .or_else(|| names.first())
+        .cloned()
+}
+
+/// strip / sheet / diff 若指定或自動選用 MiniMax H3 Image，先解析本機實際檔名寫進 p["mm_edit_model"]
+async fn resolve_mm_edit_model(app: &Shared, p: &mut Map<String, Value>) -> Result<(), super::ApiError> {
+    let mode = p.get("mode").and_then(Value::as_str).unwrap_or("");
+    if !matches!(mode, "strip" | "sheet" | "diff") {
+        return Ok(());
+    }
+    let eng = p
+        .get(mode)
+        .and_then(|v| v.get("engine"))
+        .and_then(Value::as_str)
+        .unwrap_or("auto");
+    let model = p.get("model").and_then(Value::as_str).unwrap_or("");
+    let cur_is_mm = !model.starts_with(image_wf::PREFIX)
+        && families::family_of(&app.paths.unet_roots(), model) == families::MMIMG;
+    let want_mm = eng == families::MMIMG || (eng == "auto" && cur_is_mm);
+    if !want_mm {
+        p.shift_remove("mm_edit_model");
+        return Ok(());
+    }
+    let chosen = if cur_is_mm && !model.is_empty() {
+        model.to_string()
+    } else {
+        pick_mmimage_model(app)
+            .await
+            .ok_or_else(|| bad("找不到 MiniMax H3 Image 模型，請先安裝或把改圖引擎換回 Qwen 2.1"))?
+    };
+    p.insert("mm_edit_model".into(), json!(chosen));
+    Ok(())
 }
 
 /// 決定用哪個流程、家族，並照家族篩 LoRA。不碰 ComfyUI（匯出內建工作流也用它）
@@ -670,6 +728,8 @@ pub async fn submit_jobs(
         let u = app.comfy.url().to_string();
         let _ = blocking(move || crate::model_dirs::refresh_live(&u)).await;
     }
+    let mut p = p;
+    resolve_mm_edit_model(app, &mut p).await?;
     let Prepared { p, video, flow, fam, skipped, notes } = prepare(app, p)?;
     // AI 改寫的 llama-server 在 GPU 上會占掉 5～6GB，ComfyUI 會爆顯存：先關掉（正在改寫就等它寫完）
     app.pe.release_for_generation().await;

@@ -511,7 +511,7 @@ fn step_zh(step: &str) -> &'static str {
 }
 
 /// 遠端資料夾、主機、帳號只收安全字元（會放進 ssh 參數和 shell 指令；開頭不能是 -，免得被當成 ssh 選項）
-fn safe_word(s: &str, extra: &str) -> bool {
+pub(super) fn safe_word(s: &str, extra: &str) -> bool {
     !s.is_empty() && !s.starts_with('-') && s.chars().all(|c| c.is_ascii_alphanumeric() || extra.contains(c))
 }
 
@@ -1138,8 +1138,12 @@ impl Cloud {
 
     /// 腳本走標準輸入，裡面的口令不會出現在 ssh 或遠端 bash 的指令列。
     pub(crate) async fn train_script(&self, pod: &Pod, script: &str) -> Result<String, String> {
+        self.train_script_timeout(pod, script, Duration::from_secs(60)).await
+    }
+
+    pub(super) async fn train_script_timeout(&self, pod: &Pod, script: &str, timeout: Duration) -> Result<String, String> {
         let mut child = self.ssh_command(pod, "bash -s", true).spawn().map_err(|e| format!("開 SSH 失敗：{e}"))?;
-        tokio::time::timeout(Duration::from_secs(60), async {
+        tokio::time::timeout(timeout, async {
             let mut input = child.stdin.take().ok_or("SSH 沒有標準輸入")?;
             input.write_all(script.as_bytes()).await.map_err(|e| e.to_string())?;
             drop(input);
@@ -2465,7 +2469,7 @@ pub async fn ensure_chain_nodes(app: &Shared, on_status: &(dyn Fn(String) + Send
         Some(p) => p,
         // 接續節點已經有、只是少了參考圖節點：沒有 ssh 補不上去就算了，那一輪參考圖照舊只給文字編碼器
         None if have_chain => return Ok(()),
-        None => return Err("這台雲端沒有 ssh，裝不了長片的接續節點：改用能 ssh 的雲端主機，或把「在哪拍」改成本機".into()),
+        None => return Err("雲端缺少長片接續節點。用 Colab 時，請重新執行筆記本第 2 格安裝節點，再重新啟動 ComfyUI 和通道；其他主機請安裝 HerrgottsH3Infinite".into()),
     };
     let tgz = app.paths.res.join("extras").join("h3_infinite.tar.gz");
     if !tgz.is_file() {

@@ -33,9 +33,9 @@ The face, eye color, hairstyle, hair color, skin tone, makeup and every mark or 
 /// 生成頁是 Anima（動漫）時加的畫風字；其他家族照定稿的畫風，不加
 const ANIME: &str = " Anime illustration, clean line art, cel shading.";
 
-/// kind＝"turnaround"｜"face"，desc＝角色外觀（可空白），family＝生成頁的模型家族（anima 才加動漫畫風字）。
-/// 回傳（提示詞, 寬, 高）；kind 不認得回 None
-pub fn prompt(kind: &str, desc: &str, family: &str) -> Option<(String, u32, u32)> {
+/// kind＝"turnaround"｜"face"｜"portrait"，desc＝角色外觀（可空白），family＝生成頁的模型家族（anima 才加動漫畫風字），
+/// engine＝改圖引擎（"mmimage" 用 <Picture 1>，其餘用 <image1>）。回傳（提示詞, 寬, 高）；kind 不認得回 None
+pub fn prompt_for(kind: &str, desc: &str, family: &str, engine: &str) -> Option<(String, u32, u32)> {
     let (tpl, w, h) = match kind {
         "turnaround" => (TURN, TURN_W, TURN_H),
         "face" => (FACE, FACE_W, FACE_H),
@@ -43,12 +43,21 @@ pub fn prompt(kind: &str, desc: &str, family: &str) -> Option<(String, u32, u32)
         _ => return None,
     };
     let desc = desc.trim().trim_end_matches('.');
-    let who = if desc.is_empty() { "the character from <image1>".to_string() } else { format!("the character from <image1> ({desc})") };
+    let tag = if engine == "mmimage" { "<Picture 1>" } else { "<image1>" };
+    let who = if desc.is_empty() { format!("the character from {tag}") } else { format!("the character from {tag} ({desc})") };
     let mut p = tpl.replace("{who}", &who);
+    if engine == "mmimage" {
+        p = p.replace("<image1>", "<Picture 1>");
+    }
     if family == "anima" {
         p.push_str(ANIME);
     }
     Some((p, w, h))
+}
+
+/// 向下相容：預設 Qwen 2.1（<image1>）
+pub fn prompt(kind: &str, desc: &str, family: &str) -> Option<(String, u32, u32)> {
+    prompt_for(kind, desc, family, "qwen21")
 }
 
 /// 文字起點畫定稿時接在使用者文字後面的補字：全身、正面、A 字站姿、素色淺灰背景

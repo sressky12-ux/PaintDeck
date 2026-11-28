@@ -2,13 +2,16 @@
 // 標籤 = { id, name, zh, en, tags, refs }；refs 是這個角色放進多圖參考的檔名，送出時照目前的順序換成 <imageN>（使用者拖曳、刪圖都跟得上）。
 import { el } from "./util.js";
 
-/** 一個標籤在這個模型下要接的文字：Anima 用 tag；Qwen 2.1 寫名字＋第幾張圖；其他用英文 */
+/** 一個標籤在這個模型下要接的文字：Anima 用 tag；Qwen 2.1／MiniMax H3 Image 寫名字＋第幾張圖；其他用英文 */
 export function chipText(c, fam, refNames = []) {
   if (fam === "anima") return c.tags || c.en || "";
   if (!c.en) return "";
-  if (fam === "qwen21") {
-    const tags = (c.refs || []).map((n) => refNames.indexOf(n)).filter((i) => i >= 0).map((i) => `<image${i + 1}>`).join("");
-    return `${c.name}${tags ? `（${tags}）` : ""}：${c.en}`;
+  if (fam === "qwen21" || fam === "mmimage") {
+    const fmt = (i) => (fam === "mmimage" ? `<Picture ${i + 1}>` : `<image${i + 1}>`);
+    const tags = (c.refs || []).map((n) => refNames.indexOf(n)).filter((i) => i >= 0).map(fmt).join(fam === "mmimage" ? " " : "");
+    return fam === "mmimage"
+      ? `${c.name}${tags ? ` (${tags})` : ""}: ${c.en}`
+      : `${c.name}${tags ? `（${tags}）` : ""}：${c.en}`;
   }
   return `${c.name}: ${c.en}`;
 }

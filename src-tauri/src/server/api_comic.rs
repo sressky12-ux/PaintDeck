@@ -537,9 +537,17 @@ pub async fn fix(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     if !app.comfy.live().online {
         return Err(bad("ComfyUI 沒有連線"));
     }
+    let engine: &'static str = if tx(&b["engine"]) == families::MMIMG { families::MMIMG } else { families::QWEN21 };
+    let edit_model = if engine == families::MMIMG {
+        super::api_gen::pick_mmimage_model(&app)
+            .await
+            .ok_or_else(|| bad("找不到 MiniMax H3 Image 模型，請先安裝或改用 Qwen 2.1 修角色"))?
+    } else {
+        crate::graphs::STRIP_QWEN.to_string()
+    };
     let token = begin(&app, &id)?;
     let (a, id2, t2) = (app.clone(), id.clone(), token.clone());
-    spawn(&app, &id, token, async move { fix_page(&a, &id2, page, src, &t2).await });
+    spawn(&app, &id, token, async move { fix_page(&a, &id2, page, src, engine, edit_model, &t2).await });
     ok(json!({"ok": true}))
 }
 
@@ -733,17 +741,17 @@ fn plan_fix(p: &Value, panels: Vec<c_p::Panel>) -> Result<(Vec<FixItem>, bool), 
     Ok((items, split))
 }
 
-/// 一次 Qwen 2.1 多圖參考（官方 Turbo 8 步）：跑完把原始輸出搬到 keep（不留在圖庫），回傳 keep
+/// 一次改圖多圖參考（Qwen 2.1 官方 Turbo 8 步，或 MiniMax H3 Image 6 步）：跑完把原始輸出搬到 keep（不留在圖庫），回傳 keep
 #[allow(clippy::too_many_arguments)]
-async fn qwen_pass(app: &Shared, id: &str, page: i64, title: &str, refs: Vec<Value>, prompt: String, loras: &Value, seed: i64, keep: std::path::PathBuf, token: &CancellationToken) -> Result<std::path::PathBuf, String> {
-    qwen_job(app, id, page, title, json!({"mode": "multiref", "refs": refs}), prompt, loras, seed, keep, token).await
+async fn qwen_pass(app: &Shared, id: &str, page: i64, title: &str, engine: &str, edit_model: &str, refs: Vec<Value>, prompt: String, loras: &Value, seed: i64, keep: std::path::PathBuf, token: &CancellationToken) -> Result<std::path::PathBuf, String> {
+    qwen_job(app, id, page, title, engine, edit_model, json!({"mode": "multiref", "refs": refs}), prompt, loras, seed, keep, token).await
 }
 
 /// 只換頭（graphs 的 headswap：AnimaHeadCrop 照 mask 那顆頭裁切 → Qwen＋BFS 只重畫頭 → AnimaHeadStitch）。target、mask＝input 裡的檔
 #[allow(clippy::too_many_arguments)]
 async fn head_pass(app: &Shared, id: &str, page: i64, title: &str, target: &str, mask: &str, refs: Vec<Value>, seed: i64, keep: std::path::PathBuf, token: &CancellationToken) -> Result<std::path::PathBuf, String> {
     let mode = json!({"mode": "headswap", "init_image": target, "refs": refs, "head": head_opts(mask)});
-    qwen_job(app, id, page, title, mode, BFS_PROMPT.to_string(), &json!([{"name": BFS_LORA, "strength": 1.0}]), seed, keep, token).await
+    qwen_job(app, id, page, title, families::QWEN21, crate::graphs::STRIP_QWEN, mode, BFS_PROMPT.to_string(), &json!([{"name": BFS_LORA, "strength": 1.0}]), seed, keep, token).await
 }
 
 /// headswap 的 head 參數：指定那顆頭的遮罩檔，頭附近多裁 0.6 倍、放大到約 1MP
@@ -835,13 +843,24 @@ async fn ref_head_feature(app: &Shared, files: &[std::path::PathBuf], tmp: &std:
 }
 
 #[allow(clippy::too_many_arguments)]
-async fn qwen_job(app: &Shared, id: &str, page: i64, title: &str, mode: Value, prompt: String, loras: &Value, seed: i64, keep: std::path::PathBuf, token: &CancellationToken) -> Result<std::path::PathBuf, String> {
+async fn qwen_job(app: &Shared, id: &str, page: i64, title: &str, engine: &str, edit_model: &str, mode: Value, prompt: String, loras: &Value, seed: i64, keep: std::path::PathBuf, token: &CancellationToken) -> Result<std::path::PathBuf, String> {
+    let is_mm = engine == families::MMIMG;
+    let prompt = if is_mm {
+        let adapted = crate::graphs::adapt_mmimage_refs(&prompt);
+        if adapted.contains("<Picture ") { adapted } else { format!("Edit <Picture 1>. {adapted}") }
+    } else {
+        prompt
+    };
     let mut params = json!({
-        "model": crate::graphs::STRIP_QWEN, "size_mode": "auto", "pixels": crate::graphs::QWEN21_PIXELS,
-        "prompt": prompt, "negative": "", "steps": 8, "cfg": 1, "sampler": "euler", "scheduler": "simple", "seed": seed % (1i64 << 48),
-        "width": 1024, "height": 1024, "loras": loras, "count": 1, "idea": format!("漫畫修角色：{title}"),
+        "model": edit_model, "size_mode": "auto", "pixels": crate::graphs::QWEN21_PIXELS,
+        "prompt": prompt, "negative": "", "steps": if is_mm { 6 } else { 8 }, "cfg": 1, "sampler": "euler", "scheduler": "simple", "seed": seed % (1i64 << 48),
+        "width": 1024, "height": 1024, "loras": if is_mm { json!([]) } else { loras.clone() }, "count": 1, "idea": format!("漫畫修角色：{title}"),
         "comic": {"id": id, "kind": "fix_part", "from": page},
     });
+    if is_mm {
+        params["mm_pe"] = json!("");
+        params["mm_max_pixels"] = json!(1280 * 1280);
+    }
     for (k, v) in mode.as_object().into_iter().flatten() {
         params[k] = v.clone();
     }
@@ -884,7 +903,8 @@ struct FixPrep {
     head: Option<HeadPlan>,
 }
 
-async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, token: &CancellationToken) -> Step {
+async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, engine: &str, edit_model: String, token: &CancellationToken) -> Step {
+    let is_mm = engine == families::MMIMG;
     let p = load(app, id).map_err(|e| e.1)?;
     let title = tx(&p["title"]);
     let cards = c::chars(&p);
@@ -899,16 +919,16 @@ async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, to
     let found = panels.len();
     let (items, split) = plan_fix(&p, panels)?;
     app.pe.release_for_generation().await;
-    ensure_family(app, families::QWEN21).await;
+    ensure_family(app, engine).await;
     let how = if split {
         format!("找到 {slots} 格，要修 {} 格", items.len())
     } else {
         format!("格子找不齊（找到 {found} 塊，版型是 {slots} 格），整頁一次修")
     };
     emit(app, id, "msg", how, None);
-    // 對齊原圖的 LoRA：ComfyUI 有才掛（沒有照樣能修，只是位置可能偏一點）
+    // 對齊原圖的 LoRA（Qwen 專用；MiniMax 不掛 Qwen LoRA，也不走 SAM3 只換頭路線）
     let norm = |s: &str| s.replace('\\', "/").to_lowercase();
-    let have_cons = app
+    let have_cons = !is_mm && app
         .comfy
         .options("LoraLoaderModelOnly", "lora_name")
         .await
@@ -917,14 +937,14 @@ async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, to
         .any(|v| v.as_str().is_some_and(|n| norm(n) == norm(FIX_CONSISTENCY_LORA)));
     let loras = if have_cons { json!([{"name": FIX_CONSISTENCY_LORA, "strength": 1.0}]) } else { json!([]) };
     // 只換頭要 BFS LoRA 和繪匣的漫畫小節點（resources\extras\anima_comic_nodes，開站同步；ComfyUI 要重開過才認得）
-    let have_bfs = app
+    let have_bfs = !is_mm && app
         .comfy
         .options("LoraLoaderModelOnly", "lora_name")
         .await
         .unwrap_or_default()
         .iter()
         .any(|v| v.as_str().is_some_and(|n| norm(n) == norm(BFS_LORA)));
-    let have_node = app.comfy.object_info("AnimaHeadCrop").await.is_ok_and(|v| v.get("input").is_some());
+    let have_node = !is_mm && app.comfy.object_info("AnimaHeadCrop").await.is_ok_and(|v| v.get("input").is_some());
     let assets = super::api_assets::assets_dir(&app.paths);
     let fixdir = app.paths.data.join("comic").join("fix").join(id);
     let seed0 = random_seed();
@@ -1066,7 +1086,7 @@ async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, to
                         super::api_director::to_input(app, &swapped, &ename)?;
                         let mode = json!({"mode": "headswap", "init_image": ename, "refs": [], "head": head_opts(&mname)});
                         let keep = fixdir.join(format!("{page}_{seed0}_{k}_{ci}_e.png"));
-                        qwen_job(app, id, page, &title, mode, prompt, &loras, seed + 1, keep, token).await?
+                        qwen_job(app, id, page, &title, families::QWEN21, crate::graphs::STRIP_QWEN, mode, prompt, &loras, seed + 1, keep, token).await?
                     }
                     None => swapped,
                 };
@@ -1080,12 +1100,12 @@ async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, to
                 None => continue,
             }
         } else {
-            two_pass(app, id, page, &title, &it, &who, (k, total), refs, &cast, &expr, &loras, seed, (&fixdir, seed0), token).await?
+            two_pass(app, id, page, &title, engine, &edit_model, &it, &who, (k, total), refs, &cast, &expr, &loras, seed, (&fixdir, seed0), token).await?
         };
         // 貼回去
         let panel = it.panel;
         img = blocking(move || -> Result<image::RgbImage, String> {
-            let fixed = image::open(&fixed).map_err(|e| format!("讀 Qwen 的結果失敗：{e}"))?.to_rgb8();
+            let fixed = image::open(&fixed).map_err(|e| format!("讀改圖結果失敗：{e}"))?.to_rgb8();
             let mut img = img;
             match &panel {
                 Some(pn) => c_p::paste(&mut img, pn, &fixed),
@@ -1096,7 +1116,7 @@ async fn fix_page(app: &Shared, id: &str, page: i64, src: std::path::PathBuf, to
         .await?;
         done += 1;
     }
-    finish_fix(app, id, page, &title, img, seed0, done).await
+    finish_fix(app, id, page, &title, &edit_model, img, seed0, done).await
 }
 
 /// 兩段式：① 換頭（多圖參考）② 補表情（反推片語或格子內容，整頁一次修不補）
@@ -1106,6 +1126,8 @@ async fn two_pass(
     id: &str,
     page: i64,
     title: &str,
+    engine: &str,
+    edit_model: &str,
     it: &FixItem,
     who: &str,
     (k, total): (usize, usize),
@@ -1119,7 +1141,7 @@ async fn two_pass(
 ) -> Result<std::path::PathBuf, String> {
     // ① 換頭
     emit(app, id, "msg", format!("修{}（{who}）：換成角色卡的長相… {}/{total}", it.label, k + 1), None);
-    let swapped = qwen_pass(app, id, page, title, refs, swap_prompt(it.panel.is_none(), cast), loras, seed, fixdir.join(format!("{page}_{seed0}_{k}_a.png")), token).await?;
+    let swapped = qwen_pass(app, id, page, title, engine, edit_model, refs, swap_prompt(it.panel.is_none(), cast), loras, seed, fixdir.join(format!("{page}_{seed0}_{k}_a.png")), token).await?;
     // ② 補表情（整頁一次修不補：一頁裡每個人的表情不一樣）
     let second = if it.panel.is_some() { expression_prompt(expr, &it.scene) } else { None };
     match second {
@@ -1127,14 +1149,15 @@ async fn two_pass(
             emit(app, id, "msg", format!("修{}（{who}）：把表情改回原本的樣子… {}/{total}", it.label, k + 1), None);
             let bname = fix_input_name(id, page, seed0, k, "b");
             super::api_director::to_input(app, &swapped, &bname)?;
-            qwen_pass(app, id, page, title, vec![json!({"image": bname})], prompt, loras, seed + 1, fixdir.join(format!("{page}_{seed0}_{k}_b.png")), token).await
+            qwen_pass(app, id, page, title, engine, edit_model, vec![json!({"image": bname})], prompt, loras, seed + 1, fixdir.join(format!("{page}_{seed0}_{k}_b.png")), token).await
         }
         None => Ok(swapped),
     }
 }
 
 /// 修好的整頁存成新的一張（進圖庫），記在那一筆結果的 fix
-async fn finish_fix(app: &Shared, id: &str, page: i64, title: &str, img: image::RgbImage, seed0: i64, done: usize) -> Step {
+#[allow(clippy::too_many_arguments)]
+async fn finish_fix(app: &Shared, id: &str, page: i64, title: &str, edit_model: &str, img: image::RgbImage, seed0: i64, done: usize) -> Step {
     if done == 0 {
         return Err("角色卡的參考圖檔都找不到了（資產可能被刪掉）：重新從資產抽屜加角色".into());
     }
@@ -1148,7 +1171,7 @@ async fn finish_fix(app: &Shared, id: &str, page: i64, title: &str, img: image::
     .await?;
     let title = format!("漫畫修角色：{title}");
     let info = json!({"mode": "multiref", "prompt": title, "negative": "", "seed": seed0, "width": w, "height": h, "idea": title});
-    let params = json!({"mode": "multiref", "model": crate::graphs::STRIP_QWEN, "prompt": title, "seed": seed0, "width": w, "height": h,
+    let params = json!({"mode": "multiref", "model": edit_model, "prompt": title, "seed": seed0, "width": w, "height": h,
                         "comic": {"id": id, "kind": "fix", "from": page}});
     let nid = app.db.add_image(&fname, "AnimaWeb", "output", &info, &params, None).map_err(|e| e.to_string())?;
     update(app, id, |p| {

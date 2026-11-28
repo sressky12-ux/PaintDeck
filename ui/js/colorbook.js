@@ -174,7 +174,7 @@ async function runBook(pages) {
   // 狀態先寫：後端的進度事件可能比這個請求的回應先到
   status("開始上色…", "amb");
   try {
-    const r = await api(`/api/colorbook/${B.id}/run`, { json: { pages: pages || [], redo: !pages && F("cbRedo").checked, ai: F("cbAi").checked, brain: F("cbBrain").value, keep_lines: F("cbKeep").checked } });
+    const r = await api(`/api/colorbook/${B.id}/run`, { json: { pages: pages || [], redo: !pages && F("cbRedo").checked, ai: F("cbAi").checked, brain: F("cbBrain").value, engine: F("cbEngine")?.value || "qwen21", keep_lines: F("cbKeep").checked } });
     setRunning(true);
     render();
     toast(`開始上色：${r.pages} 頁`, "ok");
@@ -216,6 +216,10 @@ export function init() {
   F("cbBook").onchange = () => openBook(F("cbBook").value);
   F("cbBrain").value = store.get("cbBrain", "35b") === "9b" ? "9b" : "35b";
   F("cbBrain").onchange = () => store.set("cbBrain", F("cbBrain").value);
+  if (F("cbEngine")) {
+    F("cbEngine").value = store.get("editEngine", "qwen21") === "mmimage" ? "mmimage" : "qwen21";
+    F("cbEngine").onchange = () => store.set("editEngine", F("cbEngine").value);
+  }
   F("cbNew").onclick = () => F("cbFile").click();
   F("cbFile").onchange = () => { const f = F("cbFile").files; if (f.length) upload(f); F("cbFile").value = ""; };
   const drop = F("cbDrop");

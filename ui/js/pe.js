@@ -172,12 +172,12 @@ async function loadPoses(want) {
 }
 
 // ---------------------------------------------------------------- 改寫類型：選單選「自動」就照家族和模式決定
-const I2I_MODES = ["img2img", "inpaint", "multiref"];
-// Qwen 2.1、MOSS-Image 都吃英文完整句子（文生圖版）；改圖版要看參考圖，只有 Qwen 2.1 會用到
-const prose = () => ctx.family() === "qwen21" || ctx.family() === "moss";
+const I2I_MODES = ["img2img", "inpaint", "outpaint", "multiref"];
+// Qwen 2.1、MOSS-Image、MiniMax H3 Image、Krea 2 都吃英文完整句子；改圖版要看參考圖，Qwen 2.1 與 MiniMax H3 Image 適用
+const prose = () => ["qwen21", "moss", "mmimage", "krea2"].includes(ctx.family());
+const refEditFam = () => ctx.family() === "qwen21" || ctx.family() === "mmimage";
 function autoTask() {
-  const fam = ctx.family();
-  if (fam === "qwen21" && I2I_MODES.includes(ctx.mode())) return "i2i";
+  if (refEditFam() && I2I_MODES.includes(ctx.mode())) return "i2i";
   return prose() ? "t2i" : "anima";
 }
 export function task() {
@@ -189,15 +189,16 @@ const PRESET_NAME = { t2i: "文生圖版", i2i: "改圖版", anima: "Anima 版",
 
 // 選的預設跟目前的模型、模式對不上時的提示（不擋，照樣可以改寫）
 function mismatch(t) {
-  const qwen = ctx.family() === "qwen21", mode = ctx.mode(), withImg = I2I_MODES.includes(mode);
+  const fam = ctx.family(), qwen = refEditFam(), mode = ctx.mode(), withImg = I2I_MODES.includes(mode);
+  const famTitle = fam === "qwen21" ? "Qwen 2.1" : fam === "mmimage" ? "MiniMax H3 Image" : fam === "krea2" ? "Krea 2" : "MOSS-Image";
   if (!prose() && (t === "t2i" || t === "i2i"))
-    return `目前的模型是 Anima，「${PRESET_NAME[t]}」寫的是 Qwen 用的英文長段落，Anima 看 tag 比較準。建議選「自動」或「Anima 版」。`;
-  if (prose() && t === "anima") return `目前的模型是 ${qwen ? "Qwen 2.1" : "MOSS-Image"}，「Anima 版」會寫 Danbooru tag 和權重，它看不懂權重，tag 的效果也比句子差。建議選「自動」。`;
-  if (!qwen && t === "i2i") return "「改圖版」是給 Qwen 2.1 看參考圖用的，目前的模型用不到。建議選「自動」。";
-  if (t === "i2i" && !withImg) return "「改圖版」要看參考圖，現在的模式沒有放圖，改寫會失敗。換到圖生圖、局部重繪或多圖參考再用。";
+    return `目前的模型是 Anima，「${PRESET_NAME[t]}」寫的是自然語言長段落，Anima 看 tag 比較準。建議選「自動」或「Anima 版」。`;
+  if (prose() && t === "anima") return `目前的模型是 ${famTitle}，「Anima 版」會寫 Danbooru tag 和權重，它看不懂權重，tag 的效果也比句子差。建議選「自動」。`;
+  if (!qwen && t === "i2i") return "「改圖版」是給 Qwen 2.1 或 MiniMax H3 Image 看參考圖用的，目前的模型用不到。建議選「自動」。";
+  if (t === "i2i" && !withImg) return "「改圖版」要看參考圖，現在的模式沒有放圖，改寫會失敗。換到圖生圖／改圖、局部重繪或擴圖再用。";
   if (qwen && t === "t2i" && withImg) return "現在是要放圖的模式，「文生圖版」不會看你放的圖，只照想法寫。要它看圖請選「自動」或「改圖版」。";
   // 2026-10-29 盤點：MOSS 的圖生圖／局部重繪按「自動」會走文生圖版、不送原圖，以前一聲不吭
-  if (!qwen && prose() && t === "t2i" && withImg) return "MOSS-Image 的改寫不會看你放的圖，只照想法寫整張畫面的描述。只想改一小處（例如換個手勢）又要其他不變，建議換 Qwen 2.1 用「改圖版」。";
+  if (!qwen && prose() && t === "t2i" && withImg) return `${famTitle} 的改寫不會看你放的圖，只照想法寫整張畫面的描述。只想改一小處（例如換個手勢）又要其他不變，建議換 Qwen 2.1 或 MiniMax H3 Image 用「改圖版」。`;
   if (t === "adult" && withImg) return "「成人（體位）」只照想法寫文生圖用的提示詞，不會看你放的圖。";
   return "";
 }
@@ -377,7 +378,8 @@ async function run(opts = {}) {
   const secs = ((performance.now() - t0) / 1000).toFixed(1);
   status(result.fallback ? "⚠ " + result.note : (result.cached ? "用了快取（同樣的輸入改寫過）。" : `完成：${secs} 秒` + (result.load_seconds ? `（含載入模型 ${result.load_seconds.toFixed(1)} 秒）` : "")) + (result.note && !result.fallback ? "　" + result.note : ""),
     result.fallback ? "err" : "ok");
-  if (t === "i2i" && images.length > 1 && !/<image\d+>/.test(result.prompt)) toast("改寫結果裡沒有 <image1> 這類標記，套用前可以自己補上，模型才分得清楚哪張做什麼");
+  const needTag = ctx.family() === "mmimage" ? "<Picture 1>" : "<image1>";
+  if (t === "i2i" && images.length > 1 && !/<(?:image|Picture )\d+>/.test(result.prompt)) toast(`改寫結果裡沒有 ${needTag} 這類標記，套用前可以自己補上，模型才分得清楚哪張做什麼`);
   return v;
 }
 

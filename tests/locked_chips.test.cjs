@@ -25,11 +25,13 @@ test('lockedPrefix：Anima 用 tag、逗號接；其他一個角色一行、英�
   assert.equal(lockedPrefix([], 'anima'), '');
 });
 
-test('lockedPrefix：Qwen 2.1 照目前參考圖順序寫 <imageN>，被刪掉的圖不寫', () => {
+test('lockedPrefix：Qwen 2.1 用 <imageN>，MiniMax H3 Image 用 <Picture N>，被刪掉的圖不寫', () => {
   const { lockedPrefix } = load();
   assert.equal(lockedPrefix([MIKA], 'qwen21', ['x.png', 'as_7_p.png', 'as_7_s.png']), '美香（<image2><image3>）：female, early 20s, long orange hair.');
   assert.equal(lockedPrefix([MIKA], 'qwen21', ['as_7_s.png']), '美香（<image1>）：female, early 20s, long orange hair.');
   assert.equal(lockedPrefix([MIKA, REN], 'qwen21', []), '美香：female, early 20s, long orange hair.\n蓮：male, short black hair.');
+  assert.equal(lockedPrefix([MIKA], 'mmimage', ['x.png', 'as_7_p.png', 'as_7_s.png']), '美香 (<Picture 2> <Picture 3>): female, early 20s, long orange hair.');
+  assert.equal(lockedPrefix([MIKA], 'mmimage', []), '美香: female, early 20s, long orange hair.');
 });
 
 test('withLocked：接在最前面；批次每行都接；已經接過不重複', () => {

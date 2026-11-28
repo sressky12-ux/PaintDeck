@@ -564,7 +564,9 @@ async function loadCloud() {
 }
 
 // 雲端三種連法：runpod（自動租、用完刪機）／ssh（任何一家雲端租好的主機）／url（現成的網址）
-const CLOUD_WAYS = ["runpod", "ssh", "url"];
+const CLOUD_WAYS = ["runpod", "ssh", "url", "colab"];
+const COLAB_URL = "https://colab.research.google.com/github/sressky12-ux/PaintDeck/blob/main/resources/cloud/paintdeck_h3_colab.ipynb";
+const COLAB_TUNNEL = /^https:\/\/[a-z0-9-]+\.trycloudflare\.com\/?$/;
 const CLOUD_BTN = {
   runpod: ["開雲端", "關機刪除"], ssh: ["連線並安裝", "停止"], url: ["連線", "斷線"],
 };
@@ -694,6 +696,9 @@ function setWay(v) {
   F("acRunpod").hidden = acWay !== "runpod";
   F("acSsh").hidden = acWay !== "ssh";
   F("acUrl").hidden = acWay !== "url";
+  F("acColab").hidden = acWay !== "colab";
+  F("acPacks").hidden = acWay === "colab";
+  F("acSave").hidden = acWay === "colab";
 }
 
 function acMsg(text, cls = "") {
@@ -709,10 +714,11 @@ function paintKeys() {
   F("acRpHas").textContent = c.has_runpod_key ? "已存一組（要換才貼新的）" : c.runpod_env ? "目前用環境變數 RUNPOD_API_KEY" : "還沒填";
   F("acRpClear").hidden = !c.has_runpod_key;
   F("acComfyKey").placeholder = c.has_comfy_key ? "已存（要換才填）" : "";
+  F("acColabKey").placeholder = c.has_comfy_key && COLAB_TUNNEL.test(c.comfy_url) ? "已存（要換才填）" : "";
   F("acLlmKey").placeholder = c.has_llm_key ? "已存（要換才填）" : "";
   F("acKeysHas").textContent = c.has_comfy_key || c.has_llm_key ? "金鑰欄位空著＝沿用已存的；要清掉已存的金鑰，在欄位裡打一個減號 - 再儲存。" : "";
   F("acPub").value = cloud?.pubkey || "";
-  for (const id of ["acRpKey", "acComfyKey", "acLlmKey"]) F(id).value = "";
+  for (const id of ["acRpKey", "acComfyKey", "acLlmKey", "acColabKey"]) F(id).value = "";
 }
 
 /** H3 影片台的「雲端設定…」：同一個視窗（先讀最新狀態，助手頁沒開過也能用） */
@@ -723,7 +729,9 @@ export async function openCloudSettings() {
 
 function openCloudCfg() {
   const c = cloud?.cfg || {};
-  setWay(c.provider);
+  const colabUrl = COLAB_TUNNEL.test(c.comfy_url) ? c.comfy_url : "";
+  setWay(c.provider === "url" && colabUrl && cloud?.packs?.h3 && !cloud.packs.agent && !cloud.packs.h3x ? "colab" : c.provider);
+  F("acColabUrl").value = colabUrl;
   F("acSshCmd").value = "";
   F("acHost").value = c.ssh_host || ""; F("acPort").value = c.ssh_port || 22; F("acUser").value = c.ssh_user || "";
   F("acDir").value = c.ssh_dir || ""; F("acKey").value = c.ssh_key || ""; F("acPrice").value = c.ssh_price || ""; F("acShutdown").checked = !!c.ssh_shutdown;
@@ -754,6 +762,15 @@ function parseSsh(cmd) {
 }
 
 function cfgBody() {
+  if (acWay === "colab") {
+    const url = F("acColabUrl").value.trim();
+    const key = F("acColabKey").value.trim();
+    if (!COLAB_TUNNEL.test(url)) throw new Error("請貼上筆記本第 4 格顯示的 https:// 開頭的 trycloudflare.com 網址");
+    if (!key && !(cloud?.cfg?.has_comfy_key && url.replace(/\/$/, "") === cloud.cfg.comfy_url?.replace(/\/$/, ""))) {
+      throw new Error("請貼上筆記本第 4 格顯示的口令");
+    }
+    return { provider: "url", comfy_url: url, ...(key ? { comfy_key: key } : {}), packs: { agent: false, h3: true, h3x: false } };
+  }
   const b = {
     provider: acWay,
     ssh_host: F("acHost").value.trim(), ssh_port: +F("acPort").value || 22, ssh_user: F("acUser").value.trim(),
@@ -1083,6 +1100,7 @@ export function init() {
     catch (e) { toast((kind === "runpod" ? "關機失敗：" : "停止失敗：") + e.message + (kind === "runpod" ? "\n請到 RunPod 網站確認機器有沒有刪掉。" : ""), "err"); }
   };
   F("agCloudCfg").onclick = () => openCloudCfg();
+  F("acNotebook").onclick = () => window.open(COLAB_URL, "_blank", "noopener");
   F("acWay").addEventListener("click", (e) => { const b = e.target.closest("button[data-v]"); if (b) setWay(b.dataset.v); });
   // H3 進階一定連 H3；拿掉 H3 就沒有進階
   F("acPackH3x").onchange = () => { if (F("acPackH3x").checked) F("acPackH3").checked = true; };

@@ -14,7 +14,9 @@ pub async fn prompt(Body(b): Body) -> ApiResult {
     if kind == "pose" {
         return ok(json!({"prompt": charsheet::pose_suffix(&family)}));
     }
-    let (p, w, h) = charsheet::prompt(&kind, &tx(&b["desc"]), &family).ok_or_else(|| bad("kind 只能是 turnaround、face、portrait 或 pose"))?;
+    let engine = tx(&b["engine"]);
+    let (p, w, h) = charsheet::prompt_for(&kind, &tx(&b["desc"]), &family, if engine.is_empty() { "qwen21" } else { &engine })
+        .ok_or_else(|| bad("kind 只能是 turnaround、face、portrait 或 pose"))?;
     ok(json!({"prompt": p, "width": w, "height": h}))
 }
 

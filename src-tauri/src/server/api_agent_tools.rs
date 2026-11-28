@@ -5,7 +5,7 @@ use super::api_agent::render_local;
 use super::Shared;
 use crate::agent_tools::{self as at, clip, RESULT_CHARS};
 use crate::director::tx;
-use crate::families::{ANIMA, KREA2, MOSS, QWEN21, SDXL};
+use crate::families::{ANIMA, KREA2, MMIMG, MOSS, QWEN21, SDXL};
 use axum::http::{header, Method, Request};
 use serde_json::{json, Map, Value};
 use std::time::Duration;
@@ -103,6 +103,7 @@ pub async fn call_api(app: &Shared, method: &str, path: &str, query: &Value, bod
 pub fn family_defaults(fam: &str, model: &str, anima_neg: &str) -> Map<String, Value> {
     let turbo = model.to_lowercase().contains("turbo");
     let (steps, cfg, sampler, scheduler, neg) = match fam {
+        MMIMG => (6, 1.0, "euler", "simple", String::new()),
         MOSS => (25, 3.0, "euler", "sgm_uniform", MOSS_NEG.to_string()),
         // Krea 2 Turbo 照 ComfyUI 內建範本（CFG 1 負面詞不會用到）；Raw 沒有官方建議值
         KREA2 => (if turbo { 8 } else { 30 }, if turbo { 1.0 } else { 4.0 }, "euler", "simple", String::new()),
@@ -257,8 +258,12 @@ pub fn match_model<'a>(names: &'a [(String, String)], want: &str) -> Option<&'a 
 /// 只講了家族（「Qwen 2.1」「qwen」「MOSS」「Anima」）：挑那個家族的一顆，Turbo 優先（2026-10-27 實測 9B 會這樣寫）
 pub fn match_family<'a>(names: &'a [(String, String)], want: &str) -> Option<&'a (String, String)> {
     let w = want.to_lowercase();
-    let fam = if w.contains("qwen") { QWEN21 } else if w.contains("moss") { MOSS } else if w.contains("krea") { KREA2 } else if w.contains("anima") { ANIMA } else if ["sdxl", "noob", "illustrious", "pony"].iter().any(|k| w.contains(k)) { SDXL } else { return None };
+    let fam = if w.contains("mmimage") || w.contains("minimax") || (w.contains("h3") && (w.contains("image") || w.contains("圖") || w.contains("图"))) { MMIMG }
+        else if w.contains("qwen") { QWEN21 } else if w.contains("moss") { MOSS } else if w.contains("krea") { KREA2 } else if w.contains("anima") { ANIMA } else if ["sdxl", "noob", "illustrious", "pony"].iter().any(|k| w.contains(k)) { SDXL } else { return None };
     let of: Vec<&(String, String)> = names.iter().filter(|(_, f)| f == fam).collect();
+    if fam == MMIMG {
+        return of.iter().find(|(n, _)| n.to_lowercase().contains("w4a8")).or(of.first()).copied();
+    }
     of.iter().find(|(n, _)| n.to_lowercase().contains("turbo")).or(of.first()).copied()
 }
 
@@ -272,15 +277,33 @@ pub(super) async fn models(app: &Shared) -> Result<(Vec<(String, String)>, Strin
     Ok((list, tx(&st["settings"]["negative"])))
 }
 
-/// 換成 Qwen 2.1 來改圖：目前就是 Qwen 2.1 照用，不然挑一顆（Turbo 優先）
-async fn qwen_base(app: &Shared, base: &Map<String, Value>) -> Result<Map<String, Value>, String> {
-    if tx(base.get("family").unwrap_or(&Value::Null)) == QWEN21 {
-        return Ok(base.clone());
+/// 挑改圖用的模型（Qwen 2.1 或 MiniMax H3 Image）：
+/// 若指定 engine（"mmimage"／"qwen21"）就用該家族；沒指定時若目前已經是兩者之一則沿用，否則先 Qwen 2.1、沒有再 MiniMax H3 Image。
+async fn edit_base(app: &Shared, base: &Map<String, Value>, engine: Option<&str>) -> Result<Map<String, Value>, String> {
+    let cur = tx(base.get("family").unwrap_or(&Value::Null));
+    let want = engine.map(str::trim).filter(|s| !s.is_empty());
+    match want {
+        Some(f) if cur == f => return Ok(base.clone()),
+        None if cur == QWEN21 || cur == MMIMG => return Ok(base.clone()),
+        _ => {}
     }
     let (list, neg) = models(app).await?;
-    let q: Vec<&(String, String)> = list.iter().filter(|(_, f)| f == QWEN21).collect();
-    let pick = q.iter().find(|(n, _)| n.to_lowercase().contains("turbo")).or(q.first()).ok_or("這台電腦沒有 Qwen 2.1（編輯）模型，改圖和角色多視圖都要它：到「安裝與修復」或模型頁下載")?;
-    Ok(switch_base(base, &pick.0, QWEN21, &neg))
+    let pick_for = |fam: &str| -> Option<&(String, String)> {
+        let of: Vec<&(String, String)> = list.iter().filter(|(_, f)| f == fam).collect();
+        if fam == MMIMG {
+            of.iter().find(|(n, _)| n.to_lowercase().contains("w4a8")).or(of.first()).copied()
+        } else {
+            of.iter().find(|(n, _)| n.to_lowercase().contains("turbo")).or(of.first()).copied()
+        }
+    };
+    let chosen = match want {
+        Some(MMIMG) => pick_for(MMIMG).ok_or("這台電腦沒有 MiniMax H3 Image 模型：到下載中心找「MiniMax H3 Image」")?,
+        Some(QWEN21) => pick_for(QWEN21).ok_or("這台電腦沒有 Qwen 2.1（編輯）模型：到「安裝與修復」或模型頁下載")?,
+        _ => pick_for(QWEN21)
+            .or_else(|| pick_for(MMIMG))
+            .ok_or("這台電腦沒有 Qwen 2.1 或 MiniMax H3 Image（編輯）模型，改圖和角色多視圖需要其中一種：到下載中心或「安裝與修復」下載")?,
+    };
+    Ok(switch_base(base, &chosen.0, &chosen.1, &neg))
 }
 
 /// 拿掉跟這次無關的欄位
@@ -440,7 +463,7 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
             })?;
             // 跟網頁的換模型（api_agent::base_model）同一條規則：別的家族會配錯文字編碼器和 VAE（2026-10-29 盤點）
             if !crate::families::is_builtin(&fam) {
-                return Err(format!("{name} is a {fam} model; you can only use Anima, Qwen 2.1, MOSS-Image, Krea 2 and SDXL models. Pick one of those, or stay on the current model."));
+                return Err(format!("{name} is a {fam} model; you can only use Anima, Qwen 2.1, MOSS-Image, Krea 2, MiniMax H3 Image and SDXL models. Pick one of those, or stay on the current model."));
             }
             let b = switch_base(cx.base, &name, &fam, &neg);
             // 9B 換完模型會把上一個請求的提示詞整段搬過來（2026-10-27 實測：要橘貓，畫成上一張的銀髮女孩）：把這次的要求貼回去
@@ -488,15 +511,23 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
         }
         "edit" => {
             let (name, w, h) = input_of(app, args, cx.user_images).await?;
-            let mut q = clean(qwen_base(app, cx.base).await?);
+            let eng = args.get("engine").and_then(Value::as_str);
+            let mut q = clean(edit_base(app, cx.base, eng).await?);
+            let is_mm = q.get("family").and_then(Value::as_str) == Some(MMIMG);
             q.insert("mode".into(), json!("multiref"));
-            q.insert("prompt".into(), args["instruction"].clone());
+            let mut inst = tx(&args["instruction"]);
+            if is_mm {
+                inst = crate::graphs::adapt_mmimage_refs(&inst);
+                q.insert("mm_pe".into(), json!(""));
+            }
+            q.insert("prompt".into(), json!(inst));
             q.insert("refs".into(), json!([{"image": name, "role": "base", "width": w, "height": h}]));
             q.insert("size_mode".into(), json!("auto"));
             q.insert("pixels".into(), json!((w * h).clamp(512 * 512, 1024 * 1024)));
             let (ids, p) = render(app, q, cx.count, token, cx.sid, tool, cx.ask).await?;
-            out.text = format!("Edited with Qwen 2.1: new image ids {ids:?}.");
-            out.zh = format!("改好了 {} 張", ids.len());
+            let label = if is_mm { "MiniMax H3 Image" } else { "Qwen 2.1" };
+            out.text = format!("Edited with {label}: new image ids {ids:?}.");
+            out.zh = format!("改好了 {} 張（{label}）", ids.len());
             (out.ids, out.params) = (ids, Some(p));
         }
         "upscale" | "remove_bg" => {
@@ -557,17 +588,25 @@ pub async fn exec(app: &Shared, cx: &Ctx<'_>, tool: &str, args: &Value, token: &
         "character_sheet" => {
             let (name, w, h) = input_of(app, args, cx.user_images).await?;
             let kind = tx(&args["kind"]);
-            let sp = call_api(app, "POST", "/api/charsheet/prompt", &json!({}), &json!({"kind": kind, "family": QWEN21})).await?;
-            let mut q = clean(qwen_base(app, cx.base).await?);
+            let eng = args.get("engine").and_then(Value::as_str);
+            let mut q = clean(edit_base(app, cx.base, eng).await?);
+            let is_mm = q.get("family").and_then(Value::as_str) == Some(MMIMG);
+            let sp = call_api(app, "POST", "/api/charsheet/prompt", &json!({}), &json!({"kind": kind, "family": if is_mm { MMIMG } else { QWEN21 }})).await?;
             q.insert("mode".into(), json!("multiref"));
-            q.insert("prompt".into(), sp["prompt"].clone());
+            let mut pr = tx(&sp["prompt"]);
+            if is_mm {
+                pr = crate::graphs::adapt_mmimage_refs(&pr);
+                q.insert("mm_pe".into(), json!(""));
+            }
+            q.insert("prompt".into(), json!(pr));
             q.insert("refs".into(), json!([{"image": name, "role": "base", "width": w, "height": h}]));
             q.insert("size_mode".into(), json!("fixed"));
             q.insert("width".into(), sp["width"].clone());
             q.insert("height".into(), sp["height"].clone());
             let (ids, p) = render(app, q, cx.count, token, cx.sid, tool, cx.ask).await?;
-            out.text = format!("Character {kind} drawn with Qwen 2.1: new image ids {ids:?}.");
-            out.zh = format!("{}畫好了", match kind.as_str() { "face" => "臉部特寫表", "portrait" => "正面特寫", _ => "轉身三視圖" });
+            let label = if is_mm { "MiniMax H3 Image" } else { "Qwen 2.1" };
+            out.text = format!("Character {kind} drawn with {label}: new image ids {ids:?}.");
+            out.zh = format!("{}畫好了（{label}）", match kind.as_str() { "face" => "臉部特寫表", "portrait" => "正面特寫", _ => "轉身三視圖" });
             (out.ids, out.params) = (ids, Some(p));
         }
         "comic" => {

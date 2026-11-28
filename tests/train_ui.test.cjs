@@ -55,6 +55,12 @@ test('沒描述不能到參數和在哪煉，講得出還差幾張', () => {
   assert.equal(T.blockReason(5, v), '');
 });
 
+test('SSH 開始時帶上主機路徑和加速設定，留空沿用預設', () => {
+  const opts = { toolkit: '/opt/kit', base_path: '/data/model', mirror: 'cn' };
+  assert.deepEqual({ ...T.startBody('ssh', opts, false) }, { target: 'ssh', ...opts });
+  assert.deepEqual({ ...T.startBody('ssh', { toolkit: '', base_path: '', mirror: 'auto' }, false) }, { target: 'ssh', mirror: 'auto' });
+});
+
 test('還沒開始訓練不能到驗收', () => {
   const caps = { 'a.png': 'x' };
   assert.match(T.blockReason(6, view([{ file: 'a.png' }], caps)), /還沒/);

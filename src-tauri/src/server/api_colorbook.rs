@@ -247,7 +247,12 @@ pub async fn page(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(
 }
 
 // ---------------------------------------------------------------- 上色
-/// {pages?:[頁碼], redo?, ai?（預設開：AI 看每頁寫指令）, keep_lines?（預設開：原稿亮度回貼）}
+/// 用哪顆改圖引擎上色：{engine: "mmimage"} 用 MiniMax H3 Image，其他照舊 Qwen 2.1
+fn engine_of(b: &Value) -> &'static str {
+    if tx(&b["engine"]) == crate::families::MMIMG { crate::families::MMIMG } else { crate::families::QWEN21 }
+}
+
+/// {pages?:[頁碼], redo?, ai?（預設開：AI 看每頁寫指令）, keep_lines?（預設開：原稿亮度回貼）, engine?（qwen21｜mmimage）}
 pub async fn run(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b): Body) -> ApiResult {
     let book = load(&app, &id)?;
     if running(&id) {
@@ -259,6 +264,7 @@ pub async fn run(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b
     let want: Vec<usize> = b["pages"].as_array().into_iter().flatten().filter_map(crate::py::int).filter(|i| *i >= 1).map(|i| i as usize).collect();
     let flag = |k: &str| b.get(k).map(|v| crate::py::truthy(Some(v))).unwrap_or(true);
     let (redo, ai, keep) = (crate::py::truthy(b.get("redo")), flag("ai"), flag("keep_lines"));
+    let engine = engine_of(&b);
     let todo = cb::targets(&book, &want, redo);
     if todo.is_empty() {
         return Err(bad("沒有要上色的黑白頁：都上好了（要重上就勾「全部重上」或按那一頁的「重上」）"));
@@ -267,7 +273,7 @@ pub async fn run(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body(b
     runs().lock().unwrap_or_else(|e| e.into_inner()).insert(id.clone(), token.clone());
     let (a, id2, n, brain) = (app.clone(), id.clone(), todo.len(), brain_of(&b));
     crate::diagnostics::spawn(async move {
-        let r = run_book(&a, &id2, &todo, ai, keep, brain, &token).await;
+        let r = run_book(&a, &id2, &todo, ai, keep, brain, engine, &token).await;
         runs().lock().unwrap_or_else(|e| e.into_inner()).remove(&id2);
         match r {
             Ok(msg) => emit(&a, &id2, "end", msg, None),
@@ -287,7 +293,8 @@ pub async fn stop(UrlPath(id): UrlPath<String>) -> ApiResult {
     }
 }
 
-async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, brain: &str, token: &CancellationToken) -> Result<String, String> {
+#[allow(clippy::too_many_arguments)]
+async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, brain: &str, engine: &str, token: &CancellationToken) -> Result<String, String> {
     let data = app.paths.data.clone();
     let mut book = cb::load(&data, id).ok_or("找不到這本")?;
     // ① 配色表：沒有又有彩頁 → 先寫
@@ -339,7 +346,7 @@ async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, 
         let p = cb::load(&data, id).ok_or("找不到這本")?["pages"][i].clone();
         let n = p["n"].as_u64().unwrap_or(i as u64 + 1) as usize;
         emit(app, id, "msg", format!("上色第 {n} 頁（{}／{}）…", k + 1, todo.len()), Some(n));
-        match color_page(app, id, &p, keep, token).await {
+        match color_page(app, id, &p, keep, engine, token).await {
             Ok(out) => {
                 done += 1;
                 update(&data, id, |b| {
@@ -365,18 +372,37 @@ async fn run_book(app: &Shared, id: &str, todo: &[usize], ai: bool, keep: bool, 
     Ok(if failed == 0 { format!("完成：上好 {done} 頁") } else { format!("跑完了：上好 {done} 頁、失敗 {failed} 頁（失敗的可以按「重上」）") })
 }
 
-/// 一頁：Qwen 2.1 改圖（只給這一頁，官方 Turbo 8 步）→ 原始輸出搬到 raw\、圖庫那筆隱藏 → 亮度回貼（或直接放大）→ out\0001.png、縮圖
-async fn color_page(app: &Shared, id: &str, p: &Value, keep: bool, token: &CancellationToken) -> Result<String, String> {
+/// 一頁：Qwen 2.1 或 MiniMax H3 Image 改圖（只給這一頁）→ 原始輸出搬到 raw\、圖庫那筆隱藏 → 亮度回貼（或直接放大）→ out\0001.png、縮圖
+async fn color_page(app: &Shared, id: &str, p: &Value, keep: bool, engine: &str, token: &CancellationToken) -> Result<String, String> {
     let book = cb::load(&app.paths.data, id).ok_or("找不到這本")?;
     let name = ensure_input(app, id, p)?;
     let n = p["n"].as_i64().unwrap_or(0);
     let seed = book["seed"].as_i64().unwrap_or_else(random_seed) + n * 7919 + p["tries"].as_i64().unwrap_or(0) * 104_729;
     let (w, h) = (p["w"].as_u64().unwrap_or(1024) as u32, p["h"].as_u64().unwrap_or(1024) as u32);
-    let params = json!({
-        "mode": "multiref", "model": crate::graphs::STRIP_QWEN, "refs": [{"image": name}], "size_mode": "auto", "pixels": cb::qwen_pixels(w, h),
-        "prompt": tx(&p["prompt"]), "negative": "", "steps": 8, "cfg": 1, "sampler": "euler", "scheduler": "simple", "seed": seed % (1i64 << 48),
+    let is_mm = engine == crate::families::MMIMG;
+    let model = if is_mm {
+        super::api_gen::pick_mmimage_model(app)
+            .await
+            .ok_or("找不到 MiniMax H3 Image 模型：請先到下載中心下載，或改回 Qwen 2.1")?
+    } else {
+        crate::graphs::STRIP_QWEN.to_string()
+    };
+    let raw_prompt = tx(&p["prompt"]);
+    let prompt = if is_mm {
+        let adapted = crate::graphs::adapt_mmimage_refs(&raw_prompt);
+        if adapted.contains("<Picture ") { adapted } else { format!("Edit <Picture 1>. {adapted}") }
+    } else {
+        raw_prompt
+    };
+    let mut params = json!({
+        "mode": "multiref", "model": model, "refs": [{"image": name, "width": w, "height": h}], "size_mode": "auto", "pixels": cb::qwen_pixels(w, h),
+        "prompt": prompt, "negative": "", "steps": if is_mm { 6 } else { 8 }, "cfg": 1, "sampler": "euler", "scheduler": "simple", "seed": seed % (1i64 << 48),
         "width": 1024, "height": 1024, "loras": [], "count": 1, "colorbook": id,
     });
+    if is_mm {
+        params["mm_pe"] = json!("");
+        params["mm_max_pixels"] = json!(cb::qwen_pixels(w, h));
+    }
     let jobs = submit_jobs(app, params.as_object().cloned().unwrap_or_default(), 1).await.map_err(|e| e.1)?;
     let pid = jobs.first().map(|j| tx(&j["job"])).ok_or("沒送出任務")?;
     wait_job(app, &pid, token).await?;

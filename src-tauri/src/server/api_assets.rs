@@ -410,7 +410,7 @@ pub fn apply_plan(item: &Row, family: &str) -> Value {
             "anima" => (pick(bt, be), all.clone()),
             "comic" => (pick(be, bt), fixed),
             "moss" => (pick(be, bz), vec![]),
-            "qwen21" => (pick(be, bz), fixed),
+            "qwen21" | "mmimage" => (pick(be, bz), fixed),
             "h3" | "agent" => (pick(bz, be), fixed),
             _ => (pick(be, bz), vec![]),
         };
@@ -430,6 +430,14 @@ pub fn apply_plan(item: &Row, family: &str) -> Value {
                 warn.push(format!("參考圖有 {} 張：超過 4 張，細節會變少", all.len()));
             }
             (either(&look_en, &look_zh), all.iter().take(10).cloned().collect(), true)
+        }
+        "mmimage" => {
+            if all.len() > crate::graphs::MMIMG_MAX_REFS {
+                warn.push(format!("參考圖有 {} 張：最多 {} 張，只送前 {} 張；超過 6 張細節會變少", all.len(), crate::graphs::MMIMG_MAX_REFS, crate::graphs::MMIMG_MAX_REFS));
+            } else if all.len() > 6 {
+                warn.push(format!("參考圖有 {} 張：超過 6 張，細節會變少", all.len()));
+            }
+            (either(&look_en, &look_zh), all.iter().take(crate::graphs::MMIMG_MAX_REFS).cloned().collect(), true)
         }
         "h3" | "agent" => (either(&look_zh, &look_en), few_refs(kind, data, &all), true),
         _ => (either(&look_en, &look_zh), vec![], false),

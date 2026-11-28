@@ -11,6 +11,7 @@ import * as assets from "./assets.js";
 const HINT = {
   anima: "Anima：插 tag＋一句外觀英文；有圖可以選當圖生圖底圖或構圖控制（各 1 張）",
   qwen21: "Qwen 2.1：外觀文字＋參考圖最多 10 張（4 張以內細節最好），提示詞會自動寫上第幾張圖",
+  mmimage: "MiniMax H3 Image：外觀文字＋參考圖最多 16 張（6 張以內細節最好），提示詞會自動寫上 <Picture N>",
   moss: "MOSS：只吃文字，圖不會送",
   h3: "H3：圖放進素材板（同一個角色的圖算同一個人）、音檔放聲音格，外觀和聲音寫進點子",
   agent: "助手：圖放進附圖，外觀文字寫進句子",
@@ -82,13 +83,13 @@ async function apply(d, it, fam) {
   let p;
   try { p = await api(`/api/assets/${it.id}/apply`, { json: { family: fam } }); } catch (e) { return toast(e.message, "err"); }
   if (d.ctx.family() !== fam) return;
-  if (fam !== "qwen21") for (const w of p.warn || []) toast(w, "err");
+  if (fam !== "qwen21" && fam !== "mmimage") for (const w of p.warn || []) toast(w, "err");
   const imgs = d.ctx.images || {};
   let text = p.text || "";
-  const added = [];  // 這次放進多圖參考的檔名（鎖定標籤送出時照目前順序換成 <imageN>）
+  const added = [];  // 這次放進多圖參考的檔名（鎖定標籤送出時照目前順序換成 <imageN> / <Picture N>）
   try {
-    if ((fam === "qwen21" || fam === "agent") && imgs.ref && p.images.length) {
-      const max = imgs.ref.max || 10;
+    if ((fam === "qwen21" || fam === "mmimage" || fam === "agent") && imgs.ref && p.images.length) {
+      const max = imgs.ref.max || (fam === "mmimage" ? 16 : 10);
       const room = Math.max(0, max - imgs.ref.count());
       const ready = [];
       for (const f of p.images.slice(0, room)) {
@@ -97,16 +98,18 @@ async function apply(d, it, fam) {
       }
       // 複製期間使用者仍可改參考圖；等全部複製完再同步加入、取得實際編號及插文字。
       const tags = [];
+      const defaultTag = (n) => (fam === "mmimage" ? `<Picture ${n}>` : `<image${n}>`);
       for (const r of ready) {
         // 鎖定角色再點一次：已經在參考圖裡的同一張不重複放，照樣記給標籤
         if (p.locked && d.ctx.lock && imgs.ref.has?.(r.name)) { added.push(r.name); continue; }
         if (imgs.ref.count() >= max) break;
         const n = imgs.ref.add(r);
-        if (n) { tags.push(imgs.ref.tag ? imgs.ref.tag(n) : `<image${n}>`); added.push(r.name); }
+        if (n) { tags.push(imgs.ref.tag ? imgs.ref.tag(n) : defaultTag(n)); added.push(r.name); }
       }
-      if (p.images.length > room || added.length < ready.length || (p.warn || []).some((w) => w.includes("10"))) toast(`參考圖最多 ${max} 張`, "err");
-      if (tags.length && imgs.ref.count() > 4) toast(`目前有 ${imgs.ref.count()} 張參考圖，4 張以內細節最好`, "err");
-      if (tags.length) text = `${it.name}（${tags.join(imgs.ref.tag ? "、" : "")}）${text ? "：" + text : ""}`;
+      if (p.images.length > room || added.length < ready.length || (p.warn || []).some((w) => w.includes(String(max)))) toast(`參考圖最多 ${max} 張`, "err");
+      const warnN = fam === "mmimage" ? 6 : 4;
+      if (tags.length && imgs.ref.count() > warnN) toast(`目前有 ${imgs.ref.count()} 張參考圖，${warnN} 張以內細節最好`, "err");
+      if (tags.length) text = `${it.name}（${tags.join(imgs.ref.tag || fam === "mmimage" ? "、" : "")}）${text ? "：" + text : ""}`;
     }
   } catch (e) { toast(e.message, "err"); }
   if (fam === "h3" && (p.voice || p.lang)) {

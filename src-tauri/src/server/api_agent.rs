@@ -717,7 +717,7 @@ async fn run(app: &Shared, id: &str, token: &CancellationToken) -> Step {
         // 附了圖卻沒用 refs：只在這個請求的第一輪提醒（它說只是參考，之後就不再囉嗦）
         let req_imgs = if ag::rounds_used(&events) == 0 { ag::request_user_images(&events) } else { vec![] };
         let refs_mode = match (brain == "cloud", family) {
-            (false, f) if f == QWEN21 => "multi",
+            (false, f) if f == QWEN21 || f == families::MMIMG => "multi",
             (false, f) if f == ANIMA || f == MOSS || f == families::KREA2 || f == families::SDXL => "one",
             _ => "",
         };

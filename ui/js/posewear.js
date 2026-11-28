@@ -82,8 +82,8 @@ function addText(text, ta = promptTarget()) {
   toast("已加進提示詞", "ok");
 }
 
-const HINT_POSE = "現在看不到構圖控制或多圖參考。Anima、MOSS 在文生圖用構圖控制；Qwen 2.1 切到「多圖參考」模式再拖";
-const HINT_COSTUME = "服裝請拖到多圖參考或提示詞框（多圖參考要先切到「多圖參考」模式）";
+const HINT_POSE = "現在看不到構圖控制或參考圖區。Anima、MOSS 在文生圖用構圖控制；Qwen 2.1／MiniMax 切到「圖生圖／改圖」模式再拖";
+const HINT_COSTUME = "服裝請拖到參考圖區或提示詞框（要先切到「圖生圖／改圖」模式）";
 
 async function busy(card, fn) {
   if (card?.classList.contains("busy")) return;
@@ -102,7 +102,7 @@ async function toRef(d, card) {
   await busy(card, async () => {
     const r = d.url ? await fetchUse(null, null, d.url) : await fetchUse(d.kind === "pose" ? POSE_REF_LIB : d.lib, d.item);
     const role = d.role || (d.kind === "pose" ? "pose" : "outfit");
-    const msg = d.kind === "pose" ? "姿勢放進多圖參考了" : d.kind === "costume" ? "服裝放進多圖參考了" : "放進多圖參考了";
+    const msg = d.kind === "pose" ? "姿勢放進參考圖了" : d.kind === "costume" ? "服裝放進參考圖了" : "放進參考圖了";
     if (ctx.ref(r, role) != null) toast(msg, "ok");
   });
 }

@@ -14,6 +14,10 @@ test("切換家族保留整匣參考圖，並依現在的上限檢查", () => {
   assert.equal(vm.runInContext("maxRefs()", box), 10);
   assert.match(vm.runInContext("check('')", box), /10/);
   assert.equal(vm.runInContext("get().length", box), 16);
+  vm.runInContext("ctx.family = () => 'anima'", box);
+  assert.equal(vm.runInContext("maxRefs()", box), 1);
+  assert.equal(vm.runInContext("check('')", box), null);
+  assert.equal(vm.runInContext("get().length", box), 16);
 });
 test("MiniMax 官方比例、4MP 預設與 32 對齊", () => {
   const size = vm.runInNewContext("(" + gen.match(/function mmSize\([\s\S]*?\n\}/)[0] + ")");

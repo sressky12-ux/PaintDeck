@@ -1286,8 +1286,8 @@ input.flip-in.go { animation: flipit .28s ease-in-out; }
 .rocker.ag-brain { grid-template-columns: repeat(3, minmax(0, 1fr)); height: 32px; width: 100%; }
 .rocker.ag-brain button { font-size: 12px; }
 .rocker.ag-brain .cap { width: calc((100% - 4px) / 3); height: 28px; transform: translateX(calc(var(--pos, 0) * 100%)); }
-#agBrain.rocker.ag-brain { grid-template-columns: repeat(4, minmax(0, 1fr)); }
-#agBrain.rocker.ag-brain .cap { width: calc((100% - 4px) / 4); }
+#acWay.rocker.ag-brain, #agBrain.rocker.ag-brain { grid-template-columns: repeat(4, minmax(0, 1fr)); }
+#acWay.rocker.ag-brain .cap, #agBrain.rocker.ag-brain .cap { width: calc((100% - 4px) / 4); }
 /* 助手：讓我看／後台做（2026-10-27） */
 .rocker.ag-mode { grid-template-columns: repeat(2, 64px); }
 .rocker.ag-mode .cap { width: 64px; transform: translateX(calc(var(--pos, 0) * 64px)); }

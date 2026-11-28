@@ -591,8 +591,15 @@ async fn drive(app: &Shared, id: &str, conn: &Conn, cancel: &CancellationToken, 
     let fam = fam_of(&p).map_err(|e| e.1)?;
     let name = train::lora_name(&p).to_string();
     let first = conn.status().await?;
-    // SSH 斷線期間可能已經煉完；從仍在的同一個小幫手取回結果。
-    let resumed = first["state"] == "running" || (p["run"]["target"] == "ssh" && matches!(first["state"].as_str(), Some("done" | "error" | "stopped")));
+    // SSH 斷線、Colab 換通道網址期間可能已經煉完；從仍在的同一個小幫手取回結果。
+    // remote 沒有專案鎖：小幫手上的檔要是這個專案的 LoRA 名稱才接回，免得抓到同一台機器上別的專案
+    let own_files = || first["files"].as_array().into_iter().flatten().any(|f| f["name"].as_str().is_some_and(|n| n.starts_with(&format!("{name}/"))));
+    let reattach = match p["run"]["target"].as_str() {
+        Some("ssh") => true,
+        Some("remote") => own_files(),
+        _ => false,
+    };
+    let resumed = first["state"] == "running" || (reattach && matches!(first["state"].as_str(), Some("done" | "error" | "stopped")));
     let kohaku = p["run"]["engine"] == "kohakumoss";
     let resume_checkpoint = kohaku && p["run"]["resume"] == true;
     if !resumed {
@@ -869,10 +876,10 @@ fn unseal(s: &str) -> Option<String> {
 
 fn runpod_body(gpu_ids: &[String], token: &str, agent_py: &[u8]) -> Value {
     json!({
-        "name": RUNPOD_POD, "imageName": super::api_cloud::IMAGE, "gpuTypeIds": gpu_ids, "gpuCount": 1, "cloudType": "SECURE",
-        "containerDiskInGb": 80, "volumeInGb": 0, "ports": [format!("{RUNPOD_PORT}/http")],
+        "name": RUNPOD_POD, "imageName": train::TOOLKIT_IMAGE, "gpuTypeIds": gpu_ids, "gpuCount": 1, "cloudType": "SECURE",
+        "allowedCudaVersions": ["13.0", "13.1", "13.2", "13.4", "13.5"], "containerDiskInGb": 80, "volumeInGb": 0, "ports": [format!("{RUNPOD_PORT}/http")],
         "env": {"TRAIN_TOKEN": token, "TRAIN_AGENT_B64": base64::engine::general_purpose::STANDARD.encode(agent_py)},
-        "dockerStartCmd": ["bash", "-c", train::boot_script(RUNPOD_PORT, "/workspace", None)],
+        "dockerStartCmd": ["bash", "-c", train::image_boot_script(RUNPOD_PORT)],
     })
 }
 
@@ -890,7 +897,47 @@ const SSH_PID_CHECK: &str = r#"owned_pid() {
     [[ $(awk '{print $6, $22}' "/proc/$pid/stat" 2>/dev/null) == "$pid $born" ]]
 }"#;
 
-async fn ssh_run(app: &Shared, id: &str, model: &str, fam: &Fam, cancel: &CancellationToken) -> Result<&'static str, String> {
+fn safe_train_path(path: &str) -> bool {
+    path.starts_with('/') && super::api_cloud::safe_word(path, "/._-~")
+}
+
+fn ssh_path<'a>(body: &'a Value, key: &str) -> Result<&'a str, ApiError> {
+    match body.get(key) {
+        None => Ok(""),
+        Some(Value::String(s)) if s.is_empty() || safe_train_path(s) => Ok(s),
+        _ => Err(bad("主機路徑要以 / 開頭，只能用英數字、斜線、點、底線、波浪號和減號")),
+    }
+}
+
+struct SshKit<'a> {
+    dir: &'a str,
+    python: &'a str,
+    version: &'a str,
+    warn: bool,
+}
+
+fn version_parts(version: &str) -> Option<[u32; 3]> {
+    let mut parts = version.split('.');
+    let numbers = [parts.next()?.parse().ok()?, parts.next()?.parse().ok()?, parts.next()?.parse().ok()?];
+    parts.next().is_none().then_some(numbers)
+}
+
+fn parse_ssh_kit<'a>(output: &'a str, preferred: &str) -> Result<Option<SshKit<'a>>, String> {
+    let mut records = output.lines().filter(|line| *line == "PAINTDECK_NONE" || line.starts_with("PAINTDECK_KIT\t"));
+    let record = records.next();
+    if records.next().is_none() {
+        if let Some("PAINTDECK_NONE") = record { return Ok(None); }
+        if let Some(["PAINTDECK_KIT", dir, python, version]) = record.map(|s| s.split('\t').collect::<Vec<_>>()).as_deref() {
+            let warn = version_parts(version) < version_parts(train::TOOLKIT_VERSION);
+            if safe_train_path(dir) && safe_train_path(python) && (*version == "unknown" || version_parts(version).is_some()) && (!warn || *dir == preferred) {
+                return Ok(Some(SshKit { dir, python, version, warn }));
+            }
+        }
+    }
+    Err("讀不到主機上的訓練器資料，請再試一次".into())
+}
+
+async fn ssh_run(app: &Shared, id: &str, model: &str, fam: &Fam, preferred: &str, mirror: &str, cancel: &CancellationToken) -> Result<&'static str, String> {
     let _guard = SSH_TRAIN.try_lock().map_err(|_| "這台雲端主機已經有專案在訓練")?;
     let cloud = &app.agent.cloud;
     let mut pod = cloud.ssh_pod();
@@ -905,7 +952,24 @@ async fn ssh_run(app: &Shared, id: &str, model: &str, fam: &Fam, cancel: &Cancel
     pod.dir.push_str("/train");
     let dir = &pod.dir;
     let lease = train::new_id();
-    let boot = train::boot_script(SSH_PORT, dir, Some(&lease));
+    let probe = format!("{SSH_PID_CHECK}\nroot='{dir}'\npreferred='{preferred}'\nminimum={}\nif (cd \"$root\" 2>/dev/null && [ -s boot.pid ] && owned_pid); then echo PAINTDECK_NONE; exit 0; fi\n{}",
+        train::TOOLKIT_VERSION, include_str!("../../../resources/train/ssh_probe.sh").replace("\r\n", "\n"));
+    emit(app, id, "train", "running", json!({"msg":"尋找主機上可用的訓練器…"}));
+    let output = tokio::select! {
+        result = cloud.train_script_timeout(&pod, &probe, Duration::from_secs(300)) => result?,
+        () = cancel.cancelled() => return Ok("stopped"),
+    };
+    let kit = parse_ssh_kit(&output, preferred)?;
+    if let Some(k) = &kit {
+        let version = if k.version == "unknown" { "版本不明" } else { k.version };
+        let msg = if k.warn {
+            format!("用機器上現成的 ai-toolkit：{}（{version}）。指定的版本較舊或不明，訓練可能不相容", k.dir)
+        } else {
+            format!("用機器上現成的 ai-toolkit：{}（{version}）", k.dir)
+        };
+        emit(app, id, "train", "running", json!({"msg":msg}));
+    }
+    let boot = train::boot_script(SSH_PORT, dir, &lease, mirror, kit.map(|k| (k.dir, k.python)));
     let agent = std::fs::read_to_string(app.paths.res.join("train/agent.py")).map_err(|e| format!("讀不到訓練小幫手：{e}"))?.replace("\r\n", "\n");
     let token = format!("{}{}", train::new_id(), train::new_id());
     let local = std::net::TcpListener::bind(("127.0.0.1", 0)).and_then(|s| s.local_addr()).map_err(|e| e.to_string())?.port();
@@ -942,6 +1006,7 @@ fi
 echo '{lease}' > lease
 cat token
 "#);
+    let mut still_installing = false;
     let run = async {
         let secret = cloud.train_script(&pod, &launch).await?;
         let conn = Conn::new(&format!("http://127.0.0.1:{local}"), secret.trim(), false)?;
@@ -957,7 +1022,10 @@ cat token
                     return Err(format!("訓練小幫手沒開起來：\n{tail}"));
                 }
                 if !log.trim().is_empty() { emit(app, id, "train", "running", json!({"msg":log.trim()})); }
-                if tokio::time::Instant::now() >= deadline { return Err("訓練機 45 分鐘還沒準備好".into()); }
+                if tokio::time::Instant::now() >= deadline {
+                    still_installing = true;
+                    return Err("等了 45 分鐘，主機仍在準備環境。再按「開始」會接著等，裝好就繼續訓練".into());
+                }
                 tokio::time::sleep(Duration::from_secs(10)).await;
             }
             drive(app, id, &conn, cancel, model, vram.unwrap_or(24.0)).await
@@ -978,6 +1046,7 @@ cat token
             }
         }
     }.await;
+    if still_installing && !cancel.is_cancelled() { return run; }
     let cleanup = format!(r#"cd '{dir}' || exit 0
 exec 9>setup.lock
 flock -w 10 9 || exit 1
@@ -1019,7 +1088,7 @@ async fn runpod_run(app: &Shared, id: &str, gpu: &str, cancel: &CancellationToke
         }
     };
     let conn = Conn::new(&format!("https://{pod}-{RUNPOD_PORT}.proxy.runpod.net"), &token, false)?;
-    emit(app, id, "train", "running", json!({"msg": "訓練機開機、裝環境中（第一次約 10～20 分鐘，這段也在計費）…"}));
+    emit(app, id, "train", "running", json!({"msg": "正在下載官方訓練映像（約 6GB，通常 5～10 分鐘，這段也會計費）…"}));
     let mut waited = 0u64;
     loop {
         if conn.status().await.is_ok() {
@@ -1027,7 +1096,8 @@ async fn runpod_run(app: &Shared, id: &str, gpu: &str, cancel: &CancellationToke
         }
         waited += 10;
         if waited > 45 * 60 {
-            let _ = runpod_delete(app, &pod).await;
+            runpod_delete(app, &pod).await.map_err(|e| format!("訓練機關不掉（還在計費！到 RunPod 網站手動刪除 {RUNPOD_POD}）：{e}"))?;
+            set_run(app, id, |r| { r.remove("remote"); }).await;
             return Err("訓練機 45 分鐘還沒準備好，已經把它關掉（不再計費）".into());
         }
         tokio::select! {
@@ -1352,7 +1422,14 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
                 }
             }
         }
-        "ssh" => {}
+        "ssh" => {
+            ssh_path(&b, "toolkit")?;
+            let base = ssh_path(&b, "base_path")?;
+            if !base.is_empty() { model = base.to_owned(); }
+            if !matches!(b.get("mirror").map(Value::as_str), None | Some(Some("auto" | "cn" | "off"))) {
+                return Err(bad("請重新選擇網路加速方式"));
+            }
+        }
         "remote" => {
             if !tx(&b["url"]).starts_with("http") || tx(&b["token"]).len() < 8 {
                 return Err(bad("自己的訓練機要填網址（http 開頭）和口令（至少 8 個字）"));
@@ -1434,7 +1511,7 @@ pub async fn start(State(app): State<Shared>, UrlPath(id): UrlPath<String>, Body
                 Ok(conn) => drive(&app, &id, &conn, &cancel, &model, b["vram_gb"].as_f64().unwrap_or(24.0)).await,
                 Err(e) => Err(e),
             },
-            "ssh" => ssh_run(&app, &id, &model, fam, &cancel).await,
+            "ssh" => ssh_run(&app, &id, &model, fam, b["toolkit"].as_str().unwrap_or(""), b["mirror"].as_str().unwrap_or("auto"), &cancel).await,
             "runpod" => runpod_run(&app, &id, &tx(&b["gpu"]), &cancel).await,
             _ => civ_run(&app, &id, b["max_cost"].as_f64().unwrap_or(0.0), &cancel).await,
         };
@@ -1599,11 +1676,28 @@ mod tests {
     }
 
     #[test]
+    fn ssh_probe_records_check_paths_and_versions() {
+        let record = "banner\r\nPAINTDECK_KIT\t/app/kit\t/usr/bin/python3\t";
+        for (version, preferred, warn) in [("0.13.41", "", false), ("0.14.0", "", false), ("0.9.99", "/app/kit", true), ("unknown", "/app/kit", true)] {
+            let output = format!("{record}{version}\r\n");
+            let kit = parse_ssh_kit(&output, preferred).unwrap().unwrap();
+            assert_eq!((kit.dir, kit.python, kit.version, kit.warn), ("/app/kit", "/usr/bin/python3", version, warn));
+        }
+        assert!(parse_ssh_kit("banner\nPAINTDECK_NONE\n", "").unwrap().is_none());
+        for bad in [format!("{record}unknown"), format!("{record}0.9.99"), format!("{record}1.0.0\nPAINTDECK_NONE"), format!("{record}1.0.0\textra"),
+            record.replace("/app/kit", "relative") + "1.0.0", record.replace("python3", "py;bad") + "1.0.0", String::new()] {
+            assert!(parse_ssh_kit(&bad, "").is_err());
+        }
+    }
+
+    #[test]
     fn runpod_body_keeps_secrets_out_of_command() {
         let b = runpod_body(&["NVIDIA A40".to_string()], "secret-token-xyz", b"print('agent')");
         let cmd = b["dockerStartCmd"][2].as_str().unwrap();
         assert!(!cmd.contains("secret-token-xyz"), "口令不能寫在開機指令裡");
-        assert!(cmd.contains(train::TOOLKIT_COMMIT) && cmd.contains("--port 8000"));
+        assert!(cmd.contains("--toolkit /app/ai-toolkit") && cmd.contains("--port 8000") && !cmd.contains("install"));
+        assert_eq!(b["imageName"], format!("ostris/aitoolkit:{}", train::TOOLKIT_VERSION));
+        assert_eq!(b["allowedCudaVersions"], json!(["13.0","13.1","13.2","13.4","13.5"]));
         assert_eq!(b["env"]["TRAIN_TOKEN"], "secret-token-xyz");
         assert_eq!(b["ports"], json!(["8000/http"]));
         assert_eq!(b["name"], "anima-train");

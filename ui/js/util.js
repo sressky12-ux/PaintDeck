@@ -123,7 +123,7 @@ export const fmtSecs = (s) => (s == null || !isFinite(s) ? "—" : s < 60 ? `${M
 
 export const escTag =(t) => t.replace(/\\?\(/g, "\\(").replace(/\\?\)/g, "\\)");
 export const fmtN = (n) => (n >= 10000 ? (n / 1000).toFixed(0) + "k" : n >= 1000 ? (n / 1000).toFixed(1) + "k" : String(n || 0));
-export const modeName = { txt2img: "文生圖", img2img: "圖生圖", inpaint: "局部重繪", multiref: "多圖參考", upscale: "放大", strip: "改圖", sheet: "四視圖編輯", imported: "ComfyUI", video: "影片",
+export const modeName = { txt2img: "文生圖", img2img: "圖生圖／改圖", inpaint: "局部重繪", multiref: "圖生圖／改圖", upscale: "放大", strip: "改圖", sheet: "多視圖編輯", imported: "ComfyUI", video: "影片",
   outpaint: "擴圖", diff: "差分", detail: "修細節", rembg: "去背", xy: "對照表" };
 /** 圖庫紀錄是影片（mp4）：大圖要用 <video>，圖片才有的功能（圖生圖、局部重繪…）要藏起來 */
 export const isVideo = (rec) => /\.(mp4|webm|mkv)$/i.test(rec?.filename || "");

@@ -1,7 +1,7 @@
 // 生圖玩法（2026-10-20 加）：X/Y 對照表、塗鴉畫布、差分（表情／動作）、修臉／修手（SAM3）、一鍵去背（BiRefNet）、變體，
 // 以及觀景窗／燈箱的「玩法…」選單。浮層都由這支程式自己建（不寫在 index.html），樣式在 css\play.css。
 // 後端：/api/generate 的 mode outpaint／diff／rembg／detail（graphs.rs）、/api/detail、/api/play/save_grid、/api/play/models（server\api_play.rs）
-import { $, $$, api, el, toast, uploadFile, closeModal } from "./util.js";
+import { $, $$, api, el, toast, uploadFile, closeModal, store } from "./util.js";
 import { setIc } from "./deck.js";
 import * as gen from "./gen.js";
 import { app } from "./state.js";
@@ -55,7 +55,7 @@ export function menu(rec, btn) {
     item("修臉", "自動找出每張臉，放大重畫細節再貼回去", () => detail(rec, "face")),
     item("修手", "自動找出每隻手，放大重畫再貼回去", () => detail(rec, "hand")),
     item("修臉＋修手", "臉和手一起修", () => detail(rec, "both")),
-    item("差分（表情／動作）", "同一個角色一次改出好幾種表情或動作（Qwen 2.1 改圖）", () => openDiff(rec)),
+    item("差分（表情／動作）", "同一個角色一次改出好幾種表情或動作（Qwen 2.1／MiniMax H3 Image）", () => openDiff(rec)),
     item("一鍵去背", "去掉背景，存成透明背景的 PNG", () => rembg(rec)));
   document.body.append(menuEl);
   const r = (btn || document.body).getBoundingClientRect();
@@ -73,11 +73,15 @@ export async function vary(rec) {
     for (const k of DROP) delete p[k];
     const f = famOf(p.model);
     const r = await toInput(rec);
-    Object.assign(p, { mode: "img2img", init_image: r.name, size_mode: "auto", pixels: f === "anima" ? 1024 * 1536 : 1024 * 1024,
-      denoise: f === "qwen21" ? 0.55 : f === "moss" ? 0.5 : 0.45, seed: null });
+    if (f === "mmimage") {
+      Object.assign(p, { mode: "img2img", init_image: r.name, size_mode: "auto", denoise: 1.0, mm_pe: "", mm_max_pixels: 1280 * 1280, seed: null });
+    } else {
+      Object.assign(p, { mode: "img2img", init_image: r.name, size_mode: "auto", pixels: f === "anima" ? 1024 * 1536 : 1024 * 1024,
+        denoise: f === "qwen21" ? 0.55 : f === "moss" ? 0.5 : 0.45, seed: null });
+    }
     const res = await api("/api/generate", { json: { params: p, count: 4 } });
     track(res.jobs);
-    toast(`已送出 4 張變體（重繪 ${p.denoise}、換種子）`, "ok");
+    toast(f === "mmimage" ? "已送出 4 張變體（MiniMax 參考改圖、換種子）" : `已送出 4 張變體（重繪 ${p.denoise}、換種子）`, "ok");
   } catch (e) { toast("變體失敗：" + e.message, "err"); }
 }
 
@@ -146,15 +150,18 @@ function buildDiff() {
     el("div", { class: "row gap wrap" }, ...list.map(([label, req]) =>
       el("button", { type: "button", class: "chip", "data-req": req, onclick: (e) => { e.currentTarget.classList.toggle("on"); count(); } }, label)))));
   const custom = el("textarea", { id: "diffCustom", rows: 3, placeholder: "自訂：一行一個，例如「把头发改成双马尾」「让角色戴上眼镜」（中文、英文都可以）", oninput: () => count() });
+  const eng = el("select", { id: "diffEngine", class: "sm", title: "差分改圖引擎（與其他編輯功能共用預設）", onchange: () => store.set("editEngine", eng.value) },
+    el("option", { value: "qwen21" }, "Qwen 2.1"),
+    el("option", { value: "mmimage" }, "MiniMax H3 Image"));
   const n = el("select", { id: "diffN", class: "sm", onchange: () => count() }, ...[1, 2, 3].map((k) => el("option", { value: k }, `每項 ${k} 張`)));
   const go = el("button", { type: "button", class: "akey go", id: "diffGo", onclick: sendDiff }, "送出");
   const info = el("span", { class: "muted sm", id: "diffInfo" });
   d.body.append(
     el("div", { class: "row gap" }, el("img", { id: "diffImg", class: "play-src", alt: "原圖" }),
-      el("div", { class: "muted sm" }, "選好要的表情或動作，每一項各畫一張。用 Qwen 2.1 改圖：臉、髮型、衣服、畫風盡量跟原圖一樣，只改選的那件事。",
-        el("br"), "生成頁選的不是 Qwen 2.1 時，自動用官方 Qwen 2.1 Turbo（8 步）。")),
+      el("div", { class: "muted sm" }, "選好要的表情或動作，每一項各畫一張。臉、髮型、衣服、畫風盡量跟原圖一樣，只改選的那件事。",
+        el("br"), "可選 Qwen 2.1 或 MiniMax H3 Image 改圖。")),
     ...chips, el("span", { class: "sub" }, "自訂"), custom,
-    el("div", { class: "row gap wrap" }, n, info, el("span", { class: "grow" }), go));
+    el("div", { class: "row gap wrap" }, el("span", { class: "sub inline" }, "改圖引擎"), eng, n, info, el("span", { class: "grow" }), go));
   const count = () => {
     const k = reqs().length * +n.value;
     info.textContent = k ? `共 ${k} 張` : "還沒選";
@@ -170,10 +177,16 @@ const reqs = () => [...$$("#diffModal .chip.on").map((b) => b.dataset.req),
 /** rec：圖庫的一張圖；或直接給 input 裡的圖 {name, width, height} */
 export async function openDiff(rec) {
   try {
-    if (!app.state?.models?.unet_family?.[QWEN_EDIT] && famOf(curModel()) !== "qwen21")
-      return toast(`差分要用 Qwen 2.1（官方 Turbo ${QWEN_EDIT}），模型清單裡找不到`, "err");
+    const fams = Object.values(app.state?.models?.unet_family || {});
+    const hasQwen = !!app.state?.models?.unet_family?.[QWEN_EDIT] || fams.includes("qwen21");
+    const hasMm = fams.includes("mmimage");
+    if (!hasQwen && !hasMm)
+      return toast(`差分需要 Qwen 2.1（${QWEN_EDIT}）或 MiniMax H3 Image，模型清單裡都找不到`, "err");
     diffSrc = rec.name ? rec : await toInput(rec);
     diffDlg ||= buildDiff();
+    const eng = $("#diffEngine");
+    const saved = store.get("editEngine", "qwen21");
+    eng.value = saved === "mmimage" && hasMm ? "mmimage" : hasQwen ? "qwen21" : "mmimage";
     $("#diffImg").src = `/input/${encodeURIComponent(diffSrc.name)}`;
     diffDlg.count();
     diffDlg.open();
@@ -183,14 +196,15 @@ export async function openDiff(rec) {
 async function sendDiff() {
   const list = reqs(), n = +$("#diffN").value;
   if (!list.length) return;
-  const qwen = famOf(curModel()) === "qwen21";
-  // 生成頁是 Qwen 2.1：連同步數、CFG、LoRA 照生成頁；不然只帶模型，後端換官方 Turbo
-  const base = qwen ? gen.baseParams() : { model: curModel() };
+  const engine = $("#diffEngine")?.value || "qwen21";
+  const same = famOf(curModel()) === engine;
+  // 生成頁同家族：連同步數、CFG、LoRA 照生成頁；不然只帶模型，後端自動挑該引擎的模型
+  const base = same ? gen.baseParams() : { model: curModel() };
   $("#diffGo").disabled = true;
   try {
     let k = 0;
     for (const req of list) {
-      const res = await api("/api/generate", { json: { count: n, params: { ...base, mode: "diff", init_image: diffSrc.name, diff: { req }, prompt: "", negative: "", seed: null } } });
+      const res = await api("/api/generate", { json: { count: n, params: { ...base, mode: "diff", init_image: diffSrc.name, diff: { req, engine }, prompt: "", negative: "", seed: null } } });
       track(res.jobs);
       k += res.jobs.length;
     }
@@ -273,9 +287,10 @@ async function done(as) {
       toast("草圖已放進「構圖控制」（塗鴉草圖），寫好提示詞按生成", "ok");
     } else {
       gen.setInit(r);
+      const isMm = famOf(curModel()) === "mmimage";
       const dn = $("#denoise");
-      if (dn) { dn.value = 0.85; dn.dispatchEvent(new Event("input", { bubbles: true })); }
-      toast("草圖已放進圖生圖（重繪 0.85），寫好提示詞按生成", "ok");
+      if (dn && !isMm) { dn.value = 0.85; dn.dispatchEvent(new Event("input", { bubbles: true })); }
+      toast(isMm ? "草圖已放進圖生圖／改圖，寫好提示詞按生成" : "草圖已放進圖生圖／改圖（重繪 0.85），寫好提示詞按生成", "ok");
     }
   } catch (e) { toast("草圖上傳失敗：" + e.message, "err"); }
 }
@@ -377,7 +392,7 @@ async function startXY() {
   let x, y;
   try { x = readAxis("X"); y = readAxis("Y"); } catch (e) { return toast(e.message, "err"); }
   const base = gen.collectParams();
-  if (["upscale", "strip", "sheet"].includes(base.mode)) return toast("這個模式不能做對照表：換成文生圖、圖生圖、局部重繪、擴圖或多圖參考", "err");
+  if (["upscale", "strip", "sheet"].includes(base.mode)) return toast("這個模式不能做對照表：換成文生圖、圖生圖／改圖、局部重繪或擴圖", "err");
   if (base.mode === "multiref" ? !base.refs?.length : base.mode !== "txt2img" && !base.init_image) return toast("請先放入圖片", "err");
   for (const ax of [x, y].filter(Boolean)) {
     if (ax.type === "denoise" && base.denoise == null) return toast("重繪強度只有圖生圖、局部重繪能比", "err");
@@ -422,7 +437,7 @@ function progress() {
 /** main.js 收到新圖時呼叫（要在 gen.onImage 之前） */
 export function onImage(job, rec) {
   if (run?.jobs.has(job)) { run.cells.set(run.jobs.get(job), rec); progress(); check(); }
-  else if (gen.S.pending.has(job) && ["txt2img", "img2img"].includes(rec?.mode) && $("#autoDetail")?.checked && !rec?.params?.xy) detail(rec, "face", true);
+  else if (gen.S.pending.has(job) && ["txt2img", "img2img", "multiref"].includes(rec?.mode) && $("#autoDetail")?.checked && !rec?.params?.xy) detail(rec, "face", true);
 }
 /** main.js 收到任務結束時呼叫（要在 gen.onFinish 之前）：失敗、取消的格子也算完成 */
 export function onFinish(m) {

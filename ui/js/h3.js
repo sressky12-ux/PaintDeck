@@ -1049,12 +1049,12 @@ function paintModels() {
   if (!info) return;
   const d = info.defaults;
   const pool = where === "local" ? info.local?.models : info.cloud_models;
-  const names = [...new Set([d.model, d.official_ref2va, ...(pool || [])])];
+  const names = where === "cloud" ? [...new Set(pool || [])] : [...new Set([d.model, d.official_ref2va, ...(pool || [])])];
   const sel = F("h3Model");
   const cur = sel.value;
   // RunningHub 上沒有 10Eros：沒選模型時後端會換成那邊有的官方 H3（runninghub.rs 的 h3_defaults）
   const def = where === "local" && info.local?.pick ? `預設：${info.local.pick}（本機最省顯存的）`
-    : where === "runninghub" ? "預設：RunningHub 上的官方 H3（自動加 8 步 Turbo LoRA）" : "預設：10Eros-Max（無審核、8 步）";
+    : where === "runninghub" ? "預設：RunningHub 上的官方 H3（自動加 8 步 Turbo LoRA）" : where === "cloud" ? "預設：自動選擇雲端已安裝的 H3 模型" : "預設：10Eros-Max（無審核、8 步）";
   sel.replaceChildren(el("option", { value: "" }, def),
     ...names.filter((n) => n !== d.model).map((n) => el("option", { value: n }, n === d.official_ref2va ? "官方 H3 ref2va（會自動加 8 步 Turbo LoRA）" : n)));
   sel.value = [...sel.options].some((o) => o.value === cur) ? cur : "";

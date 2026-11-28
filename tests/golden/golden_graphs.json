@@ -6987,7 +6987,7 @@
    ]
   },
   "offset": 0,
-  "error": "多圖參考只支援 Qwen 2.1 模型（Noct Q），請先在「模型」換成 Qwen 2.1"
+  "error": "多圖參考支援 Qwen 2.1 與 MiniMax H3 Image 模型，請先切換模型"
  },
  {
   "name": "multiref empty error",
