@@ -599,6 +599,11 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     p.insert("mode".into(), json!("video"));
     p.insert("video_engine".into(), json!("h3"));
     p.insert("save_last".into(), json!(true));
+    // 先驗素材檔名（防路徑穿越）：還沒連雲端就擋掉
+    let names = media_names(&Value::Object(p.clone()));
+    if let Some(n) = names.iter().find(|n| !media_name_ok(n)) {
+        return Err(bad(format!("素材名稱不對：{n}（素材要從格子放，不能手填路徑）")));
+    }
     // 本機沒指定模型：挑最省顯存的；切塊節點（KJNodes）沒裝就不切（2026-10-30）
     let has_chunk_node = if rhub {
         false
@@ -617,10 +622,6 @@ pub async fn generate(State(app): State<Shared>, Body(b): Body) -> ApiResult {
     fit_chunks(&mut p, has_chunk_node).map_err(bad)?;
     let p = Value::Object(p);
     let mode = mode_of(&p);
-    let names = media_names(&p);
-    if let Some(n) = names.iter().find(|n| !media_name_ok(n)) {
-        return Err(bad(format!("素材名稱不對：{n}（素材要從格子放，不能手填路徑）")));
-    }
     let refmods = crate::refmod::names_of(&p).map_err(bad)?;
     // 先組一次：參數錯了直接回錯誤，不用等背景
     {
